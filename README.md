@@ -65,6 +65,7 @@ create_oncoplot(sorted_pivot_table.top(50),
                 mutation_counts=True)
 
 ```
+![image](img/DEMO.png)
 
 ### Requirements
 Python 3.x
