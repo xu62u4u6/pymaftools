@@ -160,3 +160,15 @@ class MAF(pd.DataFrame):
     @staticmethod
     def merge_mafs(mafs: list['MAF']) -> 'MAF':
         return MAF(pd.concat(mafs))
+    
+    @classmethod
+    def read_csv(self, csv_path, sep="\t"):
+        return MAF(pd.read_csv(csv_path, index_col=0, sep=sep))
+    
+    def to_csv(self, csv_path, **kwargs):
+        # Set default arguments
+        kwargs.setdefault("index", True)  # Ensure index is saved by default
+        kwargs.setdefault("sep", "\t")   # Default to tab-separated values
+        
+        # Call the parent class's to_csv method
+        super().to_csv(csv_path, **kwargs)
