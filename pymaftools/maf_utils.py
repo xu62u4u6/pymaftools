@@ -3,7 +3,7 @@ import pandas as pd
 class PivotTable(pd.DataFrame):
     # columns: gene or mutation, row: sample or case
     _metadata = ["gene_metadata", "sample_metadata"]
-    def __init__(self, data, mutations_count: pd.Series=None, *args, **kwargs):
+    def __init__(self, data, *args, **kwargs):
         super().__init__(data, *args, **kwargs)
         self.gene_metadata = pd.DataFrame(index=self.index)
         self.sample_metadata = pd.DataFrame(index=self.columns)
