@@ -126,9 +126,6 @@ class MAF(pd.DataFrame):
     
     def filter_maf(self, mutation_types):
         return self[self.Variant_Classification.isin(mutation_types)]
-    
-    # def calculate_frequency(self) -> pd.Series:
-    #     return (self != False).sum(axis=1) / self.shape[1]
 
     @staticmethod
     def merge_mutations(column):
