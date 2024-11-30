@@ -153,3 +153,10 @@ class MAF(pd.DataFrame):
     @property
     def mutations_count(self) -> pd.Series: 
         return self.groupby(self.case_ID).size()
+    
+    def sort_by_chrom(self) -> 'MAF':
+        return self.sort_values(by=['Chromosome', 'Start_Position', 'End_Position'])
+    
+    @staticmethod
+    def merge_mafs(mafs: list['MAF']) -> 'MAF':
+        return MAF(pd.concat(mafs))
