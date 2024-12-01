@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 
 class PivotTable(pd.DataFrame):
     # columns: gene or mutation, row: sample or case
@@ -67,6 +68,19 @@ class PivotTable(pd.DataFrame):
         pivot_table = pivot_table.head(n_top)
         pivot_table.gene_metadata = pivot_table.gene_metadata.head(n_top)
         return pivot_table
+    
+    def to_cooccur_matrix(self) -> 'CooccurMatrix':
+        matrix = self.replace(False, np.nan).notna().astype(int)
+        cooccur_matrix = matrix.dot(matrix.T)
+        return CooccurMatrix(cooccur_matrix)
+
+class CooccurMatrix(pd.DataFrame):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+    @property
+    def _constructor(self):
+        return CooccurMatrix
 
 class MAF(pd.DataFrame):
     index_col = [
