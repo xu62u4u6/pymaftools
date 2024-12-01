@@ -63,10 +63,10 @@ class PivotTable(pd.DataFrame):
         pivot_table.sample_metadata = pivot_table.sample_metadata.loc[sorted_samples, :]
         return pivot_table
     
-    def top(self, n_top = 50):
+    def head(self, n = 50):
         pivot_table = self.copy()
-        pivot_table = pivot_table.head(n_top)
-        pivot_table.gene_metadata = pivot_table.gene_metadata.head(n_top)
+        pivot_table = pivot_table.iloc[:n]
+        pivot_table.gene_metadata = pivot_table.gene_metadata.iloc[:n]
         return pivot_table
     
     def to_cooccur_matrix(self) -> 'CooccurMatrix':
