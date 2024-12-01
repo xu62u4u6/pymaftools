@@ -35,11 +35,13 @@ from pymaftools.maf_utils import MAF, PivotTable
 from pymaftools.maf_plots import create_oncoplot
 ```
 
-### Example
+### Getting start
 
 ```python
-# Load the MAF file
-all_case_maf = MAF.read_maf("path_to_maf_file.maf")
+# Load MAF files
+maf_case1 = MAF.read_maf("case1.maf")
+maf_case2 = MAF.read_maf("case2.maf")
+all_case_maf = MAF.merge_mafs([maf_case1, maf_case2])
 
 # Filter to keep only nonsynonymous mutations
 filtered_all_case_maf = all_case_maf.filter_maf(MAF.nonsynonymous_types)
@@ -57,7 +59,7 @@ sorted_pivot_table = (pivot_table
                     )
 
 # Generate an oncoplot to show the top 50 genes with the highest mutation frequencies
-create_oncoplot(sorted_pivot_table.top(50), 
+create_oncoplot(sorted_pivot_table.head(50), 
                 figsize=(26, 15),
                 ax_main_range=(0, 28), 
                 ax_freq_range=(28, 29), 
@@ -70,6 +72,7 @@ create_oncoplot(sorted_pivot_table.top(50),
 ### Requirements
 Python 3.x
 pandas, numpy, matplotlib, seaborn
+
 ### License
 This project is licensed under the MIT License - see the LICENSE file for details.
 
