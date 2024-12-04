@@ -145,7 +145,7 @@ class MAF(pd.DataFrame):
     def read_maf(cls, maf_path, case_ID, preffix="", suffix=""):
         maf = cls(pd.read_csv(maf_path, skiprows=1, sep="\t"))
         maf["case_ID"] = f"{preffix}{case_ID}{suffix}"
-        maf.index = maf.loc[:, cls.target_col].apply(lambda row: "|".join(row.astype(str)), axis=1) # concat column
+        maf.index = maf.loc[:, cls.index_col].apply(lambda row: "|".join(row.astype(str)), axis=1) # concat column
         maf = maf.filter_maf(cls.vaild_variant_classfication)
         return cls(maf)
     
