@@ -18,6 +18,20 @@ class PivotTable(pd.DataFrame):
         pivot_table.gene_metadata = self.gene_metadata.copy(deep=deep)
         pivot_table.sample_metadata = self.sample_metadata.copy(deep=deep)
         return pivot_table
+
+    def subset(self, genes:list=None, samples: list=None):
+        pivot_table = self.copy()
+
+        if genes == None and samples == None:
+            return pivot_table
+        if samples != None:
+            pivot_table = pivot_table.loc[:, samples]
+            pivot_table.sample_metadata = pivot_table.sample_metadata.loc[samples, :]
+        if genes != None:
+            pivot_table = pivot_table.loc[genes, :]
+            pivot_table.gene_metadata = pivot_table.gene_metadata.loc[genes, :]
+        return pivot_table
+
     @staticmethod
     def calculate_frequency(df: pd.DataFrame) -> pd.Series:
         return (df != False).sum(axis=1) / df.shape[1]
