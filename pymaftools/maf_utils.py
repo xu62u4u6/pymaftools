@@ -13,6 +13,11 @@ class PivotTable(pd.DataFrame):
     def _constructor(self):
         return PivotTable
     
+    def copy(self, deep=True):
+        pivot_table = super().copy(deep=deep)
+        pivot_table.gene_metadata = self.gene_metadata.copy(deep=deep)
+        pivot_table.sample_metadata = self.sample_metadata.copy(deep=deep)
+        return pivot_table
     @staticmethod
     def calculate_frequency(df: pd.DataFrame) -> pd.Series:
         return (df != False).sum(axis=1) / df.shape[1]
