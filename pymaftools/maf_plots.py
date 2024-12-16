@@ -1,180 +1,251 @@
 import pandas as pd
 import numpy as np
-import os 
 import matplotlib.pyplot as plt
-import seaborn as sns
-import matplotlib.colors as mcolors
 from matplotlib.patches import Rectangle
-from typing import Union
+import seaborn as sns
 
-target_col = [
-        "Hugo_Symbol",
-        "Start_Position",
-        "End_Position",
-        "Reference_Allele",
-        "Tumor_Seq_Allele1",
-        "Tumor_Seq_Allele2"
-    ]
+from .maf_utils import PivotTable
 
 
-def create_oncoplot(pivot_table, 
-                    color_map=None, 
-                    mutation_counts : Union[bool, pd.Series]=True, 
-                    figsize=(18, 16),
-                    wspace=0.5, 
-                    hspace=0.01, 
-                    freq_columns=["freq"], 
-                    ax_main_range=(0, 24), 
-                    ax_freq_range=(24, 28), 
-                    ax_legend_range=(29, 31),
-                    square=False,
-                    show_frame=False,
-                    bar_annot_fontsize=7):
-    
-    # freq_columns = freq_columns or [f"{sample_type}_freq" for sample_type in ["A", "T", "S"]] + ['all_freq']
-    heatmap_data = pivot_table#sorted_df.drop(columns=freq_columns)
-    freq_data = pivot_table.gene_metadata[freq_columns].values
-    
-    # 預設的顏色映射
-    color_map = color_map or {
-        'False': '#FFFFFF',          # 白色 (無突變)
-        'Missense_Mutation': 'gray',  # 淺灰色
-        'Frame_Shift_Ins':'#FF4500',       # 較深色紅  
-        'Frame_Shift_Del': '#4682B4',       # 較深色藍
-        'In_Frame_Ins': '#FF707A',    # 淺色紅
-        'In_Frame_Del':'#ADD8E6',    # 淺色藍
-        'Nonsense_Mutation': '#90EE90',  # 低飽和度綠色
-        'Splice_Site': '#CB704D',        # 低飽和度咖啡色
-        'Multi_Hit': '#000000',           # 黑色 (多重突變)
-        "Silent": "#eeeeee",
-        "3'UTR": "#bbbbcc",
-        "5'UTR": "#bbbbcc",
-        "IGR": "#bbbbcc",
-        "Intron": "#bbbbcc",
-        "RNA": "#bbbbcc",
+class OncoPlot:
+    all_mutation_cmap = {
+        'False': '#FFFFFF', 
+        'Missense_Mutation': 'gray', 
+        'Frame_Shift_Ins':'#FF4500',     # Dark red  
+        'Frame_Shift_Del': '#4682B4',    # Dark blue
+        'In_Frame_Ins': '#FF707A',       # Light red
+        'In_Frame_Del':'#ADD8E6',        # Light blue
+        'Nonsense_Mutation': '#90EE90',  # Low-saturation green
+        'Splice_Site': '#CB704D',        # Low-saturation brown
+        'Multi_Hit': '#000000',          # Black (multiple mutations)
+        "Silent": "#eeeeee",             # Light gray
+        "3'UTR": "#bbbbcc",              # Light purple
+        "5'UTR": "#bbbbcc",              # Light purple
+        "IGR": "#bbbbcc",                # Light purple
+        "Intron": "#bbbbcc",             # Light purple
+        "RNA": "#bbbbcc",                # Light purple
     }
 
-    fig = plt.figure(figsize=figsize)
-    gs = plt.GridSpec(2, 32, height_ratios=[1, 12], wspace=wspace, hspace=hspace)
-    
-    if mutation_counts is not None:
-        if mutation_counts == True:
-            mutation_counts = pivot_table.sample_metadata.mutations_count.values
-        ax_bar = fig.add_subplot(gs[0, ax_main_range[0]:ax_main_range[1]])     # Bar chart
-        plot_bar(ax_bar, mutation_counts, fontsize=bar_annot_fontsize)
-    else:
-        ax_bar = None  # 如果沒有 bar chart, 不繪製上方區域
-    
-    ax_main = fig.add_subplot(gs[1, ax_main_range[0]:ax_main_range[1]])    # Main heatmap
-    ax_freq = fig.add_subplot(gs[1, ax_freq_range[0]:ax_freq_range[1]])   # Frequency heatmap
-    ax_legend = fig.add_subplot(gs[1, ax_legend_range[0]:ax_legend_range[1]]) # Legend
-
-    plot_heatmap(ax_main, heatmap_data, color_map, square=square, show_frame=show_frame)
-    plot_freq(ax_freq, freq_data, freq_columns, square=square)
-    plot_legend(ax_legend, color_map)
-
-    ax_main.set_xlabel("Mutations")
-    #if mutation_counts is None:
-        #gs.tight_layout(fig, rect=[0, 0, 1, 0.9])  # 調整繪圖佈局，避免空白區域過多
-    #else:
-        #plt.tight_layout()
-
-    
-def plot_bar(ax_bar, mutation_counts, fontsize=6):    
-
-    x = np.arange(len(mutation_counts))
-    width = 0.95
-
-    # Create bars
-    tmbs = np.where(mutation_counts == 0, 0, mutation_counts/40)
-    ax_bar.bar(x, tmbs, width=width, color='gray', edgecolor='white')
-    
-    # Set x-axis limits to exactly match the heatmap
-    # The -0.5 ensures the bars align perfectly with heatmap cells
-    ax_bar.set_xlim(-0.5, len(mutation_counts) - 0.5)
-    
-    # 在柱子上添加數值標籤
-    for i, tmb in enumerate(tmbs):
-        ax_bar.text(i, tmb + 2, f"{tmb:.1f}", ha='center', fontsize=fontsize)
-
-    # 隐藏柱状图的边框和刻度
-    ax_bar.spines['top'].set_visible(False)
-    ax_bar.spines['right'].set_visible(False)
-    ax_bar.spines['left'].set_visible(True)
-    ax_bar.spines['bottom'].set_visible(False)
-    ax_bar.set_xticks([])
-    ax_bar.set_xlabel('TMB')
+    nonsynymous_cmap = {
+        'False': '#FFFFFF', 
+        'Missense_Mutation': 'gray', 
+        'Frame_Shift_Ins':'#FF4500',     # Dark red
+        'Frame_Shift_Del': '#4682B4',    # Dark blue
+        'In_Frame_Ins': '#FF707A',       # Light red
+        'In_Frame_Del':'#ADD8E6',        # Light blue
+        'Nonsense_Mutation': '#90EE90',  # Low-saturation green
+        'Splice_Site': '#CB704D',        # Low-saturation brown
+        'Multi_Hit': '#000000',          # Black (multiple mutations)
+    }
 
 
-def plot_heatmap(ax_main, heatmap_data, color_map, linecolor="white", square=True, show_frame=False):
+    def __init__(self, pivot_table: PivotTable, **kwargs):
+        # load pivottable
+        self.pivot_table = pivot_table
+        self.gene_metadata = pivot_table.gene_metadata
+        self.sample_metadata = pivot_table.sample_metadata
 
-    # 創建數值映射
-    def color_encode(val):
-        return color_map.get(val, '#FFFFFF')
+        self.set_config(**kwargs)
+        self.update_layout()
 
-    # 轉換數據
-    data_matrix = heatmap_data.map(color_encode)
+    def set_config(self, 
+                   line_color: str = "white", 
+                   cmap: dict = nonsynymous_cmap, 
+                   figsize=(20, 15), 
+                   width_ratios=[20, 1, 1.5], 
+                   height_ratios=[1, 20], 
+                   wspace=0.01, 
+                   hspace=0.01, 
+                   categorical_columns=[], 
+                   numeric_columns=[]):
+        
+        self.line_color = line_color
+        self.cmap = cmap
+        self.figsize = figsize
+        self.width_ratios = width_ratios
+        self.height_ratios = height_ratios
+        self.wspace = wspace
+        self.hspace = hspace
+        self.categorical_columns = categorical_columns
+        self.numeric_columns = numeric_columns
 
-    # 創建熱圖
-    sns.heatmap(
-        heatmap_data.notna(),
-        cmap=['white', 'grey'],  # 使用白色和灰色表示數據存在與否
-        cbar=False,
-        linewidths=1,
-        linecolor=linecolor,
-        ax=ax_main,
-        square=square
-    )
-    ax_main.set_yticklabels(ax_main.get_yticklabels(), rotation=0)
+    def update_layout(self):
+        num_categorical = len(self.categorical_columns)
+        num_numeric = len(self.numeric_columns)
+        height_ratios = [1, 20] + [1] * num_categorical + [1] * num_numeric
 
-    # 添加顏色
-    for i in range(data_matrix.shape[0]):
-        for j in range(data_matrix.shape[1]):
-            ax_main.add_patch(plt.Rectangle(
-                (j, i), 1, 1,
-                fill=True,
-                facecolor=data_matrix.iloc[i, j],
-                edgecolor=linecolor,
-                lw=1
-            ))
+        self.fig = plt.figure(figsize=self.figsize)
+        self.gs = plt.GridSpec(
+            2 + num_categorical + num_numeric, 
+            3, 
+            width_ratios=self.width_ratios, 
+            height_ratios=height_ratios, 
+            wspace=self.wspace, 
+            hspace=self.hspace
+        )
 
-     # 添加每三個樣本的淺色框
-    if show_frame:
-        for i in range(0, heatmap_data.shape[1], 3):  # 每三個樣本
-            rect = Rectangle((i, -0.5), 3, heatmap_data.shape[0] + 1,
-                            linewidth=1, edgecolor='lightgray', facecolor='none')
-            ax_main.add_patch(rect)
+        self.ax_bar = self.fig.add_subplot(self.gs[0, 0])
+        self.ax_heatmap = self.fig.add_subplot(self.gs[1, 0])
+        self.ax_heatmap_legend = self.fig.add_subplot(self.gs[1, 2])
+        self.ax_freq = self.fig.add_subplot(self.gs[1, 1])
+        self.axs_categorical_columns = {col: self.fig.add_subplot(self.gs[2+i, 0]) for i, col in enumerate(self.categorical_columns)}
+        self.axs_numeric_columns = {col: self.fig.add_subplot(self.gs[2+len(self.categorical_columns)+i, 0]) for i, col in enumerate(self.numeric_columns)}
 
-def plot_freq(ax_freq, freq_data, freq_columns, square=True, show_frame=True):
-    # 繪製頻率熱圖
-    sns.heatmap(freq_data,
-                cmap='Blues',
-                linewidths=0.5,
-                ax=ax_freq,
-                cbar=False,  # 不顯示頻率熱圖的colorbar
-                vmin=0,
-                vmax=freq_data.max(),
-                alpha=0.8,
-                square=square)  # 根據頻率數據的最大值設置vmax
-
-    # 隱藏頻率熱圖的索引
-    ax_freq.set_xticks([])  # 隱藏 x 軸的標籤
-    ax_freq.set_yticks([])  # 隱藏 y 軸的標籤
-
-    # 設置頻率熱圖的標籤和數值，並隱藏索引
-    for i in range(freq_data.shape[0]):  # 每行
-        for j in range(freq_data.shape[1]):  # 每列
-            value = freq_data[i, j]
-            color = 'black' if value < 0.6 * freq_data.max() else 'white'  # 高频率用白色，低频率用黑色
-            ax_freq.text(j + 0.5, i + 0.5, f"{value:.2f}",
-                         va='center', ha='center', color=color)
+    def plot_numeric_metadata(self):
+        for col, ax in self.axs_numeric_columns.items():
+            data = self.sample_metadata[[col]].T  # Ensure you pass a DataFrame
+            sns.heatmap(
+                data,
+                cmap="coolwarm",
+                cbar=False,
+                linewidths=1,
+                linecolor=self.line_color,
+                ax=ax,  
+                xticklabels=False,
+                yticklabels=list(data.index),
+            )
             
-    ax_freq.set_title('Frequency', pad=20)  # 頻率熱圖的標題
-    ax_freq.set_xticks(np.arange(len(freq_columns))+0.5)  # 設置 x 軸刻度數量
-    ax_freq.set_xticklabels(freq_columns, rotation=90)  # 設置 x 軸標籤並旋轉90度
+            ax.set_yticks([i + 0.5 for i in range(len(data.index))])  # Shift the ticks by +0.5
+            ax.set_yticklabels(data.index, rotation=0)  # Set labels horizontally
 
-def plot_legend(ax_legend, color_map):
-    # 修正圖例
-    legend_elements = [Rectangle((0, 0), 1, 1, color=color_map[key], label=key) for key in color_map.keys()]
-    ax_legend.legend(handles=legend_elements, title="Variant Types", loc='center', fontsize='small', frameon=False)
-    ax_legend.axis('off')  # 隱藏圖例軸的坐標系
+    def heatmap(self, show_frame=False, n=3):
+        def color_encode(val):
+            return self.cmap.get(val, '#ffffff')
+        color_matrix = self.pivot_table.map(color_encode)
+        
+        self.plot_color_heatmap(self.ax_heatmap, 
+                        color_matrix,
+                        linecolor=self.line_color,
+                        linewidth=1,
+                        xticklabels=False
+                        )
+        
+        # add frame every n columns
+        if show_frame:
+            for i in range(0, color_matrix.shape[1], n): 
+                rect = Rectangle(
+                    (i, -0.5), 
+                    n,
+                    color_matrix.shape[0] + 1,
+                    linewidth=1,
+                    edgecolor='lightgray',
+                    facecolor='none'
+                )
+                self.ax_heatmap.add_patch(rect)
+
+        # add legend
+        legend_elements = [Rectangle((0, 0), 1, 1, color=self.cmap[key], label=key) for key in self.cmap.keys()]
+        self.ax_heatmap_legend.legend(handles=legend_elements, title="Variant Types", loc='center', fontsize='small', frameon=False)
+        self.ax_heatmap_legend.axis('off')
+        
+    def plot_bar(self, tmb=None, fontsize=6, bar_value=False):    
+        tmb = tmb or self.sample_metadata.TMB
+        x = np.arange(len(tmb))
+        width = 0.95
+
+        self.ax_bar.bar(x, tmb, width=width, color='gray', edgecolor='white')
+        self.ax_bar.set_xlim(-0.5, len(tmb) - 0.5)
+        if bar_value:
+            for i, tmb_value in enumerate(tmb):
+                self.ax_bar.text(i, tmb_value + 2, f"{tmb:.1f}", ha='center', fontsize=fontsize)
+
+        self.ax_bar.spines['left'].set_visible(True)
+
+        self.ax_bar.spines['top'].set_visible(False)
+        self.ax_bar.spines['right'].set_visible(False)
+        self.ax_bar.spines['bottom'].set_visible(False)
+        self.ax_bar.set_xticks([])
+        self.ax_bar.set_xlabel('TMB')
+
+    def plot_freq(self, freq_columns=["freq"]):
+        freq_data = self.gene_metadata[freq_columns]
+        sns.heatmap(
+                freq_data,
+                cbar=False,
+                linewidths=1,
+                linecolor=self.line_color,
+                ax=self.ax_freq,
+                xticklabels=freq_data.columns,
+                yticklabels=False,
+                annot=True,
+                fmt=".2f",
+                annot_kws={"size": 9},
+                cmap="Blues"
+            )
+        self.ax_freq.set_ylabel("")
+        self.ax_freq.set_yticks([])  # hide y-axis
+
+    @staticmethod
+    def categorical_cmap(data, cmap="pastel"):
+        unique_categories = pd.unique(data.values.ravel())
+        palette = sns.color_palette(cmap, len(unique_categories))
+        color_dict = {category: palette[i] for i, category in enumerate(unique_categories)}
+
+        # map the categories to their respective colors
+        color_matrix = data.map(lambda x: color_dict.get(x, '#ffffff'))
+        return color_matrix
+    
+    def plot_categorical_metadata(self):
+        for col, ax in self.axs_categorical_columns.items():
+            data = self.sample_metadata[[col]].T  # Ensure you pass a DataFrame
+            color_matrix = self.categorical_cmap(data)
+            self.plot_color_heatmap(ax, 
+                color_matrix=color_matrix,
+                linecolor=self.line_color,
+                linewidth=1,
+                xticklabels=False,
+                yticklabels=list(data.index),
+                )
+            ax.set_yticks([i + 0.5 for i in range(len(color_matrix.index))])  # Shift the ticks by +0.5
+            ax.set_yticklabels(color_matrix.index, rotation=0)  # Set labels horizontally
+
+    @staticmethod
+    def plot_color_heatmap(ax, color_matrix: pd.DataFrame, linecolor='white', linewidth=1, xticklabels=True, yticklabels=True):
+        ones_matrix = color_matrix.copy()
+        ones_matrix[:] = 0 
+        ones_matrix = ones_matrix.astype(float)
+
+        # Plot background heatmap (using ones matrix to hold size)
+        sns.heatmap(
+            ones_matrix,
+            cbar=False,
+            linewidths=linewidth,
+            linecolor=linecolor,
+            ax=ax,
+            xticklabels=xticklabels,
+            yticklabels=yticklabels,
+            cmap="Blues",
+            
+        )
+
+        # Overlay color matrix
+        for i in range(color_matrix.shape[0]):
+            for j in range(color_matrix.shape[1]):
+                ax.add_patch(Rectangle(
+                    (j, i), 1, 1,
+                    fill=True,
+                    facecolor=color_matrix.iloc[i, j],
+                    edgecolor=linecolor,
+                    lw=linewidth
+                ))
+        ax.set_yticks([i + 0.5 for i in range(len(color_matrix.index))])  # Shift the ticks by +0.5
+        ax.set_yticklabels(color_matrix.index, rotation=0)  # Set labels horizontally
+        return ax
+
+    def add_xticklabel(self):
+        # get the maximum row number
+        max_row = max([spec.rowspan.stop for spec in self.gs]) - 1
+
+        # find target axis
+        target_ax = None
+        for ax in self.fig.axes:
+            subplotspec = ax.get_subplotspec()
+            if subplotspec.rowspan.start == max_row and subplotspec.colspan.start == 0:
+                target_ax = ax
+                break
+
+        # add xtick labels and xticks
+        if target_ax:
+            target_ax.set_xticks([i + 0.5 for i in range(len(self.sample_metadata))])
+            target_ax.set_xticklabels(self.sample_metadata.index, rotation=90)
+
