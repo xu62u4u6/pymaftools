@@ -155,7 +155,7 @@ class OncoPlot:
         self.ax_bar.spines['right'].set_visible(False)
         self.ax_bar.spines['bottom'].set_visible(False)
         self.ax_bar.set_xticks([])
-        self.ax_bar.set_xlabel('TMB')
+        self.ax_bar.set_ylabel('TMB')
 
     def plot_freq(self, freq_columns=["freq"]):
         freq_data = self.gene_metadata[freq_columns]
