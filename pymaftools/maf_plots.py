@@ -92,18 +92,21 @@ class OncoPlot:
         self.axs_categorical_columns = {col: self.fig.add_subplot(self.gs[2+i, 0]) for i, col in enumerate(self.categorical_columns)}
         self.axs_numeric_columns = {col: self.fig.add_subplot(self.gs[2+len(self.categorical_columns)+i, 0]) for i, col in enumerate(self.numeric_columns)}
 
-    def plot_numeric_metadata(self):
+    def plot_numeric_metadata(self, annotate=False, annotation_font_size=10, fmt=".2f", cmap="Blues"):
         for col, ax in self.axs_numeric_columns.items():
             data = self.sample_metadata[[col]].T  # Ensure you pass a DataFrame
             sns.heatmap(
                 data,
-                cmap="coolwarm",
+                cmap=cmap,
                 cbar=False,
                 linewidths=1,
                 linecolor=self.line_color,
                 ax=ax,  
                 xticklabels=False,
                 yticklabels=list(data.index),
+                annot=annotate,  # Enable/disable annotation
+                fmt = fmt if annotate else "",  # Format to 2 decimal places if enabled
+                annot_kws ={"size": annotation_font_size} if annotate else None,  # Font size for annotations
             )
             
             ax.set_yticks([i + 0.5 for i in range(len(data.index))])  # Shift the ticks by +0.5
@@ -186,7 +189,7 @@ class OncoPlot:
         color_matrix = data.map(lambda x: color_dict.get(x, '#ffffff'))
         return color_matrix
     
-    def plot_categorical_metadata(self):
+    def plot_categorical_metadata(self, annotate=False, annotation_font_size=10, annotate_text_color="black"):
         for col, ax in self.axs_categorical_columns.items():
             data = self.sample_metadata[[col]].T  # Ensure you pass a DataFrame
             color_matrix = self.categorical_cmap(data)
@@ -197,11 +200,31 @@ class OncoPlot:
                 xticklabels=False,
                 yticklabels=list(data.index),
                 )
+
+            if annotate:
+                for i in range(color_matrix.shape[0]):
+                    for j in range(color_matrix.shape[1]):
+                        ax.text(
+                            j + 0.5, i + 0.5,  # Center the text
+                            f"{data.iloc[i, j]}",  # Display the color value or any desired text
+                            ha='center', va='center',
+                            fontsize=annotation_font_size,
+                            color=annotate_text_color
+                    )
+
+
             ax.set_yticks([i + 0.5 for i in range(len(color_matrix.index))])  # Shift the ticks by +0.5
             ax.set_yticklabels(color_matrix.index, rotation=0)  # Set labels horizontally
 
     @staticmethod
-    def plot_color_heatmap(ax, color_matrix: pd.DataFrame, linecolor='white', linewidth=1, xticklabels=True, yticklabels=True):
+    def plot_color_heatmap(ax, 
+                           color_matrix: pd.DataFrame, 
+                           linecolor='white', 
+                           linewidth=1, 
+                           xticklabels=True, 
+                           yticklabels=True,
+                           ):
+        
         ones_matrix = color_matrix.copy()
         ones_matrix[:] = 0 
         ones_matrix = ones_matrix.astype(float)
@@ -229,6 +252,7 @@ class OncoPlot:
                     edgecolor=linecolor,
                     lw=linewidth
                 ))
+
         ax.set_yticks([i + 0.5 for i in range(len(color_matrix.index))])  # Shift the ticks by +0.5
         ax.set_yticklabels(color_matrix.index, rotation=0)  # Set labels horizontally
         return ax
