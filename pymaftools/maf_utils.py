@@ -90,6 +90,12 @@ class PivotTable(pd.DataFrame):
         pivot_table.gene_metadata = pivot_table.gene_metadata.iloc[:n]
         return pivot_table
     
+    def filter_by_freq(self, threshold=0.05):
+        if "freq" not in self.gene_metadata.columns:
+            raise ValueError("freq column not found in gene_metadata.")
+        pivot_table = self.copy()
+        return pivot_table.subset(gene=pivot_table.gene_metadata.freq >= threshold)
+    
     def to_cooccur_matrix(self, freq=True) -> 'CooccurMatrix':
         matrix = (self != False).astype(int)
         cooccur_matrix = matrix.dot(matrix.T)
