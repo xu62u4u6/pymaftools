@@ -1,5 +1,7 @@
 import pandas as pd
 import numpy as np
+from statsmodels.stats.multitest import multipletests
+from scipy.stats import chi2_contingency
 
 class PivotTable(pd.DataFrame):
     # columns: gene or mutation, row: sample or case
@@ -100,6 +102,35 @@ class PivotTable(pd.DataFrame):
         pivot_table = self.copy()
         return pivot_table != False
 
+    def chisquare_test(self, group_col, group1, group2, alpha=0.05, minimum_mutations=2):
+        binary_pivot_table = self.to_binary_table()
+        sample_metadata = binary_pivot_table.sample_metadata
+        subset1 = binary_pivot_table.subset(samples=sample_metadata[group_col] == group1)
+        subset2 = binary_pivot_table.subset(samples=sample_metadata[group_col] == group2)
+
+        df = pd.DataFrame(index=binary_pivot_table.index, 
+                        columns=[f"{group1}_True", f"{group1}_False", f"{group2}_True", f"{group2}_False"])
+        
+        df[f"{group1}_True"] = subset1.sum(axis=1)
+        df[f"{group1}_False"] = len(subset1.columns) - df[f"{group1}_True"] 
+
+        df[f"{group2}_True"] = subset2.sum(axis=1)
+        df[f"{group2}_False"] = len(subset2.columns) - df[f"{group2}_True"]
+
+        df = df[(df[f"{group1}_True"] + df[f"{group2}_True"]) > minimum_mutations]
+
+        def get_chisquare_p_value(row):
+            contingency_table = row.values.reshape(2, 2)
+            _, p, _, _ = chi2_contingency(contingency_table)
+            return p
+
+        df["p_value"] = df.apply(get_chisquare_p_value, axis=1)
+        p_values = df["p_value"].values
+        reject, adjusted_p_value, _, _ = multipletests(p_values, method="fdr_bh", alpha=alpha)
+
+        df["adjusted_p_value"] = adjusted_p_value
+        df["is_significant"] = reject
+        return df
 class CooccurMatrix(pd.DataFrame):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
