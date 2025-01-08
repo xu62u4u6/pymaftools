@@ -173,6 +173,17 @@ class PivotTable(pd.DataFrame):
         df["adjusted_p_value"] = adjusted_p_value
         df["is_significant"] = reject
         return df
+    
+    @staticmethod
+    def merge(tables: list["PivotTable"]):
+        if not all(t.index.equals(tables[0].index) for t in tables):
+            raise ValueError("All PivotTables must have the same index to merge.")
+
+        merged_data = pd.concat([t for t in tables], axis=1)
+        merged_metadata = pd.concat([t.sample_metadata for t in tables], axis=0)
+        merged_table = PivotTable(merged_data)
+        merged_table.sample_metadata = merged_metadata
+        return merged_table
 class CooccurMatrix(pd.DataFrame):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
