@@ -95,6 +95,10 @@ class PivotTable(pd.DataFrame):
             cooccur_matrix = cooccur_matrix / matrix.shape[1]
 
         return CooccurMatrix(cooccur_matrix)
+    
+    def to_binary_table(self):
+        pivot_table = self.copy()
+        return pivot_table != False
 
 class CooccurMatrix(pd.DataFrame):
     def __init__(self, *args, **kwargs):
