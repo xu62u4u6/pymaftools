@@ -154,7 +154,7 @@ class OncoPlot:
             for i, tmb_value in enumerate(tmb):
                 self.ax_bar.text(i, tmb_value + 2, f"{tmb:.1f}", ha='center', fontsize=fontsize)
 
-        self.ax_bar.spines['left'].set_visible(True)
+        self.ax_bar.spines['left'].set_visible(True) # True !!!
 
         self.ax_bar.spines['top'].set_visible(False)
         self.ax_bar.spines['right'].set_visible(False)
@@ -243,16 +243,18 @@ class OncoPlot:
                             color=annotate_text_color
                     )
 
-
+            ax.set_xticks([])
             ax.set_yticks([i + 0.5 for i in range(len(color_matrix.index))])  # Shift the ticks by +0.5
             ax.set_yticklabels(color_matrix.index, rotation=0)  # Set labels horizontally
+            ax.set_xlabel("")  # Hide x-axis label if it exists
+            ax.tick_params(axis='x', which='both', bottom=False, top=False)  # Hide x ticks completely
 
     @staticmethod
     def plot_color_heatmap(ax, 
                            color_matrix: pd.DataFrame, 
                            linecolor='white', 
                            linewidth=1, 
-                           xticklabels=True, 
+                           xticklabels=False, 
                            yticklabels=True,
                            alpha=1.0):
         
@@ -285,7 +287,8 @@ class OncoPlot:
                     lw=linewidth,
                     alpha=alpha
                 ))
-
+        ax.set_xticks([])
+        ax.set_xlabel("")
         ax.set_yticks([i + 0.5 for i in range(len(color_matrix.index))])  # Shift the ticks by +0.5
         ax.set_yticklabels(color_matrix.index, rotation=0)  # Set labels horizontally
         return ax
