@@ -1,5 +1,7 @@
 import pandas as pd
 import numpy as np
+import networkx as nx
+
 from statsmodels.stats.multitest import multipletests
 from scipy.stats import chi2_contingency
 
@@ -309,7 +311,7 @@ class MAF(pd.DataFrame):
     @property
     def mutations_count(self) -> pd.Series: 
         return self.groupby(self.case_ID).size()
-    
+
     def sort_by_chrom(self) -> 'MAF':
         return self.sort_values(by=['Chromosome', 'Start_Position', 'End_Position'])
     
