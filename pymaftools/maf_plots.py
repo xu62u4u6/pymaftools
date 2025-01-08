@@ -92,9 +92,10 @@ class OncoPlot:
         self.axs_categorical_columns = {col: self.fig.add_subplot(self.gs[2+i, 0]) for i, col in enumerate(self.categorical_columns)}
         self.axs_numeric_columns = {col: self.fig.add_subplot(self.gs[2+len(self.categorical_columns)+i, 0]) for i, col in enumerate(self.numeric_columns)}
 
-    def plot_numeric_metadata(self, annotate=False, annotation_font_size=10, fmt=".2f", cmap="Blues"):
+    def plot_numeric_metadata(self, annotate=False, annotation_font_size=10, fmt=".2f", cmap="Blues", cmap_dict=None, alpha=1):
         for col, ax in self.axs_numeric_columns.items():
-            data = self.sample_metadata[[col]].T  # Ensure you pass a DataFrame
+            cmap = cmap_dict.get(col, "Blues") if cmap_dict else "Blues"
+            data = self.sample_metadata[[col]].T 
             sns.heatmap(
                 data,
                 cmap=cmap,
@@ -107,8 +108,8 @@ class OncoPlot:
                 annot=annotate,  # Enable/disable annotation
                 fmt = fmt if annotate else "",  # Format to 2 decimal places if enabled
                 annot_kws ={"size": annotation_font_size} if annotate else None,  # Font size for annotations
+                alpha=alpha
             )
-            
             ax.set_yticks([i + 0.5 for i in range(len(data.index))])  # Shift the ticks by +0.5
             ax.set_yticklabels(data.index, rotation=0)  # Set labels horizontally
 
@@ -180,25 +181,55 @@ class OncoPlot:
         self.ax_freq.set_yticks([])  # hide y-axis
 
     @staticmethod
-    def categorical_cmap(data, cmap="pastel"):
-        unique_categories = pd.unique(data.values.ravel())
-        palette = sns.color_palette(cmap, len(unique_categories))
-        color_dict = {category: palette[i] for i, category in enumerate(unique_categories)}
+    def categorical_cmap(data, cmap_dict=None, default_cmap="pastel"):
+        """
+        Function to map categories in `data` to specific colors based on `cmap_dict`.
+        If no mapping is found for a category, it applies the default colormap.
 
-        # map the categories to their respective colors
-        color_matrix = data.map(lambda x: color_dict.get(x, '#ffffff'))
+        Parameters:
+        - data: DataFrame or Series containing categorical data.
+        - cmap_dict: Dictionary of custom color mappings, such as:
+        {"subtype": {"LUAD": "orange", "LUSC": "blue", "ASC": "green"},
+        "smoke": {"is_smoke": "gray", "no_smoke": "white"}}
+        - default_cmap: Default colormap if no custom mapping is found.
+        
+        Returns:
+        - color_matrix: A DataFrame or Series of color values based on the mappings.
+        """
+        # Set default colormap
+        if cmap_dict is None:
+            cmap_dict = {}
+
+        # Get unique categories in the data
+        unique_categories = pd.unique(data.values.ravel())
+
+        # Create a color palette for categories not found in cmap_dict
+        palette = sns.color_palette(default_cmap, len(unique_categories))
+        default_color_dict = {category: palette[i] for i, category in enumerate(unique_categories)}
+
+        color_dict = default_color_dict.copy()  # Start with the default color map
+
+        # Process each key in cmap_dict and update the color_dict with custom mappings
+        for key, category_dict in cmap_dict.items():
+            for category, color in category_dict.items():
+                color_dict[category] = color  # Override the default color with the custom one
+
+        # Map the categories to their respective colors, falling back to default if necessary
+        color_matrix = data.map(lambda x: color_dict.get(x, '#ffffff'))  # Default to white if no mapping
+
         return color_matrix
     
-    def plot_categorical_metadata(self, annotate=False, annotation_font_size=10, annotate_text_color="black"):
+    def plot_categorical_metadata(self, annotate=False, cmap_dict=None, alpha=1.0, default_cmap="pastel", annotation_font_size=10, annotate_text_color="black"):
         for col, ax in self.axs_categorical_columns.items():
             data = self.sample_metadata[[col]].T  # Ensure you pass a DataFrame
-            color_matrix = self.categorical_cmap(data)
+            color_matrix = self.categorical_cmap(data, cmap_dict=cmap_dict, default_cmap=default_cmap)
             self.plot_color_heatmap(ax, 
                 color_matrix=color_matrix,
                 linecolor=self.line_color,
                 linewidth=1,
                 xticklabels=False,
                 yticklabels=list(data.index),
+                alpha=alpha
                 )
 
             if annotate:
@@ -223,7 +254,7 @@ class OncoPlot:
                            linewidth=1, 
                            xticklabels=True, 
                            yticklabels=True,
-                           ):
+                           alpha=1.0):
         
         ones_matrix = color_matrix.copy()
         ones_matrix[:] = 0 
@@ -239,6 +270,7 @@ class OncoPlot:
             xticklabels=xticklabels,
             yticklabels=yticklabels,
             cmap="Blues",
+            alpha=0
             
         )
 
@@ -250,7 +282,8 @@ class OncoPlot:
                     fill=True,
                     facecolor=color_matrix.iloc[i, j],
                     edgecolor=linecolor,
-                    lw=linewidth
+                    lw=linewidth,
+                    alpha=alpha
                 ))
 
         ax.set_yticks([i + 0.5 for i in range(len(color_matrix.index))])  # Shift the ticks by +0.5
