@@ -55,8 +55,8 @@ class OncoPlot:
                    figsize=(20, 15), 
                    width_ratios=[20, 1, 1.5], 
                    height_ratios=[1, 20], 
-                   wspace=0.01, 
-                   hspace=0.01, 
+                   wspace=0.015, 
+                   hspace=0.02, 
                    categorical_columns=[], 
                    numeric_columns=[]):
         
