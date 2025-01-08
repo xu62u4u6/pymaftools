@@ -10,11 +10,22 @@ class PivotTable(pd.DataFrame):
         super().__init__(data, *args, **kwargs)
         self.gene_metadata = pd.DataFrame(index=self.index)
         self.sample_metadata = pd.DataFrame(index=self.columns)
-        
+
     @property
     def _constructor(self):
-        return PivotTable
+        def _new_constructor(*args, **kwargs):
+            obj = PivotTable(*args, **kwargs)
+            obj._validate_metadata()
+            return obj
+        return _new_constructor
     
+    def _validate_metadata(self):
+        if not self.gene_metadata.index.equals(self.index):
+            raise ValueError("gene_metadata index does not match PivotTable index.")
+
+        if not self.sample_metadata.index.equals(self.columns):
+            raise ValueError("sample_metadata index does not match PivotTable columns.")
+        
     def copy(self, deep=True):
         pivot_table = super().copy(deep=deep)
         pivot_table.gene_metadata = self.gene_metadata.copy(deep=deep)
