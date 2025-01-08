@@ -290,6 +290,22 @@ class MAF(pd.DataFrame):
         pivot_table.sample_metadata["TMB"] = self.mutations_count / 40
         return pivot_table
     
+    def to_mutation_table(self):
+        mutation_table = self.pivot_table(index=self.index, 
+                                columns="case_ID",
+                                values="Variant_Classification",
+                                aggfunc="first").fillna(False)
+        mutation_table = PivotTable(mutation_table)
+        mutation_table.sample_metadata["mutations_count"] = self.mutations_count
+        mutation_table.sample_metadata["TMB"] = self.mutations_count / 40
+        return mutation_table
+
+    def change_index_level(self, index_col):
+        maf = self.copy()
+        new_index_col = maf.loc[:, index_col].apply(lambda row: "|".join(row.astype(str)), axis=1)
+        maf.index = new_index_col
+        return maf
+
     @property
     def mutations_count(self) -> pd.Series: 
         return self.groupby(self.case_ID).size()
