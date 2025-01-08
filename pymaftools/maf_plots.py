@@ -38,7 +38,8 @@ class OncoPlot:
         'Multi_Hit': '#000000',          # Black (multiple mutations)
     }
 
-
+    cnv_cmp = {"AMP": "salmon", "DEL": "steelblue", "AMP&DEL": "gray"}
+    
     def __init__(self, pivot_table: PivotTable, **kwargs):
         # load pivottable
         self.pivot_table = pivot_table
