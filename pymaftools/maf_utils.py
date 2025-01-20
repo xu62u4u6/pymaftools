@@ -141,8 +141,9 @@ class PivotTable(pd.DataFrame):
         return CooccurMatrix(cooccur_matrix)
     
     def to_binary_table(self):
-        pivot_table = self.copy()
-        return pivot_table != False
+        binary_pivot_table = self.copy()
+        binary_pivot_table[:] = (binary_pivot_table != False) 
+        return binary_pivot_table
 
     def chisquare_test(self, group_col, group1, group2, alpha=0.05, minimum_mutations=2):
         binary_pivot_table = self.to_binary_table()
