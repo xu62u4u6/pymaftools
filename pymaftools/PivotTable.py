@@ -4,6 +4,11 @@ import networkx as nx
 
 from statsmodels.stats.multitest import multipletests
 from scipy.stats import chi2_contingency
+from scipy.stats import fisher_exact
+from sklearn.decomposition import PCA
+import matplotlib.pyplot as plt
+import seaborn as sns
+
 
 class PivotTable(pd.DataFrame):
     # columns: gene or mutation, row: sample or case
@@ -28,6 +33,26 @@ class PivotTable(pd.DataFrame):
         if not self.sample_metadata.index.equals(self.columns):
             raise ValueError("sample_metadata index does not match PivotTable columns.")
         
+    def to_hierarchical_clustering(self, 
+                             method: str = 'ward',
+                             metric: str = 'euclidean') -> dict:
+        from scipy.cluster.hierarchy import linkage
+        
+        # 基因聚類
+        gene_linkage = linkage(self.values, 
+                            method=method,
+                            metric=metric)
+        
+        # 樣本聚類
+        sample_linkage = linkage(self.values.T, 
+                                method=method,
+                                metric=metric)
+        
+        return {
+            'gene_linkage': gene_linkage,
+            'sample_linkage': sample_linkage
+        }
+
     def copy(self, deep=True):
         pivot_table = super().copy(deep=deep)
         pivot_table.gene_metadata = self.gene_metadata.copy(deep=deep)
@@ -120,6 +145,44 @@ class PivotTable(pd.DataFrame):
         pivot_table.sample_metadata = pivot_table.sample_metadata.loc[sorted_samples, :]
         return pivot_table
     
+    def sort_samples_by_group(self, group_col="subtype", group_order=["LUAD", "ASC", "LUSC"], top=10):
+        """
+        Sort samples first by the given subtype order, then within each subtype, 
+        apply sort_samples_by_mutations.
+
+        Parameters:
+        - group_col (str): The column in sample_metadata containing group information.
+        - group_order (list): The order to sort the groups.
+        - top (int): The number of top genes used for sorting within each subtype.
+
+        Returns:
+        - PivotTable: A new PivotTable sorted by subtype and mutations.
+        """
+        pivot_table = self.copy()
+        
+        # 確保 group_col 存在於 sample_metadata
+        if group_col not in pivot_table.sample_metadata.columns:
+            raise ValueError(f"Column '{group_col}' not found in sample_metadata.")
+        
+        sorted_samples = []
+        
+        # 依照 subtype_order 進行分組排序
+        for subtype in group_order:
+            subtype_samples = pivot_table.sample_metadata[pivot_table.sample_metadata[group_col] == subtype].index
+            
+            if len(subtype_samples) > 0:
+                # 篩選出該 subtype 的樣本，並應用 sort_samples_by_mutations
+                subtype_pivot = pivot_table.subset(samples=subtype_samples)
+                sorted_subtype_pivot = subtype_pivot.sort_samples_by_mutations(top=top)
+                
+                sorted_samples.extend(sorted_subtype_pivot.columns)  # 儲存排序後的樣本順序
+        
+        # 重新排列 PivotTable
+        pivot_table = pivot_table.loc[:, sorted_samples]
+        pivot_table.sample_metadata = pivot_table.sample_metadata.loc[sorted_samples, :]
+        
+        return pivot_table
+
     def head(self, n = 50):
         pivot_table = self.copy()
         pivot_table = pivot_table.iloc[:n]
@@ -130,7 +193,7 @@ class PivotTable(pd.DataFrame):
         if "freq" not in self.gene_metadata.columns:
             raise ValueError("freq column not found in gene_metadata.")
         pivot_table = self.copy()
-        return pivot_table.subset(gene=pivot_table.gene_metadata.freq >= threshold)
+        return pivot_table.subset(genes=pivot_table.gene_metadata.freq >= threshold)
     
     def to_cooccur_matrix(self, freq=True) -> 'CooccurMatrix':
         matrix = (self != False).astype(int)
@@ -142,7 +205,7 @@ class PivotTable(pd.DataFrame):
     
     def to_binary_table(self):
         binary_pivot_table = self.copy()
-        binary_pivot_table[:] = (binary_pivot_table != False) 
+        binary_pivot_table[:] = (binary_pivot_table != False) # avoid class transform
         return binary_pivot_table
 
     def chisquare_test(self, group_col, group1, group2, alpha=0.05, minimum_mutations=2):
@@ -175,170 +238,35 @@ class PivotTable(pd.DataFrame):
         df["is_significant"] = reject
         return df
     
-    @staticmethod
-    def merge(tables: list["PivotTable"]):
-        if not all(t.index.equals(tables[0].index) for t in tables):
-            raise ValueError("All PivotTables must have the same index to merge.")
+    def merge(tables: list["PivotTable"], fill_table_na_with=False, fill_metadata_na_with=np.nan, join="outer"):
+        if join not in ["inner", "outer"]:
+            raise ValueError("join must be either 'inner' or 'outer'.")
 
-        merged_data = pd.concat([t for t in tables], axis=1)
-        merged_metadata = pd.concat([t.sample_metadata for t in tables], axis=0)
-        merged_table = PivotTable(merged_data)
-        merged_table.sample_metadata = merged_metadata
+        if join not in ["inner", "outer"]:
+            raise ValueError("join must be either 'inner' or 'outer'.")
+
+        if join == "inner":
+            common_index = set(tables[0].data.index)
+            for t in tables[1:]:
+                common_index &= set(t.data.index)
+
+            if not common_index:
+                raise ValueError("No common indices found for 'inner' merge.")
+
+            common_index = sorted(common_index)
+            merged_data = pd.concat(
+                [table.loc[common_index] for table in tables], axis=1, join="inner"
+            )
+
+            merged_metadata = pd.concat(
+                [table.sample_metadata.loc[common_index] for table in tables], axis=0, join="inner"
+            )
+
+        else:
+            merged_data = pd.concat([t for t in tables], axis=1, join="outer")
+            merged_metadata = pd.concat([t.sample_metadata for t in tables], axis=0, join="outer")
+            
+        merged_table = PivotTable(merged_data).fillna(fill_table_na_with)
+        merged_table.sample_metadata = merged_metadata.fillna(fill_metadata_na_with)
         return merged_table
-class CooccurMatrix(pd.DataFrame):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        
-    @property
-    def _constructor(self):
-        return CooccurMatrix
     
-    def to_edges_dataframe(cooccur_matrix, label, freq_threshold=0.1):
-        edges_dataframe = cooccur_matrix.melt(
-            ignore_index=False,  # 保留索引
-            var_name='target', 
-            value_name='frequency'
-        ).reset_index().rename(columns={'Hugo_Symbol': 'source'})
-
-        # filter low frequency edges
-        filtered_edges_dataframe = edges_dataframe[edges_dataframe.frequency >= freq_threshold]
-
-        # remove self-loops
-        filtered_edges_dataframe = filtered_edges_dataframe[~(filtered_edges_dataframe.source == filtered_edges_dataframe.target)]
-
-        # add label attribute to edges
-        filtered_edges_dataframe['label'] = label
-
-        return filtered_edges_dataframe
-
-    def to_graph(self, label, freq_threshold=0.1):
-        edges_dataframe = self.to_edges_dataframe(label, freq_threshold)
-        graph = nx.from_pandas_edgelist(
-            edges_dataframe, 
-            source='source', 
-            target='target', 
-            edge_attr=['frequency', 'label'],
-            create_using=nx.MultiGraph()
-        )
-        return graph
-
-class MAF(pd.DataFrame):
-    index_col = [
-        "Hugo_Symbol",
-        "Start_Position",
-        "End_Position",
-        "Reference_Allele",
-        "Tumor_Seq_Allele1",
-        "Tumor_Seq_Allele2"
-    ]
-
-    # GDC MAF file fields:
-    # https://docs.gdc.cancer.gov/Encyclopedia/pages/Mutation_Annotation_Format_TCGAv2/
-        
-    vaild_variant_classfication = [
-            "Frame_Shift_Del", 
-            "Frame_Shift_Ins",
-            "In_Frame_Del", 
-            "In_Frame_Ins",
-            "Missense_Mutation",
-            "Nonsense_Mutation",
-            "Silent",
-            "Splice_Site",
-            "Translation_Start_Site",
-            "Nonstop_Mutation",
-            "3'UTR",
-            "3'Flank",
-            "5'UTR",
-            "5'Flank",
-            "IGR",
-            "Intron",
-            "RNA",
-            "Targeted_Region"
-        ]
-    
-    nonsynonymous_types = [
-        "Frame_Shift_Del", "Frame_Shift_Ins", "In_Frame_Del", "In_Frame_Ins",
-        "Missense_Mutation", "Nonsense_Mutation", "Splice_Site",
-        "Translation_Start_Site", "Nonstop_Mutation"
-    ]
-    
-    @classmethod
-    def read_maf(cls, maf_path, case_ID, preffix="", suffix=""):
-        maf = cls(pd.read_csv(maf_path, skiprows=1, sep="\t"))
-        maf["case_ID"] = f"{preffix}{case_ID}{suffix}"
-        maf.index = maf.loc[:, cls.index_col].apply(lambda row: "|".join(row.astype(str)), axis=1) # concat column
-        maf = maf.filter_maf(cls.vaild_variant_classfication)
-        return cls(maf)
-    
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        
-    @property
-    def _constructor(self):
-        # make sure returned object is MAF type
-        return MAF
-    
-    def filter_maf(self, mutation_types):
-        return self[self.Variant_Classification.isin(mutation_types)]
-
-    @staticmethod
-    def merge_mutations(column):
-        if (column == False).all() :
-            return False
-        # Get unique non-False mutation types
-        unique_mutations = column[column != False].unique()
-        if len(unique_mutations) > 1:
-            return "Multi_Hit"
-        elif len(unique_mutations) == 1:
-            return unique_mutations[0]
-        
-    def to_pivot_table(self) -> PivotTable: 
-        pivot_table =  self.pivot_table(
-                            values="Variant_Classification",
-                            index="Hugo_Symbol",
-                            columns="case_ID",
-                            aggfunc=MAF.merge_mutations
-                            ).fillna(False)
-        pivot_table = PivotTable(pivot_table)
-        pivot_table.sample_metadata["mutations_count"] = self.mutations_count
-        pivot_table.sample_metadata["TMB"] = self.mutations_count / 40
-        return pivot_table
-    
-    def to_mutation_table(self):
-        mutation_table = self.pivot_table(index=self.index, 
-                                columns="case_ID",
-                                values="Variant_Classification",
-                                aggfunc="first").fillna(False)
-        mutation_table = PivotTable(mutation_table)
-        mutation_table.sample_metadata["mutations_count"] = self.mutations_count
-        mutation_table.sample_metadata["TMB"] = self.mutations_count / 40
-        return mutation_table
-
-    def change_index_level(self, index_col):
-        maf = self.copy()
-        new_index_col = maf.loc[:, index_col].apply(lambda row: "|".join(row.astype(str)), axis=1)
-        maf.index = new_index_col
-        return maf
-
-    @property
-    def mutations_count(self) -> pd.Series: 
-        return self.groupby(self.case_ID).size()
-
-    def sort_by_chrom(self) -> 'MAF':
-        return self.sort_values(by=['Chromosome', 'Start_Position', 'End_Position'])
-    
-    @staticmethod
-    def merge_mafs(mafs: list['MAF']) -> 'MAF':
-        return MAF(pd.concat(mafs))
-    
-    @classmethod
-    def read_csv(self, csv_path, sep="\t"):
-        return MAF(pd.read_csv(csv_path, index_col=0, sep=sep))
-    
-    def to_csv(self, csv_path, **kwargs):
-        # Set default arguments
-        kwargs.setdefault("index", True)  # Ensure index is saved by default
-        kwargs.setdefault("sep", "\t")   # Default to tab-separated values
-        
-        # Call the parent class's to_csv method
-        super().to_csv(csv_path, **kwargs)
