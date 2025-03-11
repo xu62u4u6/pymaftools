@@ -60,39 +60,41 @@ class PivotTable(pd.DataFrame):
         return pivot_table
 
     def subset(self, 
-           genes: list = [], 
-           samples: list  = []) -> 'PivotTable':
-        """
-        Subset the PivotTable by specified genes and/or samples.
+        genes: list = [], 
+        samples: list = [], 
+        how: str = "inner") -> 'PivotTable':
 
-        Parameters:
-            genes: List of genes or a boolean Series for genes. Default is an empty list (all genes).
-            samples: List of samples or a boolean Series for samples. Default is an empty list (all samples).
+        if how not in ["inner", "outer"]:
+            raise ValueError("how must be 'inner' or 'outer'")
 
-        Returns:
-            A new PivotTable containing the specified subset.
-        """
         pivot_table = self.copy()
 
         # Subset samples
         if len(samples) > 0:
             if isinstance(samples, pd.Series):  # If it's a boolean Series
-                samples = samples.loc[self.columns]  # Align with columns
+                samples = samples.reindex(self.columns, fill_value=False)  # Align with columns
                 if samples.dtype != bool:
                     raise ValueError("When samples is a Series, it must be of boolean type.")
                 samples = samples[samples].index  # Convert to index
-            pivot_table = pivot_table.loc[:, samples]
-            pivot_table.sample_metadata = pivot_table.sample_metadata.loc[samples, :]
+            
+            if how == "inner":
+                samples = [s for s in samples if s in self.columns]  # Remove missing samples
+            pivot_table = pivot_table.reindex(columns=samples)
+            pivot_table.sample_metadata = pivot_table.sample_metadata.reindex(samples)
 
         # Subset genes
         if len(genes) > 0:
             if isinstance(genes, pd.Series):  # If it's a boolean Series
-                genes = genes.loc[self.index]  # Align with index
+                genes = genes.reindex(self.index, fill_value=False)  # Align with index
                 if genes.dtype != bool:
                     raise ValueError("When genes is a Series, it must be of boolean type.")
                 genes = genes[genes].index  # Convert to index
-            pivot_table = pivot_table.loc[genes, :]
-            pivot_table.gene_metadata = pivot_table.gene_metadata.loc[genes, :]
+            
+            if how == "inner":
+                genes = [g for g in genes if g in self.index]  # Remove missing genes
+            pivot_table = pivot_table.reindex(index=genes)
+            pivot_table.gene_metadata = pivot_table.gene_metadata.reindex(genes)
+
         return pivot_table
     
     @staticmethod
