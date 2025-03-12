@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import networkx as nx
+import pickle
 
 from statsmodels.stats.multitest import multipletests
 from scipy.stats import chi2_contingency
@@ -33,6 +34,18 @@ class PivotTable(pd.DataFrame):
         if not self.sample_metadata.index.equals(self.columns):
             raise ValueError("sample_metadata index does not match PivotTable columns.")
         
+    def to_pickle(self, file_path):
+        with open(file_path, 'wb') as f:
+            pickle.dump(self, f)
+        print(f"Data saved to {file_path}.")
+
+    @classmethod
+    def read_pickle(cls, file_path):
+        with open(file_path, 'rb') as f:
+            pivot_table_instance = pickle.load(f)
+        pivot_table_instance._validate_metadata()
+        return pivot_table_instance
+
     def to_hierarchical_clustering(self, 
                              method: str = 'ward',
                              metric: str = 'euclidean') -> dict:
