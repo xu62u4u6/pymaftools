@@ -9,6 +9,7 @@ from scipy.stats import fisher_exact
 from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
 import seaborn as sns
+from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.decomposition import PCA
 
 class PivotTable(pd.DataFrame):
@@ -323,4 +324,55 @@ class PivotTable(pd.DataFrame):
         merged_table = PivotTable(merged_data).fillna(fill_table_na_with)
         merged_table.sample_metadata = merged_metadata.fillna(fill_metadata_na_with)
         return merged_table
-    
+    def cosine_similarity(self, figsize=(30, 30), 
+                          cmap = {"LUAD": "orange", 
+                                  "ASC": "green", 
+                                  "LUSC": "blue"},
+                          title="cosine similarity"):
+                        
+        
+        data_matrix = self.T.values
+        cosine_sim = cosine_similarity(data_matrix)
+        cosine_sim_df = pd.DataFrame(cosine_sim, 
+                                    index=self.columns, 
+                                    columns=self.columns)
+
+        fig = plt.figure(figsize=figsize)
+        gs = fig.add_gridspec(2, 2, width_ratios=[40, 1], height_ratios=[40, 1], wspace=0.02, hspace=0.02)
+
+        ax_heatmap = fig.add_subplot(gs[0, 0])
+        ax_colorbar = fig.add_subplot(gs[0, 1])
+        ax_groupbar = fig.add_subplot(gs[1, 0])
+
+        sns.heatmap(cosine_sim_df, 
+                    ax=ax_heatmap, 
+                    cbar=True, 
+                    cmap="coolwarm", 
+                    alpha=0.8, 
+                    cbar_ax=ax_colorbar, 
+                    yticklabels=False,
+                    vmin=-1, 
+                    vmax=1)
+        ax_heatmap.set_xticks([])
+
+        sns.heatmap(cosine_sim_df.values[0].reshape((1, len(self.columns))), 
+                    ax=ax_groupbar, 
+                    cbar=False, 
+                    alpha=0, 
+                    )
+
+        group = self.sample_metadata['subtype']
+        color = group.map(cmap).values
+
+        for i, color in enumerate(color):
+            ax_groupbar.add_patch(Rectangle(
+                (i, 0), 1, 1,  # (x, y), width, height
+                fill=True,
+                facecolor=color,
+                edgecolor="white",
+                lw=0.1,
+                alpha=0.4
+            ))
+
+        ax_groupbar.set_xticks([])
+        ax_groupbar.set_yticks([])
