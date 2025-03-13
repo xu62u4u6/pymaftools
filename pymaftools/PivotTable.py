@@ -1,3 +1,4 @@
+import pickle
 import pandas as pd
 import numpy as np
 import networkx as nx
@@ -334,7 +335,6 @@ class PivotTable(pd.DataFrame):
                                   "LUSC": "blue"},
                           title="cosine similarity"):
                         
-        
         data_matrix = self.T.values
         cosine_sim = cosine_similarity(data_matrix)
         cosine_sim_df = pd.DataFrame(cosine_sim, 
@@ -357,6 +357,7 @@ class PivotTable(pd.DataFrame):
                     yticklabels=False,
                     vmin=-1, 
                     vmax=1)
+        
         ax_heatmap.set_xticks([])
 
         sns.heatmap(cosine_sim_df.values[0].reshape((1, len(self.columns))), 
@@ -380,3 +381,12 @@ class PivotTable(pd.DataFrame):
 
         ax_groupbar.set_xticks([])
         ax_groupbar.set_yticks([])
+
+    def order(self, group_col, group_order):
+        subset_list = []
+        assert group_col in self.sample_metadata.columns
+        for group in group_order:
+            subset_list.append(self.subset(samples=self.sample_metadata[group_col] == group))
+        table = PivotTable.merge(subset_list)
+        return table
+   
