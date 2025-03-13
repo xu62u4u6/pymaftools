@@ -9,7 +9,7 @@ from scipy.stats import fisher_exact
 from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
 import seaborn as sns
-
+from sklearn.decomposition import PCA
 
 class PivotTable(pd.DataFrame):
     # columns: gene or mutation, row: sample or case
@@ -197,6 +197,45 @@ class PivotTable(pd.DataFrame):
         pivot_table.sample_metadata = pivot_table.sample_metadata.loc[sorted_samples, :]
         
         return pivot_table
+
+    def plot_pca_samples(self, group_col="subtype", figsize=(8, 6), binary=True, 
+                     palette_dict=None, alpha=0.8, title="PCA of samples", cmap="summer", is_numeric=False):
+
+        # 1. 選擇數據表
+        pivot_table = self.to_binary_table() if binary else self  
+
+        # 2. 執行 PCA
+        pca = PCA(n_components=2)
+        pca_result = pca.fit_transform(pivot_table.T)  # 樣本在 row，所以轉置
+        explained_variance = pca.explained_variance_ratio_
+
+        # 3. 建立 PCA 結果 DataFrame
+        df = pd.DataFrame(pca_result, index=pivot_table.columns, columns=["PC1", "PC2"])
+        df[group_col] = self.sample_metadata[group_col]
+
+        xlabel = f"Principal Component 1 ({explained_variance[0] * 100:.2f}%)"
+        ylabel = f"Principal Component 2 ({explained_variance[1] * 100:.2f}%)"
+
+        # 5. 繪製 PCA 圖
+        plt.figure(figsize=figsize)
+
+        if is_numeric:
+            # 連續數值 → 使用 cmap
+            scatter = plt.scatter(df["PC1"], df["PC2"], c=df[group_col], cmap=cmap, alpha=alpha)
+            plt.colorbar(scatter, label=group_col)  # 手動加上 colorbar
+        else:
+            # 類別變數 → 使用 palette
+            sns.scatterplot(data=df, x="PC1", y="PC2", hue=group_col, palette=palette_dict or "Set1", alpha=alpha)
+
+        plt.title(title)
+        plt.xlabel(xlabel)
+        plt.ylabel(ylabel)
+        
+        if not is_numeric:
+            plt.legend(title=group_col)
+
+        plt.show()
+        return df, pca
 
     def head(self, n = 50):
         pivot_table = self.copy()
