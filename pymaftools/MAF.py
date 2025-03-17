@@ -45,9 +45,9 @@ class MAF(pd.DataFrame):
     ]
     
     @classmethod
-    def read_maf(cls, maf_path, case_ID, preffix="", suffix=""):
+    def read_maf(cls, maf_path, sample_ID, preffix="", suffix=""):
         maf = cls(pd.read_csv(maf_path, skiprows=1, sep="\t"))
-        maf["case_ID"] = f"{preffix}{case_ID}{suffix}"
+        maf["sample_ID"] = f"{preffix}{sample_ID}{suffix}"
         maf.index = maf.loc[:, cls.index_col].apply(lambda row: "|".join(row.astype(str)), axis=1) # concat column
         # maf = maf.filter_maf(cls.vaild_variant_classfication)
         return cls(maf)
@@ -78,7 +78,7 @@ class MAF(pd.DataFrame):
         pivot_table =  self.pivot_table(
                             values="Variant_Classification",
                             index="Hugo_Symbol",
-                            columns="case_ID",
+                            columns="sample_ID",
                             aggfunc=MAF.merge_mutations
                             ).fillna(False)
         pivot_table = PivotTable(pivot_table)
@@ -88,7 +88,7 @@ class MAF(pd.DataFrame):
     
     def to_mutation_table(self):
         mutation_table = self.pivot_table(index=self.index, 
-                                columns="case_ID",
+                                columns="sample_ID",
                                 values="Variant_Classification",
                                 aggfunc="first").fillna(False)
         mutation_table = PivotTable(mutation_table)
@@ -104,7 +104,7 @@ class MAF(pd.DataFrame):
 
     @property
     def mutations_count(self) -> pd.Series: 
-        return self.groupby(self.case_ID).size()
+        return self.groupby(self.sample_ID).size()
 
     def sort_by_chrom(self) -> 'MAF':
         return self.sort_values(by=['Chromosome', 'Start_Position', 'End_Position'])
@@ -127,11 +127,11 @@ class MAF(pd.DataFrame):
 
     def to_base_change_pivot_table(self):
         maf = self.copy()
-        base_change = maf.loc[maf.Variant_Type == "SNP", ["Reference_Allele", "Tumor_Seq_Allele2", "case_ID"]]
+        base_change = maf.loc[maf.Variant_Type == "SNP", ["Reference_Allele", "Tumor_Seq_Allele2", "sample_ID"]]
         base_change["Base_Change"] = base_change["Reference_Allele"] + "→" + base_change["Tumor_Seq_Allele2"]
         pivot_table = base_change.pivot_table(
             values="Reference_Allele", 
-            index="case_ID",
+            index="sample_ID",
             columns="Base_Change",
             aggfunc="count",
             fill_value=0
@@ -149,7 +149,7 @@ class MAF(pd.DataFrame):
         """
         # 重新命名符合 SigProfilerMatrixGenerator 標準
         rename_dict = {
-            "Sample": "case_ID",
+            "Sample": "sample_ID",
             "chrom": "Chromosome",
             "pos_start": "Start_Position",
             "pos_end": "End_Position",
