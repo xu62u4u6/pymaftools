@@ -129,6 +129,43 @@ class PivotTable(pd.DataFrame):
 
         table.sample_metadata["TMB"] = table.sample_metadata["mutations_count"] / table.sample_metadata["capture_size"]
         return table
+
+    def plot_boxplot_with_annot(self, 
+                                group_col="subtype", 
+                                test_col="mutations_count", 
+                                palette=None,
+                                title=None,
+                                ax=None,
+                                test='Mann-Whitney', 
+                                alpha=0.8):
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(10, 6))
+        if title is None:
+            title = f"Boxplot of {test_col} by {group_col}"
+        data = self.sample_metadata
+        gb = data.groupby(group_col)
+
+        group_pairs = list(combinations(gb.groups.keys(), 2))
+        ax.set_title(title)
+        # boxplot
+        boxplot = sns.boxplot(data=data, x=group_col, y=test_col, ax=ax, hue=group_col, palette=palette)
+        
+        # set alpha
+        for patch in boxplot.patches:
+            patch.set_facecolor((patch.get_facecolor()[0],  # R
+                                patch.get_facecolor()[1],  # G
+                                patch.get_facecolor()[2],  # B
+                                alpha))
+        # stat
+        annotator = Annotator(ax=ax, pairs=group_pairs, data=data, x=group_col, y=test_col)
+        annotator.configure(test=test, text_format='star', loc='inside', verbose=False)
+        annotator.apply_and_annotate()
+
+        # x labels (calculate sample counts)
+        sample_counts = gb.size().to_dict()
+        xticks_labels = [f"{group} (n={sample_counts[group]})" for group in gb.groups.keys()]
+        ax.set_xticklabels(xticks_labels)
+
     @staticmethod
     def calculate_frequency(df: pd.DataFrame) -> pd.Series:
         return (df != False).sum(axis=1) / df.shape[1]
