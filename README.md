@@ -49,26 +49,84 @@ filtered_all_case_maf = all_case_maf.filter_maf(MAF.nonsynonymous_types)
 # Convert to pivot table (genes x samples table, mutation classification as values)
 pivot_table = filtered_all_case_maf.to_pivot_table()
 
-# Calculate mutation frequencies
-pivot_table = pivot_table.add_freq()
+### class PivotTable
+print(pivot_table) # check pivot table
+print(pivot_table.gene_metadata) # check gene metadata
+print(pivot_table.column_metadata) # check column metadata
 
-# Sort the pivot table (by gene frequency and sample mutation count)
+
 sorted_pivot_table = (pivot_table
-                       .sort_genes_by_freq()  
-                       .sort_samples_by_mutations()
+                    .add_freq() # Calculate mutation frequencies
+                    .sort_genes_by_freq() # sort genes(rows), optional
+                    .sort_samples_by_mutations() # sort samples(columns), optional
                     )
 
-# Generate an oncoplot to show the top 50 genes with the highest mutation frequencies
-create_oncoplot(sorted_pivot_table.head(50), 
-                figsize=(26, 15),
-                ax_main_range=(0, 28), 
-                ax_freq_range=(28, 29), 
-                ax_legend_range=(29, 31),
-                mutation_counts=True)
+# Create basic oncoplot 
+oncoplot = OncoPlot(pivot_table=sorted_pivot_table.head(50), 
+                    figsize=figsize, 
+                    width_ratios=width_ratios)
+oncoplot.heatmap()
+oncoplot.plot_freq()
+oncoplot.plot_bar()
+oncoplot.add_xticklabel()
+```
+### Create oncoplot with sample metadata
+
+```python
+# load MAFs
+luad_all_case_maf = MAF.read_csv("data/WES/LUAD_all_case_maf.csv")
+lusc_all_case_maf = MAF.read_csv("data/WES/LUSC_all_case_maf.csv")
+
+# merge MAFs to single MAF object
+all_case_maf = MAF.merge_mafs([luad_all_case_maf, lusc_all_case_maf])
+
+# Sort the pivot table (by gene frequency and sample mutation count)
+pivot_table = (all_case_maf
+        .filter_maf(all_case_maf.nonsynonymous_types)
+        .to_pivot_table()
+)
+
+# load sample metadata
+all_sample_metadata = pd.read_csv("data/all_sample_metadata.csv")
+
+# get case_ID (case1_T -> case1, T) and concat sample_metadata using case_ID 
+pivot_table.sample_metadata[["case_ID", "sample_type"]] = pivot_table.columns.to_series().str.rsplit("_", n=1).apply(pd.Series)
+pivot_table.sample_metadata = pd.merge(pivot_table.sample_metadata.reset_index(), 
+                                        all_sample_metadata, 
+                                        left_on="case_ID",
+                                        right_on="case_ID", 
+                                        ).set_index(["sample_ID"])
+
+# calculate TMB using different capture size for LUAD and LUSC
+pivot_table = pivot_table.calculate_TMB(group_col="subtype", 
+                                        capture_size_dict={"LUAD": 66, 
+                                                           "LUSC": 50})
+
+# sort genes by frequency and sort samples by subtypes
+pivot_table = (pivot_table.add_freq()
+                .sort_genes_by_freq()
+                .sort_samples_by_group(group_col="subtype", group_order=["LUAD", "LUSC"], top=10)
+)
+
+# categorical_columns and numeric_columns must in pivot_table.sample_metadata.columns
+oncoplot = OncoPlot(pivot_table=pivot_table.head(40), # select top 40 genes
+                    figsize=(40, 18),
+                    width_ratios=[30, 1, 1.5],
+                    categorical_columns=["subtype", "sex", "smoke"],
+                    numeric_columns=["age"])
+oncoplot.heatmap()
+oncoplot.plot_freq()
+oncoplot.plot_bar()
+# assign cmap
+oncoplot.plot_categorical_metadata(cmap_dict={"subtype": {"LUAD": "orange", "LUSC": "blue"}, 
+                                              "smoke": {True: "gray", False: "white"},
+                                              "sex": {"M": "blue", "F": "red"}}, 
+                                   alpha=0.5)
+oncoplot.plot_numeric_metadata()
+oncoplot.add_xticklabel()
 
 ```
-![image](img/DEMO.png)
-
+![image](img/DEMO_metadata.png)
 ### Requirements
 Python 3.x
 pandas, numpy, matplotlib, seaborn
