@@ -116,6 +116,19 @@ class PivotTable(pd.DataFrame):
 
         return pivot_table
     
+    def calculate_TMB(self, default_capture_size=40, group_col="subtype", capture_size_dict=None):
+        table = self.copy()
+        table.sample_metadata["capture_size"] = default_capture_size
+
+        if capture_size_dict is not None:
+            
+            for group, size in capture_size_dict.items():
+                print(group, size)
+                mask = table.sample_metadata[group_col] == group
+                table.sample_metadata.loc[mask, "capture_size"] = size
+
+        table.sample_metadata["TMB"] = table.sample_metadata["mutations_count"] / table.sample_metadata["capture_size"]
+        return table
     @staticmethod
     def calculate_frequency(df: pd.DataFrame) -> pd.Series:
         return (df != False).sum(axis=1) / df.shape[1]

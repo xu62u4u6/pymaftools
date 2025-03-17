@@ -83,7 +83,7 @@ class MAF(pd.DataFrame):
                             ).fillna(False)
         pivot_table = PivotTable(pivot_table)
         pivot_table.sample_metadata["mutations_count"] = self.mutations_count
-        pivot_table.sample_metadata["TMB"] = self.mutations_count / 40
+        #pivot_table.sample_metadata["TMB"] = self.mutations_count / 40
         return pivot_table
     
     def to_mutation_table(self):
