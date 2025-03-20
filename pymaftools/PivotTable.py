@@ -10,12 +10,15 @@ from scipy.stats import fisher_exact
 from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
 import seaborn as sns
-from matplotlib.patches import Rectangle
+from itertools import combinations
+from statannotations.Annotator import Annotator
+from matplotlib.patches import Patch, Rectangle
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.decomposition import PCA
 from statsmodels.stats.multitest import multipletests
 from scipy.stats import chi2_contingency, fisher_exact
 from .CooccurMatrix import CooccurMatrix
+from sklearn.metrics import pairwise_distances
 
 class PivotTable(pd.DataFrame):
     # columns: gene or mutation, row: sample or case
