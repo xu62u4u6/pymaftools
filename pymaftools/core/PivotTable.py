@@ -327,7 +327,7 @@ class PivotTable(pd.DataFrame):
         if "freq" not in self.feature_metadata.columns:
             raise ValueError("freq column not found in feature_metadata.")
         pivot_table = self.copy()
-        return pivot_table.subset(genes=pivot_table.feature_metadata.freq >= threshold)
+        return pivot_table.subset(features=pivot_table.feature_metadata.freq >= threshold)
     
     def to_cooccur_matrix(self, freq=True) -> 'CooccurMatrix':
         matrix = (self != False).astype(int)
@@ -403,6 +403,7 @@ class PivotTable(pd.DataFrame):
         merged_table = PivotTable(merged_data).fillna(fill_table_na_with)
         merged_table.sample_metadata = merged_metadata.fillna(fill_metadata_na_with)
         return merged_table
+
     def simple_matching_coefficient(self):
         similarity = 1 - pairwise_distances(self.T, metric="hamming")
         similarity_df = pd.DataFrame(similarity, 
@@ -424,4 +425,14 @@ class PivotTable(pd.DataFrame):
             subset_list.append(self.subset(samples=self.sample_metadata[group_col] == group))
         table = PivotTable.merge(subset_list)
         return table
-   
+    
+    @staticmethod
+    def prepare_data(maf):
+        filtered_all_case_maf = maf.filter_maf(MAF.nonsynonymous_types)
+        pivot_table = filtered_all_case_maf.to_pivot_table()
+        sorted_pivot_table = (pivot_table
+                            .add_freq()
+                            .sort_features_by_freq()  
+                            .sort_samples_by_mutations()
+                            )
+        return sorted_pivot_table

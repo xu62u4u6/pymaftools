@@ -3,7 +3,7 @@ import numpy as np
 import networkx as nx
 import os
 import warnings
-from .PivotTable import PivotTable
+from ..PivotTable import PivotTable
 
 class MAF(pd.DataFrame):
     index_col = [
@@ -94,7 +94,6 @@ class MAF(pd.DataFrame):
                                 aggfunc="first").fillna(False)
         mutation_table = PivotTable(mutation_table)
         mutation_table.sample_metadata["mutations_count"] = self.mutations_count
-        mutation_table.sample_metadata["TMB"] = self.mutations_count / 40
         return mutation_table
 
     def change_index_level(self, index_col=None):
@@ -219,6 +218,7 @@ class MAF(pd.DataFrame):
             subset = subset[subset["refseq.ID"] == refseq_ids[0]]
         return subset[['Start', 'End', 'Label']].to_dict(orient='records'), refseq_ids[0]
     
+
     def write_maf(self, file_path):
         self.to_csv(file_path, sep="\t", index=False)
 
