@@ -97,10 +97,8 @@ class OncoPlot:
             data = self.sample_metadata[[col]].T 
             # set vmin and vmax if coolwarm cmap 
             if cmap == "coolwarm":
-                data_min = data.min().min()
-                data_max = data.max().max()
-                max_abs = max(abs(data_min), abs(data_max)) 
-                vmin, vmax = -max_abs, max_abs 
+                vextreme = max(abs(data.min().min()), abs(data.max().max()))
+                vmin, vmax = -vextreme, vextreme 
             else:
                 vmin, vmax = None, None  
 
@@ -342,4 +340,45 @@ class OncoPlot:
         if target_ax:
             target_ax.set_xticks([i + 0.5 for i in range(len(self.sample_metadata))])
             target_ax.set_xticklabels(self.sample_metadata.index, rotation=90)
+
+    def numeric_heatmap(self, cmap="RdBu"): 
+        ax = self.ax_heatmap
+        table = self.pivot_table
+        
+        # calculate vmin and vmax
+        vextreme = max(abs(table.min().min()), abs(table.max().max()))
+
+        # Create the heatmap without a colorbar first
+        hm = sns.heatmap(table, ax=ax, cmap=cmap, cbar=False,
+                        vmin=-vextreme, vmax=vextreme, center=0)
+        
+        ax.set_xticks([])
+        ax.set_xlabel("")
+        ax.set_yticks([i + 0.5 for i in range(len(table.index))])
+        ax.set_yticklabels(table.index, rotation=0)
+        
+        # Create a colorbar
+        norm = plt.Normalize(vmin=-vextreme, vmax=vextreme)
+        
+        cbar = self.fig.colorbar(
+            cm.ScalarMappable(norm=norm, cmap=cmap),
+            cax=self.ax_freq,
+            ticks=np.linspace(-vextreme, vextreme, 5),
+            shrink=0.7
+        )
+        cbar.ax.set_aspect(18)
+        cbar.outline.set_visible(False)
+        
+        cbar.ax.yaxis.set_tick_params(color="gray")
+        cbar.ax.yaxis.set_tick_params(labelcolor="black")
+        cbar.ax.tick_params(labelsize=10, length=6, width=1)
+        
+        # Formatter
+        if vextreme < 0.01 or vextreme > 1000:
+            cbar.ax.yaxis.set_major_formatter(ticker.ScalarFormatter(useMathText=True))
+        else:
+            cbar.ax.yaxis.set_major_formatter(ticker.FormatStrFormatter('%.2f'))
+        
+        self.ax_heatmap_legend.axis('off')
+        self.ax_bar.axis('off')
 
