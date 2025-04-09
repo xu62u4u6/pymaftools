@@ -1,7 +1,8 @@
 import pandas as pd
 import numpy as np
 import networkx as nx
-
+import os
+import warnings
 from .PivotTable import PivotTable
 
 class MAF(pd.DataFrame):
@@ -137,6 +138,69 @@ class MAF(pd.DataFrame):
             fill_value=0
         )
         return pivot_table
+    
+    def get_protein_info(self, gene):
+        def extract_protein_start(pos):
+            if pd.isna(pos):
+                return None
+            pos = str(pos).split('/')[0]
+            if '-' in pos:
+                return int(pos.split('-')[0])
+            try:
+                return int(pos)
+            except:
+                return None
+
+        maf = self.filter_maf(self.nonsynonymous_types)
+        sub_df = maf.loc[
+            maf["Hugo_Symbol"] == gene, 
+            ['Protein_position', 'Variant_Classification', 'Variant_Type']
+        ].copy()
+
+        # add amino acid position
+        sub_df['AA_Position'] = sub_df['Protein_position'].apply(extract_protein_start)
+
+        # get total AA length（858/1210 → 1210）
+        try:
+            AA_length = int(sub_df["Protein_position"].dropna().values[0].split('/')[-1])
+        except:
+            AA_length = None 
+
+        # count mutations and to dict
+        mutations_data = (
+            sub_df
+            .dropna(subset=['AA_Position', 'Variant_Classification'])
+            .groupby(['AA_Position', 'Variant_Classification'])
+            .size()
+            .reset_index(name='count')
+            .rename(columns={'AA_Position': 'position', 'Variant_Classification': 'type'})
+            .to_dict(orient='records')
+        )
+
+        return AA_length, mutations_data
+
+    @staticmethod
+    def get_domain_info(gene_name, AA_length, protein_domains_path=None):
+        if protein_domains_path is None:
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            protein_domains_path = os.path.join(script_dir, "../data/protein_domains.csv")
+
+        protein_domains =  pd.read_csv(protein_domains_path, index_col=0)   
+        subset = protein_domains.loc[
+            (protein_domains.HGNC == gene_name) & 
+            (protein_domains["aa.length"] == AA_length)
+        ]
+        if subset.empty:
+            raise ValueError(f"No domain info found for {gene_name} with length {AA_length}")
+
+        refseq_ids = subset["refseq.ID"].unique()
+        if len(refseq_ids) != 1:
+            warnings.warn(
+                f"Multiple refseq.IDs found for {gene_name} with length {AA_length}: {refseq_ids}. "
+                f"Selecting the first one: {refseq_ids[0]}"
+            )
+            subset = subset[subset["refseq.ID"] == refseq_ids[0]]
+        return subset[['Start', 'End', 'Label']].to_dict(orient='records'), refseq_ids[0]
     
     def write_maf(self, file_path):
         self.to_csv(file_path, sep="\t", index=False)
