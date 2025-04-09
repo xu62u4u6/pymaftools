@@ -127,41 +127,48 @@ class PivotTable(pd.DataFrame):
         table.sample_metadata["TMB"] = table.sample_metadata["mutations_count"] / table.sample_metadata["capture_size"]
         return table
 
-    def plot_boxplot_with_annot(self, 
+    @staticmethod
+    def plot_boxplot_with_annot(data, 
                                 group_col="subtype", 
                                 test_col="mutations_count", 
                                 palette=None,
                                 title=None,
                                 ax=None,
                                 test='Mann-Whitney', 
-                                alpha=0.8):
+                                alpha=0.8,
+                                order=None,
+                                fontsize=12):  # 新增 fontsize 參數
         if ax is None:
             fig, ax = plt.subplots(figsize=(10, 6))
         if title is None:
             title = f"Boxplot of {test_col} by {group_col}"
-        data = self.sample_metadata
-        gb = data.groupby(group_col)
-
-        group_pairs = list(combinations(gb.groups.keys(), 2))
-        ax.set_title(title)
-        # boxplot
-        boxplot = sns.boxplot(data=data, x=group_col, y=test_col, ax=ax, hue=group_col, palette=palette)
         
-        # set alpha
+        gb = data.groupby(group_col)
+        group_pairs = list(combinations(gb.groups.keys(), 2))
+        ax.set_title(title, fontsize=fontsize)
+
+        # boxplot
+        boxplot = sns.boxplot(data=data, x=group_col, y=test_col, ax=ax, hue=group_col, palette=palette, order=order)
+        
+        # alpha
         for patch in boxplot.patches:
             patch.set_facecolor((patch.get_facecolor()[0],  # R
                                 patch.get_facecolor()[1],  # G
                                 patch.get_facecolor()[2],  # B
                                 alpha))
+        
         # stat
-        annotator = Annotator(ax=ax, pairs=group_pairs, data=data, x=group_col, y=test_col)
+        annotator = Annotator(ax=ax, pairs=group_pairs, data=data, x=group_col, y=test_col, order=order)
         annotator.configure(test=test, text_format='star', loc='inside', verbose=False)
         annotator.apply_and_annotate()
 
-        # x labels (calculate sample counts)
+        # xticklabel with sample size 
         sample_counts = gb.size().to_dict()
-        xticks_labels = [f"{group} (n={sample_counts[group]})" for group in gb.groups.keys()]
-        ax.set_xticklabels(xticks_labels)
+        xticks_labels = [f"{group} (n={sample_counts[group]})" for group in order]
+        ax.set_xticklabels(xticks_labels, fontsize=fontsize)
+
+        ax.set_xlabel(group_col, fontsize=fontsize)
+        ax.set_ylabel(test_col, fontsize=fontsize)
 
     @staticmethod
     def calculate_frequency(df: pd.DataFrame) -> pd.Series:
