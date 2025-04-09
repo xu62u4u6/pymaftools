@@ -127,6 +127,26 @@ oncoplot.add_xticklabel()
 
 ```
 ![image](img/DEMO_metadata.png)
+
+### Create Lolipop plot
+```python
+# read MAF file
+maf = MAF.read_csv(YOUR_MAF_PATH)
+gene = "EGFR" # gene name
+AA_length, mutations_data = maf.get_protein_info(gene) # get protein length and mutations data
+domains_data, refseq_ID = MAF.get_domain_info(gene, AA_length) # search domain data match protein length
+
+# create LollipopPlot object
+plot = LollipopPlot(
+        protein_name=gene,
+        protein_length=AA_length,
+        domains=domains_data,
+        mutations=mutations_data
+    )
+plot.plot()
+
+```
+![image](img/DEMO_lollipop_plot.png)
 ### Requirements
 Python 3.x
 pandas, numpy, matplotlib, seaborn
