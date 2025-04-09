@@ -2,12 +2,6 @@ import pickle
 import pandas as pd
 import numpy as np
 import networkx as nx
-import pickle
-
-from statsmodels.stats.multitest import multipletests
-from scipy.stats import chi2_contingency
-from scipy.stats import fisher_exact
-from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
 import seaborn as sns
 from itertools import combinations
