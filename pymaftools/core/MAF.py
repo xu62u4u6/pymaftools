@@ -199,6 +199,7 @@ class MAF(pd.DataFrame):
     def get_domain_info(gene_name, AA_length, protein_domains_path=None):
         if protein_domains_path is None:
             script_dir = os.path.dirname(os.path.abspath(__file__))
+            # get domain info from https://github.com/PoisonAlien/maftools/blob/master/inst/extdata/protein_domains.RDs
             protein_domains_path = os.path.join(script_dir, "../data/protein_domains.csv")
 
         protein_domains =  pd.read_csv(protein_domains_path, index_col=0)   
