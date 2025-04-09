@@ -76,7 +76,7 @@ class PivotTable(pd.DataFrame):
         return pivot_table
 
     def subset(self, 
-        genes: list = [], 
+        features: list = [], 
         samples: list = [], 
         how: str = "inner") -> 'PivotTable':
 
@@ -98,18 +98,18 @@ class PivotTable(pd.DataFrame):
             pivot_table = pivot_table.reindex(columns=samples)
             pivot_table.sample_metadata = pivot_table.sample_metadata.reindex(samples)
 
-        # Subset genes
-        if len(genes) > 0:
-            if isinstance(genes, pd.Series):  # If it's a boolean Series
-                genes = genes.reindex(self.index, fill_value=False)  # Align with index
-                if genes.dtype != bool:
-                    raise ValueError("When genes is a Series, it must be of boolean type.")
-                genes = genes[genes].index  # Convert to index
+        # Subset features
+        if len(features) > 0:
+            if isinstance(features, pd.Series):  # If it's a boolean Series
+                features = features.reindex(self.index, fill_value=False)  # Align with index
+                if features.dtype != bool:
+                    raise ValueError("When features is a Series, it must be of boolean type.")
+                features = features[features].index  # Convert to index
             
             if how == "inner":
-                genes = [g for g in genes if g in self.index]  # Remove missing genes
-            pivot_table = pivot_table.reindex(index=genes)
-            pivot_table.feature_metadata = pivot_table.feature_metadata.reindex(genes)
+                features = [f for f in features if f in self.index]  # Remove missing features
+            pivot_table = pivot_table.reindex(index=features)
+            pivot_table.feature_metadata = pivot_table.feature_metadata.reindex(features)
 
         return pivot_table
     
@@ -182,7 +182,7 @@ class PivotTable(pd.DataFrame):
         pivot_table.feature_metadata[freq_data.columns] = freq_data
         return pivot_table
     
-    def sort_genes_by_freq(self, by="freq", ascending=False):
+    def sort_features_by_freq(self, by="freq", ascending=False):
         pivot_table = self.copy()
         sorted_index = pivot_table.feature_metadata.sort_values(by=by, ascending=ascending).index
         
@@ -221,7 +221,7 @@ class PivotTable(pd.DataFrame):
         Parameters:
         - group_col (str): The column in sample_metadata containing group information.
         - group_order (list): The order to sort the groups.
-        - top (int): The number of top genes used for sorting within each subtype.
+        - top (int): The number of top features used for sorting within each subtype.
 
         Returns:
         - PivotTable: A new PivotTable sorted by subtype and mutations.
