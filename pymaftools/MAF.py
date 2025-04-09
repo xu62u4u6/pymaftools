@@ -97,8 +97,10 @@ class MAF(pd.DataFrame):
         mutation_table.sample_metadata["TMB"] = self.mutations_count / 40
         return mutation_table
 
-    def change_index_level(self, index_col):
+    def change_index_level(self, index_col=None):
         maf = self.copy()
+        if index_col is None:
+            index_col = self.index_col
         new_index_col = maf.loc[:, index_col].apply(lambda row: "|".join(row.astype(str)), axis=1)
         maf.index = new_index_col
         return maf
