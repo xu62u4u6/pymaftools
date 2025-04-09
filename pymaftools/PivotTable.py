@@ -16,11 +16,11 @@ from sklearn.metrics import pairwise_distances
 
 class PivotTable(pd.DataFrame):
     # columns: gene or mutation, row: sample or case
-    _metadata = ["gene_metadata", "sample_metadata"]
+    _metadata = ["gene_metadata", "feature_metadata"]
     def __init__(self, data, *args, **kwargs):
         super().__init__(data, *args, **kwargs)
         self.gene_metadata = pd.DataFrame(index=self.index)
-        self.sample_metadata = pd.DataFrame(index=self.columns)
+        self.feature_metadata = pd.DataFrame(index=self.columns)
 
     @property
     def _constructor(self):
@@ -34,8 +34,8 @@ class PivotTable(pd.DataFrame):
         if not self.gene_metadata.index.equals(self.index):
             raise ValueError("gene_metadata index does not match PivotTable index.")
 
-        if not self.sample_metadata.index.equals(self.columns):
-            raise ValueError("sample_metadata index does not match PivotTable columns.")
+        if not self.feature_metadata.index.equals(self.columns):
+            raise ValueError("feature_metadata index does not match PivotTable columns.")
         
     def to_pickle(self, file_path):
         with open(file_path, 'wb') as f:
@@ -72,7 +72,7 @@ class PivotTable(pd.DataFrame):
     def copy(self, deep=True):
         pivot_table = super().copy(deep=deep)
         pivot_table.gene_metadata = self.gene_metadata.copy(deep=deep)
-        pivot_table.sample_metadata = self.sample_metadata.copy(deep=deep)
+        pivot_table.feature_metadata = self.feature_metadata.copy(deep=deep)
         return pivot_table
 
     def subset(self, 
@@ -96,7 +96,7 @@ class PivotTable(pd.DataFrame):
             if how == "inner":
                 samples = [s for s in samples if s in self.columns]  # Remove missing samples
             pivot_table = pivot_table.reindex(columns=samples)
-            pivot_table.sample_metadata = pivot_table.sample_metadata.reindex(samples)
+            pivot_table.feature_metadata = pivot_table.feature_metadata.reindex(samples)
 
         # Subset genes
         if len(genes) > 0:
@@ -115,16 +115,16 @@ class PivotTable(pd.DataFrame):
     
     def calculate_TMB(self, default_capture_size=40, group_col="subtype", capture_size_dict=None):
         table = self.copy()
-        table.sample_metadata["capture_size"] = default_capture_size
+        table.feature_metadata["capture_size"] = default_capture_size
 
         if capture_size_dict is not None:
             
             for group, size in capture_size_dict.items():
                 print(group, size)
-                mask = table.sample_metadata[group_col] == group
-                table.sample_metadata.loc[mask, "capture_size"] = size
+                mask = table.feature_metadata[group_col] == group
+                table.feature_metadata.loc[mask, "capture_size"] = size
 
-        table.sample_metadata["TMB"] = table.sample_metadata["mutations_count"] / table.sample_metadata["capture_size"]
+        table.feature_metadata["TMB"] = table.feature_metadata["mutations_count"] / table.feature_metadata["capture_size"]
         return table
 
     def plot_boxplot_with_annot(self, 
@@ -203,14 +203,14 @@ class PivotTable(pd.DataFrame):
         pivot_table = self.copy()
         binary_pivot_table = pivot_table != False
         mutations_weight = binary_pivot_table.head(top).apply(binary_sort_key, axis=0)
-        pivot_table.sample_metadata["mutations_weight"] = mutations_weight
+        pivot_table.feature_metadata["mutations_weight"] = mutations_weight
         sorted_samples = (mutations_weight
                     .sort_values(ascending=False)  
                     .index)                        
         
         # sort by order
         pivot_table = pivot_table.loc[:, sorted_samples]
-        pivot_table.sample_metadata = pivot_table.sample_metadata.loc[sorted_samples, :]
+        pivot_table.feature_metadata = pivot_table.feature_metadata.loc[sorted_samples, :]
         return pivot_table
     
     def sort_samples_by_group(self, group_col="subtype", group_order=["LUAD", "ASC", "LUSC"], top=10):
@@ -219,7 +219,7 @@ class PivotTable(pd.DataFrame):
         apply sort_samples_by_mutations.
 
         Parameters:
-        - group_col (str): The column in sample_metadata containing group information.
+        - group_col (str): The column in feature_metadata containing group information.
         - group_order (list): The order to sort the groups.
         - top (int): The number of top genes used for sorting within each subtype.
 
@@ -228,15 +228,15 @@ class PivotTable(pd.DataFrame):
         """
         pivot_table = self.copy()
         
-        # 確保 group_col 存在於 sample_metadata
-        if group_col not in pivot_table.sample_metadata.columns:
-            raise ValueError(f"Column '{group_col}' not found in sample_metadata.")
+        # 確保 group_col 存在於 feature_metadata
+        if group_col not in pivot_table.feature_metadata.columns:
+            raise ValueError(f"Column '{group_col}' not found in feature_metadata.")
         
         sorted_samples = []
         
         # 依照 subtype_order 進行分組排序
         for subtype in group_order:
-            subtype_samples = pivot_table.sample_metadata[pivot_table.sample_metadata[group_col] == subtype].index
+            subtype_samples = pivot_table.feature_metadata[pivot_table.feature_metadata[group_col] == subtype].index
             
             if len(subtype_samples) > 0:
                 # 篩選出該 subtype 的樣本，並應用 sort_samples_by_mutations
@@ -247,7 +247,7 @@ class PivotTable(pd.DataFrame):
         
         # 重新排列 PivotTable
         pivot_table = pivot_table.loc[:, sorted_samples]
-        pivot_table.sample_metadata = pivot_table.sample_metadata.loc[sorted_samples, :]
+        pivot_table.feature_metadata = pivot_table.feature_metadata.loc[sorted_samples, :]
         
         return pivot_table
 
@@ -275,10 +275,10 @@ class PivotTable(pd.DataFrame):
         # caculte PCA result
         pca_result_df, explained_variance, pca = self.PCA(to_binary=to_binary)
 
-        # ensure group_col exists in sample_metadata
-        if group_col not in self.sample_metadata.columns:
-            raise ValueError(f"Column '{group_col}' not found in sample_metadata.")
-        pca_result_df[group_col] = self.sample_metadata[group_col]
+        # ensure group_col exists in feature_metadata
+        if group_col not in self.feature_metadata.columns:
+            raise ValueError(f"Column '{group_col}' not found in feature_metadata.")
+        pca_result_df[group_col] = self.feature_metadata[group_col]
 
         # plot PCA scatter plot
         plt.figure(figsize=figsize)
@@ -337,9 +337,9 @@ class PivotTable(pd.DataFrame):
 
     def chisquare_test(self, group_col, group1, group2, alpha=0.05, minimum_mutations=2):
         binary_pivot_table = self.to_binary_table()
-        sample_metadata = binary_pivot_table.sample_metadata
-        subset1 = binary_pivot_table.subset(samples=sample_metadata[group_col] == group1)
-        subset2 = binary_pivot_table.subset(samples=sample_metadata[group_col] == group2)
+        feature_metadata = binary_pivot_table.feature_metadata
+        subset1 = binary_pivot_table.subset(samples=feature_metadata[group_col] == group1)
+        subset2 = binary_pivot_table.subset(samples=feature_metadata[group_col] == group2)
 
         df = pd.DataFrame(index=binary_pivot_table.index, 
                         columns=[f"{group1}_True", f"{group1}_False", f"{group2}_True", f"{group2}_False"])
@@ -386,15 +386,15 @@ class PivotTable(pd.DataFrame):
             )
 
             merged_metadata = pd.concat(
-                [table.sample_metadata.loc[common_index] for table in tables], axis=0, join="inner"
+                [table.feature_metadata.loc[common_index] for table in tables], axis=0, join="inner"
             )
 
         else:
             merged_data = pd.concat([t for t in tables], axis=1, join="outer")
-            merged_metadata = pd.concat([t.sample_metadata for t in tables], axis=0, join="outer")
+            merged_metadata = pd.concat([t.feature_metadata for t in tables], axis=0, join="outer")
             
         merged_table = PivotTable(merged_data).fillna(fill_table_na_with)
-        merged_table.sample_metadata = merged_metadata.fillna(fill_metadata_na_with)
+        merged_table.feature_metadata = merged_metadata.fillna(fill_metadata_na_with)
         return merged_table
     def simple_matching_coefficient(self):
         similarity = 1 - pairwise_distances(self.T, metric="hamming")
@@ -412,9 +412,9 @@ class PivotTable(pd.DataFrame):
 
     def order(self, group_col, group_order):
         subset_list = []
-        assert group_col in self.sample_metadata.columns
+        assert group_col in self.feature_metadata.columns
         for group in group_order:
-            subset_list.append(self.subset(samples=self.sample_metadata[group_col] == group))
+            subset_list.append(self.subset(samples=self.feature_metadata[group_col] == group))
         table = PivotTable.merge(subset_list)
         return table
    
