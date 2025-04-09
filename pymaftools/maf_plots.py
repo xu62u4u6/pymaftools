@@ -96,6 +96,15 @@ class OncoPlot:
         for col, ax in self.axs_numeric_columns.items():
             cmap = cmap_dict.get(col, "Blues") if cmap_dict else "Blues"
             data = self.sample_metadata[[col]].T 
+            # set vmin and vmax if coolwarm cmap 
+            if cmap == "coolwarm":
+                data_min = data.min().min()
+                data_max = data.max().max()
+                max_abs = max(abs(data_min), abs(data_max)) 
+                vmin, vmax = -max_abs, max_abs 
+            else:
+                vmin, vmax = None, None  
+
             sns.heatmap(
                 data,
                 cmap=cmap,
@@ -108,7 +117,9 @@ class OncoPlot:
                 annot=annotate,  # Enable/disable annotation
                 fmt = fmt if annotate else "",  # Format to 2 decimal places if enabled
                 annot_kws ={"size": annotation_font_size} if annotate else None,  # Font size for annotations
-                alpha=alpha
+                alpha=alpha,
+                vmin=vmin,
+                vmax=vmax,
             )
             ax.set_yticks([i + 0.5 for i in range(len(data.index))])  # Shift the ticks by +0.5
             ax.set_yticklabels(data.index, rotation=0)  # Set labels horizontally
