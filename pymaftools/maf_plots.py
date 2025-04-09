@@ -382,3 +382,28 @@ class OncoPlot:
         self.ax_heatmap_legend.axis('off')
         self.ax_bar.axis('off')
 
+    @staticmethod
+    def default_oncoplot(pivot_table, figsize=(30, 15), width_ratios=[20, 1, 2]):
+        oncoplot = OncoPlot(pivot_table=pivot_table, figsize=figsize, width_ratios=width_ratios)
+        oncoplot.heatmap()
+        oncoplot.plot_freq()
+        oncoplot.plot_bar()
+        oncoplot.add_xticklabel()
+        return oncoplot
+    
+    def save_figure(self, filename: str, dpi: int = 300, bbox_inches: str = 'tight', transparent: bool = False, **kwargs):
+        if self.fig is None:
+            print("Figure is not exist.")
+            return
+
+        try:
+            self.fig.savefig(
+                filename,
+                dpi=dpi,
+                bbox_inches=bbox_inches,
+                transparent=transparent,
+                **kwargs
+            )
+            print(f"Figure saved to: {filename}")
+        except Exception as e:
+            print(f"Error while saving figure: {e}")
