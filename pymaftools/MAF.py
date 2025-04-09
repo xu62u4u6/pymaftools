@@ -142,6 +142,10 @@ class MAF(pd.DataFrame):
             aggfunc="count",
             fill_value=0
         )
+        pivot_table = PivotTable(pivot_table.T)
+        pivot_table.sample_metadata["ti"] = pivot_table.loc[['A→G', 'C→T', 'G→A', 'T→C']].sum()
+        pivot_table.sample_metadata["tv"] = pivot_table.loc[['A→C', 'A→T', 'C→A', 'C→G', 'G→C', 'G→T', 'T→A', 'T→G']].sum()
+        pivot_table.sample_metadata["ti/tv"] = pivot_table.sample_metadata.ti / pivot_table.sample_metadata.tv
         return pivot_table
     
     def get_protein_info(self, gene):
