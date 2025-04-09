@@ -257,44 +257,64 @@ class PivotTable(pd.DataFrame):
         
         return pivot_table
 
-    def plot_pca_samples(self, group_col="subtype", figsize=(8, 6), binary=True, 
-                     palette_dict=None, alpha=0.8, title="PCA of samples", cmap="summer", is_numeric=False):
+    def PCA(self, to_binary):
+        """
+        Perform PCA on the (transposed) pivot table.
 
-        # 1. 選擇數據表
-        pivot_table = self.to_binary_table() if binary else self  
-
-        # 2. 執行 PCA
+        Returns:
+            - pca_result_df: DataFrame with PC1 and PC2 for each sample.
+            - explained_variance: List of variance ratio for PC1 and PC2.
+            - pca: Fitted PCA object.
+        """
+        pivot_table = self.to_binary_table() if to_binary else self  
         pca = PCA(n_components=2)
         pca_result = pca.fit_transform(pivot_table.T)  # 樣本在 row，所以轉置
         explained_variance = pca.explained_variance_ratio_
+        pca_result_df = pd.DataFrame(pca_result, index=pivot_table.columns, columns=["PC1", "PC2"])
+        return pca_result_df, explained_variance, pca
 
-        # 3. 建立 PCA 結果 DataFrame
-        df = pd.DataFrame(pca_result, index=pivot_table.columns, columns=["PC1", "PC2"])
-        df[group_col] = self.sample_metadata[group_col]
+    def plot_pca_samples(self, group_col="subtype", figsize=(8, 6), to_binary=False, 
+                     palette_dict=None, alpha=0.8, title="PCA of samples", cmap="summer", is_numeric=False):
+        """
+        Plot PCA scatter plot of samples colored by group_col.
+        """
+        # caculte PCA result
+        pca_result_df, explained_variance, pca = self.PCA(to_binary=to_binary)
 
-        xlabel = f"Principal Component 1 ({explained_variance[0] * 100:.2f}%)"
-        ylabel = f"Principal Component 2 ({explained_variance[1] * 100:.2f}%)"
+        # ensure group_col exists in sample_metadata
+        if group_col not in self.sample_metadata.columns:
+            raise ValueError(f"Column '{group_col}' not found in sample_metadata.")
+        pca_result_df[group_col] = self.sample_metadata[group_col]
 
-        # 5. 繪製 PCA 圖
+        # plot PCA scatter plot
         plt.figure(figsize=figsize)
 
         if is_numeric:
-            # 連續數值 → 使用 cmap
-            scatter = plt.scatter(df["PC1"], df["PC2"], c=df[group_col], cmap=cmap, alpha=alpha)
+            # numeric → cmap
+            scatter = plt.scatter(pca_result_df["PC1"], 
+                                  pca_result_df["PC2"], 
+                                  c=pca_result_df[group_col], 
+                                  cmap=cmap, 
+                                  alpha=alpha)
             plt.colorbar(scatter, label=group_col)  # 手動加上 colorbar
         else:
-            # 類別變數 → 使用 palette
-            sns.scatterplot(data=df, x="PC1", y="PC2", hue=group_col, palette=palette_dict or "Set1", alpha=alpha)
+            # categorical → palette
+            scatter = sns.scatterplot(data=pca_result_df, 
+                            x="PC1", 
+                            y="PC2", 
+                            hue=group_col, 
+                            palette=palette_dict or "Set1", 
+                            alpha=alpha)
 
         plt.title(title)
-        plt.xlabel(xlabel)
-        plt.ylabel(ylabel)
+        plt.xlabel(f"Principal Component 1 ({explained_variance[0] * 100:.2f}%)")
+        plt.ylabel(f"Principal Component 2 ({explained_variance[1] * 100:.2f}%)")
         
         if not is_numeric:
             plt.legend(title=group_col)
 
         plt.show()
-        return df, pca
+        return pca_result_df, explained_variance, pca
 
     def head(self, n = 50):
         pivot_table = self.copy()
