@@ -3,9 +3,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 import seaborn as sns
-
-from .maf_utils import PivotTable
-
+from matplotlib import cm, ticker
+from .PivotTable import PivotTable
 
 class OncoPlot:
     all_mutation_cmap = {
@@ -124,16 +123,23 @@ class OncoPlot:
             ax.set_yticks([i + 0.5 for i in range(len(data.index))])  # Shift the ticks by +0.5
             ax.set_yticklabels(data.index, rotation=0)  # Set labels horizontally
 
-    def heatmap(self, show_frame=False, n=3):
+    def heatmap(self, show_frame=False, n=3, cmap=None, table=None, width=1, height=1, line_color="white"):
+        if table is None:
+            table = self.pivot_table
+        if cmap is None:
+            cmap = self.cmap
+        
         def color_encode(val):
-            return self.cmap.get(val, '#ffffff')
-        color_matrix = self.pivot_table.map(color_encode)
+            return cmap.get(val, "#ffffff")
+        color_matrix = table.map(color_encode)
         
         self.plot_color_heatmap(self.ax_heatmap, 
                         color_matrix,
-                        linecolor=self.line_color,
+                        linecolor=line_color,
                         linewidth=1,
-                        xticklabels=False
+                        xticklabels=False,
+                        width=width,
+                        height=height
                         )
         
         # add frame every n columns
@@ -231,6 +237,18 @@ class OncoPlot:
         return color_matrix
     
     def plot_categorical_metadata(self, annotate=False, cmap_dict=None, alpha=1.0, default_cmap="pastel", annotation_font_size=10, annotate_text_color="black"):
+        """
+        cmap_dict = {
+        "subtype": {
+            "LUAD": "orange",
+            "LUSC": "blue",
+            "ASC": "green"
+        },
+        "smoke": {
+            "is_smoke": "gray",
+            "no_smoke": "white"
+        },
+        """
         for col, ax in self.axs_categorical_columns.items():
             data = self.sample_metadata[[col]].T  # Ensure you pass a DataFrame
             color_matrix = self.categorical_cmap(data, cmap_dict=cmap_dict, default_cmap=default_cmap)
@@ -262,18 +280,20 @@ class OncoPlot:
 
     @staticmethod
     def plot_color_heatmap(ax, 
-                           color_matrix: pd.DataFrame, 
-                           linecolor='white', 
-                           linewidth=1, 
-                           xticklabels=False, 
-                           yticklabels=True,
-                           alpha=1.0):
+                        color_matrix: pd.DataFrame, 
+                        linecolor='white', 
+                        linewidth=1, 
+                        xticklabels=False, 
+                        yticklabels=True,
+                        alpha=1.0,
+                        width=1.0, 
+                        height=1.0):
         
         ones_matrix = color_matrix.copy()
         ones_matrix[:] = 0 
         ones_matrix = ones_matrix.astype(float)
 
-        # Plot background heatmap (using ones matrix to hold size)
+        # Plot background heatmap (using ones_matrix to hold size)
         sns.heatmap(
             ones_matrix,
             cbar=False,
@@ -284,25 +304,27 @@ class OncoPlot:
             yticklabels=yticklabels,
             cmap="Blues",
             alpha=0
-            
         )
 
-        # Overlay color matrix
         for i in range(color_matrix.shape[0]):
             for j in range(color_matrix.shape[1]):
                 ax.add_patch(Rectangle(
-                    (j, i), 1, 1,
+                    (j + (1 - width) / 2, i + (1 - height) / 2),  # 調整 x 和 y，讓方格置中
+                    width,  
+                    height,
                     fill=True,
                     facecolor=color_matrix.iloc[i, j],
                     edgecolor=linecolor,
                     lw=linewidth,
                     alpha=alpha
                 ))
+
         ax.set_xticks([])
         ax.set_xlabel("")
         ax.set_yticks([i + 0.5 for i in range(len(color_matrix.index))])  # Shift the ticks by +0.5
         ax.set_yticklabels(color_matrix.index, rotation=0)  # Set labels horizontally
         return ax
+
 
     def add_xticklabel(self):
         # get the maximum row number
