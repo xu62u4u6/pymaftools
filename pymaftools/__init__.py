@@ -1,4 +1,5 @@
 # pyMAF/__init__.py
+# core
 from .core.PivotTable import PivotTable
 from .core.MAF import MAF
 from .core.CooccurMatrix import CooccurMatrix

@@ -3,7 +3,7 @@ import numpy as np
 import networkx as nx
 import os
 import warnings
-from ..PivotTable import PivotTable
+from .PivotTable import PivotTable
 
 class MAF(pd.DataFrame):
     index_col = [

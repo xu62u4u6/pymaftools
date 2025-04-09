@@ -8,11 +8,13 @@ from itertools import combinations
 from statannotations.Annotator import Annotator
 from matplotlib.patches import Patch, Rectangle
 from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.metrics import pairwise_distances
 from sklearn.decomposition import PCA
 from statsmodels.stats.multitest import multipletests
 from scipy.stats import chi2_contingency, fisher_exact
 from .CooccurMatrix import CooccurMatrix
-from sklearn.metrics import pairwise_distances
+from .MAF import MAF
+
 
 class PivotTable(pd.DataFrame):
     # columns: gene or mutation, row: sample or case
