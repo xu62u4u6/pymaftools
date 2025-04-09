@@ -131,6 +131,14 @@ class MAF(pd.DataFrame):
         # Call the parent class's to_csv method
         super().to_csv(csv_path, **kwargs)
 
+    def to_MAF(self, maf_path, **kwargs):
+        # Set default arguments
+        kwargs.setdefault("index", False)  # Ensure index is saved by default
+        kwargs.setdefault("sep", "\t")   # Default to tab-separated values
+        
+        # Call the parent class's to_csv method
+        super().to_csv(maf_path, **kwargs)
+
     def to_base_change_pivot_table(self):
         maf = self.copy()
         base_change = maf.loc[maf.Variant_Type == "SNP", ["Reference_Allele", "Tumor_Seq_Allele2", "sample_ID"]]
