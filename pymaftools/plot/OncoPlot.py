@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 import seaborn as sns
 from matplotlib import cm, ticker
-from .PivotTable import PivotTable
+from ..core.PivotTable import PivotTable
 
 class OncoPlot:
     all_mutation_cmap = {
