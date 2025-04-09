@@ -2,3 +2,6 @@
 from .core.PivotTable import PivotTable
 from .core.MAF import MAF
 from .core.CooccurMatrix import CooccurMatrix
+
+# plot
+from .plot.OncoPlot import OncoPlot
