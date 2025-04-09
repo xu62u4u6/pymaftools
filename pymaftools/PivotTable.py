@@ -16,10 +16,10 @@ from sklearn.metrics import pairwise_distances
 
 class PivotTable(pd.DataFrame):
     # columns: gene or mutation, row: sample or case
-    _metadata = ["gene_metadata", "sample_metadata"]
+    _metadata = ["feature_metadata", "sample_metadata"]
     def __init__(self, data, *args, **kwargs):
         super().__init__(data, *args, **kwargs)
-        self.gene_metadata = pd.DataFrame(index=self.index)
+        self.feature_metadata = pd.DataFrame(index=self.index)
         self.sample_metadata = pd.DataFrame(index=self.columns)
 
     @property
@@ -31,8 +31,8 @@ class PivotTable(pd.DataFrame):
         return _new_constructor
     
     def _validate_metadata(self):
-        if not self.gene_metadata.index.equals(self.index):
-            raise ValueError("gene_metadata index does not match PivotTable index.")
+        if not self.feature_metadata.index.equals(self.index):
+            raise ValueError("feature_metadata index does not match PivotTable index.")
 
         if not self.sample_metadata.index.equals(self.columns):
             raise ValueError("sample_metadata index does not match PivotTable columns.")
@@ -71,7 +71,7 @@ class PivotTable(pd.DataFrame):
 
     def copy(self, deep=True):
         pivot_table = super().copy(deep=deep)
-        pivot_table.gene_metadata = self.gene_metadata.copy(deep=deep)
+        pivot_table.feature_metadata = self.feature_metadata.copy(deep=deep)
         pivot_table.sample_metadata = self.sample_metadata.copy(deep=deep)
         return pivot_table
 
@@ -109,7 +109,7 @@ class PivotTable(pd.DataFrame):
             if how == "inner":
                 genes = [g for g in genes if g in self.index]  # Remove missing genes
             pivot_table = pivot_table.reindex(index=genes)
-            pivot_table.gene_metadata = pivot_table.gene_metadata.reindex(genes)
+            pivot_table.feature_metadata = pivot_table.feature_metadata.reindex(genes)
 
         return pivot_table
     
@@ -179,18 +179,18 @@ class PivotTable(pd.DataFrame):
         for group in groups.keys():
             freq_data[f"{group}_freq"] = PivotTable.calculate_frequency(groups[group])
         freq_data["freq"] = PivotTable.calculate_frequency(pivot_table)
-        pivot_table.gene_metadata[freq_data.columns] = freq_data
+        pivot_table.feature_metadata[freq_data.columns] = freq_data
         return pivot_table
     
     def sort_genes_by_freq(self, by="freq", ascending=False):
         pivot_table = self.copy()
-        sorted_index = pivot_table.gene_metadata.sort_values(by=by, ascending=ascending).index
+        sorted_index = pivot_table.feature_metadata.sort_values(by=by, ascending=ascending).index
         
         # sort pivot table
         pivot_table = pivot_table.loc[sorted_index]
 
-        # also sort gene_metadata
-        pivot_table.gene_metadata = pivot_table.gene_metadata.loc[sorted_index]
+        # also sort feature_metadata
+        pivot_table.feature_metadata = pivot_table.feature_metadata.loc[sorted_index]
         return pivot_table
 
     def sort_samples_by_mutations(self, top: int = 10):
@@ -313,14 +313,14 @@ class PivotTable(pd.DataFrame):
     def head(self, n = 50):
         pivot_table = self.copy()
         pivot_table = pivot_table.iloc[:n]
-        pivot_table.gene_metadata = pivot_table.gene_metadata.iloc[:n]
+        pivot_table.feature_metadata = pivot_table.feature_metadata.iloc[:n]
         return pivot_table
     
     def filter_by_freq(self, threshold=0.05):
-        if "freq" not in self.gene_metadata.columns:
-            raise ValueError("freq column not found in gene_metadata.")
+        if "freq" not in self.feature_metadata.columns:
+            raise ValueError("freq column not found in feature_metadata.")
         pivot_table = self.copy()
-        return pivot_table.subset(genes=pivot_table.gene_metadata.freq >= threshold)
+        return pivot_table.subset(genes=pivot_table.feature_metadata.freq >= threshold)
     
     def to_cooccur_matrix(self, freq=True) -> 'CooccurMatrix':
         matrix = (self != False).astype(int)
