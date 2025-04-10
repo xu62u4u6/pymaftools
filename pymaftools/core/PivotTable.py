@@ -13,7 +13,6 @@ from sklearn.decomposition import PCA
 from statsmodels.stats.multitest import multipletests
 from scipy.stats import chi2_contingency, fisher_exact
 from .CooccurMatrix import CooccurMatrix
-from .MAF import MAF
 
 
 class PivotTable(pd.DataFrame):
@@ -430,6 +429,7 @@ class PivotTable(pd.DataFrame):
     
     @staticmethod
     def prepare_data(maf):
+        from .MAF import MAF
         filtered_all_case_maf = maf.filter_maf(MAF.nonsynonymous_types)
         pivot_table = filtered_all_case_maf.to_pivot_table()
         sorted_pivot_table = (pivot_table
