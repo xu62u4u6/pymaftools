@@ -116,10 +116,12 @@ class MAF(pd.DataFrame):
         return MAF(pd.concat(mafs))
     
     @classmethod
-    def read_csv(cls, csv_path, sep="\t", reindex=True):
-        maf = cls(pd.read_csv(csv_path, sep=sep))
+    def read_csv(cls, csv_path, sep="\t", reindex=False):
         if reindex:
+            maf = cls(pd.read_csv(csv_path, sep=sep))
             maf = maf.change_index_level()
+        else:
+            maf = cls(pd.read_csv(csv_path, sep=sep, index_col=0))
         return maf
     
     def to_csv(self, csv_path, **kwargs):
