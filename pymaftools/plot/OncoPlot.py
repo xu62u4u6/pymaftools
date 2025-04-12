@@ -42,7 +42,7 @@ class OncoPlot:
     def __init__(self, pivot_table: PivotTable, **kwargs):
         # load pivottable
         self.pivot_table = pivot_table
-        self.gene_metadata = pivot_table.gene_metadata
+        self.feature_metadata = pivot_table.feature_metadata
         self.sample_metadata = pivot_table.sample_metadata
 
         self.set_config(**kwargs)
