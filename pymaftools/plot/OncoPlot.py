@@ -303,15 +303,18 @@ class OncoPlot:
             cmap="Blues",
             alpha=0
         )
-
+        
         for i in range(color_matrix.shape[0]):
             for j in range(color_matrix.shape[1]):
+                face_color = color_matrix.iloc[i, j]
+                if face_color == "#ffffff":
+                    continue
                 ax.add_patch(Rectangle(
                     (j + (1 - width) / 2, i + (1 - height) / 2),  # 調整 x 和 y，讓方格置中
                     width,  
                     height,
                     fill=True,
-                    facecolor=color_matrix.iloc[i, j],
+                    facecolor=face_color,
                     edgecolor=linecolor,
                     lw=linewidth,
                     alpha=alpha
