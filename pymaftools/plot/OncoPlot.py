@@ -157,7 +157,54 @@ class OncoPlot:
         legend_elements = [Rectangle((0, 0), 1, 1, color=self.cmap[key], label=key) for key in self.cmap.keys()]
         self.ax_heatmap_legend.legend(handles=legend_elements, title="Variant Types", loc='center', fontsize='small', frameon=False)
         self.ax_heatmap_legend.axis('off')
+
+    @staticmethod
+    def categorical_heatmap(table, category_cmap, ax=None, fig_size=(10, 6), unknown_color="white", linecolor="white", **kwargs):
+        if ax is None:
+            fig, ax = plt.subplots(figsize=fig_size)
+        else:
+            fig = ax.get_figure()
+        category_to_index = {k: i for i, k in enumerate(category_cmap.keys())}
+        table_mapped = table.map(lambda x: category_to_index.get(x, len(category_cmap)))
+        has_unknown = table.map(lambda x: x not in category_cmap).any().any()
+
+        color_list = list(category_cmap.values())
+        if has_unknown:
+            color_list.append(unknown_color)
+        cmap = ListedColormap(color_list)
+
+        # plot heatmap
+        sns.heatmap(table_mapped, cmap=cmap, cbar=False, ax=ax, linecolor=linecolor, linewidths=0.5, **kwargs)
+
+        # perpare legend info
+        legend_info = list(category_cmap.items())
+        if has_unknown:
+            legend_info.append(("Unknown", unknown_color))
+
+        return fig, ax, legend_info
+    
+    def heatmap_optimized(self, cmap_dict=None, linecolor="white", linewidth=1):
+        if cmap_dict is None:
+            cmap_dict = self.cmap # Your original dictionary like nonsynymous_cmap
+
+        fig, ax, legend_info = self.categorical_heatmap(table=self.pivot_table, 
+                                                        category_cmap=cmap_dict, 
+                                                        linecolor=linecolor, 
+                                                        linewidth=linewidth,
+                                                        ax=self.ax_heatmap,
+                                                        vmin=0, # Ensure mapping uses full range
+                                                        vmax=len(cmap_dict))
         
+        ax.set_xticks([])
+        ax.set_xlabel("")
+        ax.set_yticks([i + 0.5 for i in range(len(self.pivot_table.index))])  # Shift the ticks by +0.5
+        ax.set_yticklabels(self.pivot_table.index, rotation=0)  # Set labels horizontally
+
+        legend_elements = [Rectangle((0, 0), 1, 1, color=cmap_dict[key], label=key)
+                        for key in cmap_dict.keys() if key != "Unknown"] # Exclude placeholder if added
+        self.ax_heatmap_legend.legend(handles=legend_elements, title="Variant Types", loc='center', fontsize='small', frameon=False)
+        self.ax_heatmap_legend.axis('off')
+         
     def plot_bar(self, tmb=None, fontsize=6, bar_value=False):    
         tmb = tmb or self.sample_metadata.TMB
         x = np.arange(len(tmb))
