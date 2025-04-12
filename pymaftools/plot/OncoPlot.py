@@ -178,7 +178,7 @@ class OncoPlot:
         self.ax_bar.set_ylabel('TMB')
 
     def plot_freq(self, freq_columns=["freq"]):
-        freq_data = self.gene_metadata[freq_columns]
+        freq_data = self.feature_metadata[freq_columns]
         sns.heatmap(
                 freq_data,
                 cbar=False,
