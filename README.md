@@ -49,15 +49,15 @@ filtered_all_case_maf = all_case_maf.filter_maf(MAF.nonsynonymous_types)
 # Convert to pivot table (genes x samples table, mutation classification as values)
 pivot_table = filtered_all_case_maf.to_pivot_table()
 
-### class PivotTable
+# class PivotTable
 print(pivot_table) # check pivot table
-print(pivot_table.gene_metadata) # check gene metadata
-print(pivot_table.column_metadata) # check column metadata
+print(pivot_table.gene_metadata) # check feature metadata
+print(pivot_table.sample_metadata) # check sample metadata
 
 
 sorted_pivot_table = (pivot_table
                     .add_freq() # Calculate mutation frequencies
-                    .sort_genes_by_freq() # sort genes(rows), optional
+                    .sort_features_by_freq() # sort features(rows), optional
                     .sort_samples_by_mutations() # sort samples(columns), optional
                     )
 
@@ -74,11 +74,11 @@ oncoplot.add_xticklabel()
 
 ```python
 # load MAFs
-luad_all_case_maf = MAF.read_csv("data/WES/LUAD_all_case_maf.csv")
-lusc_all_case_maf = MAF.read_csv("data/WES/LUSC_all_case_maf.csv")
+LUAD_maf = MAF.read_csv("data/WES/LUAD_all_case_maf.csv")
+LUSC_maf = MAF.read_csv("data/WES/LUSC_all_case_maf.csv")
 
 # merge MAFs to single MAF object
-all_case_maf = MAF.merge_mafs([luad_all_case_maf, lusc_all_case_maf])
+all_case_maf = MAF.merge_mafs([LUAD_maf, LUSC_maf])
 
 # Sort the pivot table (by gene frequency and sample mutation count)
 pivot_table = (all_case_maf
@@ -104,7 +104,7 @@ pivot_table = pivot_table.calculate_TMB(group_col="subtype",
 
 # sort genes by frequency and sort samples by subtypes
 pivot_table = (pivot_table.add_freq()
-                .sort_genes_by_freq()
+                .sort_features_by_freq()
                 .sort_samples_by_group(group_col="subtype", group_order=["LUAD", "LUSC"], top=10)
 )
 
