@@ -1,28 +1,31 @@
 
 # pymaftools
 
-`pymaftools` is a Python package designed to handle and analyze MAF (Mutation Annotation Format) files. It provides utilities for working with mutation data, including the `MAF` and `PivotTable` classes for data manipulation, and functions for visualizing mutation data with oncoplots.
-
+`pymaftools` is a Python package designed to handle and analyze MAF (Mutation Annotation Format) files. It provides utilities for working with mutation data, including the `MAF` and `PivotTable` classes for data manipulation, and functions for visualizing mutation data with oncoplots.<BR><BR>
+![image](img/pymaftools_overview.svg)
 ## Features
 
 - **MAF Class**: A utility to load, parse, and manipulate MAF files.
 - **PivotTable Class**: A custom pivot table implementation for summarizing mutation frequencies and sorting genes and samples.
-- **Oncoplot Visualization**: Generate oncoplot visualizations with mutation data and frequencies.
+- **Oncoplot**: Generate oncoplot visualizations with mutation data and frequencies.
+- **LollipopPlot**: Visualize mutation positions along protein sequences with optional domain annotation.
+- **Boxplot with Statistical Testing**: Generate comparative boxplots with integrated statistical tests (e.g., Wilcoxon, t-test) for group-wise mutation metrics.
+- **Similarity Metrics**: Compute similarity between samples or cohorts based on mutation profiles (e.g., Jaccard index, cosine similarity).
 
 ## Installation
 
-### Using pip (from PyPI)
-You can install the `pymaftools` package directly from PyPI using pip:
-
-```bash
-pip install pymaftools
-```
-
-### Using GitHub (for the latest version)
+### Using GitHub (for the latest version) ✅ **Recommended**
 To install directly from GitHub (if you want the latest changes):
 
 ```bash
 pip install git+https://github.com/xu62u4u6/pymaftools.git
+```
+
+### Using pip (from PyPI)
+You can install the stable version `pymaftools` package directly from PyPI using pip:
+
+```bash
+pip install pymaftools
 ```
 
 
