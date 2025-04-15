@@ -184,7 +184,7 @@ class OncoPlot:
 
         return fig, ax, legend_info
     
-    def heatmap(self, cmap_dict=None, linecolor="white", linewidth=1):
+    def heatmap(self, cmap_dict=None, linecolor="white", linewidth=1, show_frame=False, n=3):
         if cmap_dict is None:
             cmap_dict = self.cmap # Your original dictionary like nonsynymous_cmap
 
@@ -201,6 +201,18 @@ class OncoPlot:
         ax.set_yticks([i + 0.5 for i in range(len(self.pivot_table.index))])  # Shift the ticks by +0.5
         ax.set_yticklabels(self.pivot_table.index, rotation=0)  # Set labels horizontally
 
+        # Show frame every `n` columns
+        if show_frame:
+            for i in range(0, len(self.pivot_table.columns), n): 
+                rect = Rectangle(
+                    (i, -0.5),  # X, y
+                    n,  # width
+                    len(self.pivot_table) + 1,  # height
+                    linewidth=1,
+                    edgecolor='lightgray',
+                    facecolor='none'
+                )
+                self.ax_heatmap.add_patch(rect)
         legend_elements = [Rectangle((0, 0), 1, 1, color=cmap_dict[key], label=key)
                         for key in cmap_dict.keys() if key != "Unknown"] # Exclude placeholder if added
         self.ax_heatmap_legend.legend(handles=legend_elements, title="Variant Types", loc='center', fontsize='small', frameon=False)
