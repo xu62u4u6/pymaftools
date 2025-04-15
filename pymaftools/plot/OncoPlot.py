@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 import seaborn as sns
 from matplotlib import cm, ticker
+from matplotlib.colors import ListedColormap
 from ..core.PivotTable import PivotTable
 
 class OncoPlot:
@@ -121,7 +122,7 @@ class OncoPlot:
             ax.set_yticks([i + 0.5 for i in range(len(data.index))])  # Shift the ticks by +0.5
             ax.set_yticklabels(data.index, rotation=0)  # Set labels horizontally
 
-    def heatmap(self, show_frame=False, n=3, cmap=None, table=None, width=1, height=1, line_color="white"):
+    def heatmap_rectangle(self, show_frame=False, n=3, cmap=None, table=None, width=1, height=1, line_color="white"):
         if table is None:
             table = self.pivot_table
         if cmap is None:
@@ -183,7 +184,7 @@ class OncoPlot:
 
         return fig, ax, legend_info
     
-    def heatmap_optimized(self, cmap_dict=None, linecolor="white", linewidth=1):
+    def heatmap(self, cmap_dict=None, linecolor="white", linewidth=1):
         if cmap_dict is None:
             cmap_dict = self.cmap # Your original dictionary like nonsynymous_cmap
 
