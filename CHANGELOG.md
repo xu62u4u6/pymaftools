@@ -1,4 +1,4 @@
-# Version 2.0.0 (April 2025)
+# Version 0.2.0 (April 2025)
 
 ## New Features:
 
