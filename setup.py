@@ -10,7 +10,7 @@ setup(
     long_description_content_type='text/markdown',
     packages=find_packages(),
     install_requires=[
-        'pandas', 
+        'pandas>2.0', 
         'numpy', 
         'networkx', 
         'matplotlib', 
