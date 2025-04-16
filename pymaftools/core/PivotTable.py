@@ -405,15 +405,15 @@ class PivotTable(pd.DataFrame):
         merged_table.sample_metadata = merged_metadata.fillna(fill_metadata_na_with)
         return merged_table
 
-    def simple_matching_coefficient(self):
-        similarity = 1 - pairwise_distances(self.T, metric="hamming")
-        similarity_df = pd.DataFrame(similarity, 
-                                    index=self.columns, 
-                                    columns=self.columns)
-        return similarity_df
-    
-    def cosine_similarity(self):
-        similarity = cosine_similarity(self.T)
+    def compute_similarity(self, method="cosine"):
+        X = self.T.values if hasattr(self.T, "values") else np.array(self.T)
+        if method == "cosine":
+            similarity = cosine_similarity(X)
+        elif method in {"hamming", "jaccard"}:
+            similarity = 1 - pairwise_distances(X, metric=method)
+        else:
+            raise ValueError(f"Unsupported similarity method: {method}")
+        
         similarity_df = pd.DataFrame(similarity, 
                                     index=self.columns, 
                                     columns=self.columns)
