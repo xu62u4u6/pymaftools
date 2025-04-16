@@ -34,8 +34,7 @@ pip install pymaftools
 ### Importing the Package
 
 ```python
-from pymaftools.maf_utils import MAF, PivotTable
-from pymaftools.maf_plots import create_oncoplot
+from pymaftools import *
 ```
 
 ### Getting start
