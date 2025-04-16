@@ -8,7 +8,8 @@ setup(
     description='pymaftools is a Python package for handling and analyzing Mutation Annotation Format (MAF) files. It provides utilities for data manipulation and visualization, including classes for MAF parsing, oncoplot generation, and additional plots like lollipop and boxplots with statistical testing.',
     long_description=open('README.md').read(),
     long_description_content_type='text/markdown',
-    packages=find_packages(),
+    packages=find_packages(include=["pymaftools", "pymaftools.*"]),
+    include_package_data=True,
     install_requires=[
         'pandas>2.0', 
         'numpy', 
