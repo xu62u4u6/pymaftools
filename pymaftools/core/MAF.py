@@ -68,12 +68,13 @@ class MAF(pd.DataFrame):
     def merge_mutations(column):
         if (column == False).all() :
             return False
-        # Get unique non-False mutation types
-        unique_mutations = column[column != False].unique()
-        if len(unique_mutations) > 1:
+        # If a gene has ≥2 mutations in a sample, mark as 'Multi_Hit' (even if types are the same).
+        # Behavior aligned with maftools fix for issue #347: https://github.com/PoisonAlien/maftools/issues/347
+        non_false_mutations = column[column != False]
+        if len(non_false_mutations) > 1:
             return "Multi_Hit"
-        elif len(unique_mutations) == 1:
-            return unique_mutations[0]
+        elif len(non_false_mutations) == 1:
+            return non_false_mutations[0]
         
     def to_pivot_table(self) -> PivotTable: 
         pivot_table =  self.pivot_table(
