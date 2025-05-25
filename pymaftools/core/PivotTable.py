@@ -275,8 +275,18 @@ class PivotTable(pd.DataFrame):
         pca_result_df = pd.DataFrame(pca_result, index=pivot_table.columns, columns=["PC1", "PC2"])
         return pca_result_df, explained_variance, pca
 
-    def plot_pca_samples(self, group_col="subtype", figsize=(8, 6), to_binary=False, 
-                     palette_dict=None, alpha=0.8, title="PCA of samples", cmap="summer", is_numeric=False):
+    def plot_pca_samples(self, 
+                         group_col="subtype", 
+                         figsize=(8, 6), 
+                         to_binary=False, 
+                         palette_dict=None, 
+                         alpha=0.8, 
+                         title="PCA of samples", 
+                         cmap="summer", 
+                         is_numeric=False, 
+                         save_path=None, 
+                         fontsize=12, 
+                         titlesize=14):
         """
         Plot PCA scatter plot of samples colored by group_col.
         """
@@ -308,13 +318,14 @@ class PivotTable(pd.DataFrame):
                             palette=palette_dict or "Set1", 
                             alpha=alpha)
 
-        plt.title(title)
-        plt.xlabel(f"Principal Component 1 ({explained_variance[0] * 100:.2f}%)")
-        plt.ylabel(f"Principal Component 2 ({explained_variance[1] * 100:.2f}%)")
+        plt.title(title, fontsize=titlesize)
+        plt.xlabel(f"Principal Component 1 ({explained_variance[0] * 100:.2f}%)", fontsize=fontsize)
+        plt.ylabel(f"Principal Component 2 ({explained_variance[1] * 100:.2f}%)", fontsize=fontsize)
         
         if not is_numeric:
-            plt.legend(title=group_col)
-
+            plt.legend(title=group_col, title_fontsize=fontsize)
+        if save_path:
+            plt.savefig(save_path, dpi=300, format=save_path.split('.')[-1], bbox_inches='tight')
         plt.show()
         return pca_result_df, explained_variance, pca
 
