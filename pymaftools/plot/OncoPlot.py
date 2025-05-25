@@ -58,7 +58,8 @@ class OncoPlot:
                    wspace=0.015, 
                    hspace=0.02, 
                    categorical_columns=[], 
-                   numeric_columns=[]):
+                   numeric_columns=[],
+                   ytick_fontsize=10):
         
         self.line_color = line_color
         self.cmap = cmap
@@ -69,6 +70,7 @@ class OncoPlot:
         self.hspace = hspace
         self.categorical_columns = categorical_columns
         self.numeric_columns = numeric_columns
+        self.ytick_fontsize = ytick_fontsize
 
     def update_layout(self):
         num_categorical = len(self.categorical_columns)
@@ -120,7 +122,7 @@ class OncoPlot:
                 vmax=vmax,
             )
             ax.set_yticks([i + 0.5 for i in range(len(data.index))])  # Shift the ticks by +0.5
-            ax.set_yticklabels(data.index, rotation=0)  # Set labels horizontally
+            ax.set_yticklabels(data.index, rotation=0, fontsize=self.ytick_fontsize)  # Set labels horizontally
 
     def heatmap_rectangle(self, show_frame=False, n=3, cmap=None, table=None, width=1, height=1, line_color="white"):
         if table is None:
@@ -138,8 +140,8 @@ class OncoPlot:
                         linewidth=1,
                         xticklabels=False,
                         width=width,
-                        height=height
-                        )
+                        height=height,
+                        ytick_fontsize=self.ytick_fontsize,)
         
         # add frame every n columns
         if show_frame:
@@ -199,7 +201,7 @@ class OncoPlot:
         ax.set_xticks([])
         ax.set_xlabel("")
         ax.set_yticks([i + 0.5 for i in range(len(self.pivot_table.index))])  # Shift the ticks by +0.5
-        ax.set_yticklabels(self.pivot_table.index, rotation=0)  # Set labels horizontally
+        ax.set_yticklabels(self.pivot_table.index, rotation=0, fontsize=self.ytick_fontsize)  # Set labels horizontally
 
         # Show frame every `n` columns
         if show_frame:
@@ -316,8 +318,8 @@ class OncoPlot:
                 linewidth=1,
                 xticklabels=False,
                 yticklabels=list(data.index),
-                alpha=alpha
-                )
+                alpha=alpha,
+                ytick_fontsize=self.ytick_fontsize,)
 
             if annotate:
                 for i in range(color_matrix.shape[0]):
@@ -332,7 +334,7 @@ class OncoPlot:
 
             ax.set_xticks([])
             ax.set_yticks([i + 0.5 for i in range(len(color_matrix.index))])  # Shift the ticks by +0.5
-            ax.set_yticklabels(color_matrix.index, rotation=0)  # Set labels horizontally
+            ax.set_yticklabels(color_matrix.index, rotation=0, fontsize=self.ytick_fontsize)  # Set labels horizontally
             ax.set_xlabel("")  # Hide x-axis label if it exists
             ax.tick_params(axis='x', which='both', bottom=False, top=False)  # Hide x ticks completely
 
@@ -383,7 +385,7 @@ class OncoPlot:
         ax.set_xticks([])
         ax.set_xlabel("")
         ax.set_yticks([i + 0.5 for i in range(len(color_matrix.index))])  # Shift the ticks by +0.5
-        ax.set_yticklabels(color_matrix.index, rotation=0)  # Set labels horizontally
+        ax.set_yticklabels(color_matrix.index, rotation=0, fontsize=ytick_fontsize)  # Set labels horizontally
         return ax
 
 
@@ -418,11 +420,7 @@ class OncoPlot:
         ax.set_xticks([])
         ax.set_xlabel("")
         ax.set_yticks([i + 0.5 for i in range(len(table.index))])
-        ax.set_yticklabels(table.index, rotation=0)
-        
-        # Create a colorbar
-        norm = plt.Normalize(vmin=-vextreme, vmax=vextreme)
-        
+        ax.set_yticklabels(table.index, rotation=0, fontsize=self.ytick_fontsize)
         cbar = self.fig.colorbar(
             cm.ScalarMappable(norm=norm, cmap=cmap),
             cax=self.ax_freq,
