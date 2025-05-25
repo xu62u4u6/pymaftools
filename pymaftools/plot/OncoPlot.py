@@ -406,25 +406,36 @@ class OncoPlot:
             target_ax.set_xticks([i + 0.5 for i in range(len(self.sample_metadata))])
             target_ax.set_xticklabels(self.sample_metadata.index, rotation=90)
 
-    def numeric_heatmap(self, cmap="RdBu"): 
+    def numeric_heatmap(self, cmap="Blues", symmetric=False): 
         ax = self.ax_heatmap
         table = self.pivot_table
         
-        # calculate vmin and vmax
-        vextreme = max(abs(table.min().min()), abs(table.max().max()))
-
-        # Create the heatmap without a colorbar first
-        hm = sns.heatmap(table, ax=ax, cmap=cmap, cbar=False,
-                        vmin=-vextreme, vmax=vextreme, center=0)
+        # decide color range
+        if symmetric:
+            vextreme = max(abs(table.min().min()), abs(table.max().max()))
+            vmin = -vextreme
+            vmax = vextreme
+            center = 0
+        else:
+            vmin = table.min().min()
+            vmax = table.max().max()
+            center = (vmin + vmax) / 2
         
+        # Draw heatmap
+        hm = sns.heatmap(table, ax=ax, cmap=cmap, cbar=False,
+                        vmin=vmin, vmax=vmax, center=center)
+
         ax.set_xticks([])
         ax.set_xlabel("")
         ax.set_yticks([i + 0.5 for i in range(len(table.index))])
         ax.set_yticklabels(table.index, rotation=0, fontsize=self.ytick_fontsize)
+
+        # Create colorbar
+        norm = plt.Normalize(vmin=vmin, vmax=vmax)
         cbar = self.fig.colorbar(
             cm.ScalarMappable(norm=norm, cmap=cmap),
             cax=self.ax_freq,
-            ticks=np.linspace(-vextreme, vextreme, 5),
+            ticks=np.linspace(vmin, vmax, 5),
             shrink=0.7
         )
         cbar.ax.set_aspect(18)
