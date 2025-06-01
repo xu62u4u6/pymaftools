@@ -3,7 +3,9 @@
 from .core.PivotTable import PivotTable
 from .core.MAF import MAF
 from .core.CooccurMatrix import CooccurMatrix
+from .core.Cohort import Cohort
 
 # plot
 from .plot.OncoPlot import OncoPlot
 from .plot.LollipopPlot import LollipopPlot
+
