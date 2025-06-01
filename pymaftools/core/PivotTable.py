@@ -325,7 +325,14 @@ class PivotTable(pd.DataFrame):
         if not is_numeric:
             plt.legend(title=group_col, title_fontsize=fontsize)
         if save_path:
-            plt.savefig(save_path, dpi=300, format=save_path.split('.')[-1], bbox_inches='tight')
+            format = save_path.split('.')[-1].lower()
+            pil_kwargs = {"compression": "tiff_lzw"} if format == "tiff" else {}
+
+            plt.savefig(save_path, 
+                        dpi=300, 
+                        format=format, 
+                        bbox_inches='tight', 
+                        pil_kwargs=pil_kwargs)
         plt.show()
         return pca_result_df, explained_variance, pca
 
