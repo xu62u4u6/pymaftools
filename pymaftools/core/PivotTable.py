@@ -456,3 +456,21 @@ class PivotTable(pd.DataFrame):
                             .sort_samples_by_mutations()
                             )
         return sorted_pivot_table
+
+def capture_size(bed_path: str) -> float:
+    """
+    Calculate the total capture size (in megabases) from a BED file.
+    
+    The BED file must have at least three columns: chrom, start, end.
+    
+    Parameters:
+        bed_path (str): Path to the BED file.
+    
+    Returns:
+        float: Total capture region size in megabases (Mb).
+    """
+    bed = pd.read_csv(bed_path, sep='\t', header=None)
+    bed = bed.iloc[:, 0:3]
+    bed.columns = ['chrom','start', 'end']
+    capture_length = bed.end - bed.start
+    return capture_length.sum()/1e6 # in MB
