@@ -14,6 +14,12 @@
 
 ## Installation
 
+### Create a Conda Environment
+```bash
+conda create -n python=3.8
+```
+
+
 ### Using GitHub (for the latest version) ✅ **Recommended**
 To install directly from GitHub (if you want the latest changes):
 
@@ -45,6 +51,9 @@ maf_case1 = MAF.read_maf("case1.maf")
 maf_case2 = MAF.read_maf("case2.maf")
 all_case_maf = MAF.merge_mafs([maf_case1, maf_case2])
 
+# if no sample_ID column in MAF file, add it
+all_case_maf["sample_ID"] = all_case_maf["tumor_sample_barcode"] 
+
 # Filter to keep only nonsynonymous mutations
 filtered_all_case_maf = all_case_maf.filter_maf(MAF.nonsynonymous_types)
 
@@ -61,12 +70,14 @@ sorted_pivot_table = (pivot_table
                     .add_freq() # Calculate mutation frequencies
                     .sort_features_by_freq() # sort features(rows), optional
                     .sort_samples_by_mutations() # sort samples(columns), optional
+                    .calculate_TMB(capture_size=50) # calculate TMB
                     )
 
 # Create basic oncoplot 
 oncoplot = OncoPlot(pivot_table=sorted_pivot_table.head(50), 
-                    figsize=figsize, 
-                    width_ratios=width_ratios)
+                    figsize=(15, 10), 
+                    width_ratios=[20, 2, 2] # heatmap, frequency bar, mutation classification bar
+                    )
 oncoplot.heatmap()
 oncoplot.plot_freq()
 oncoplot.plot_bar()
