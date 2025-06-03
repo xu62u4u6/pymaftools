@@ -1,6 +1,7 @@
 import pandas as pd
 import pickle
 import copy
+from .PivotTable import PivotTable
 
 class Cohort:
     def __init__(self, name, description=""):
