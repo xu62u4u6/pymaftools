@@ -76,6 +76,97 @@ class PivotTable(pd.DataFrame):
         pivot_table.sample_metadata = self.sample_metadata.copy(deep=deep)
         return pivot_table
 
+    def __getitem__(self, key) -> "PivotTable":
+        """
+        Enhanced indexing support for PivotTable.
+        
+        Always returns a PivotTable object with preserved metadata, regardless
+        of the indexing operation performed.
+        
+        Supports multiple indexing patterns:
+        1) tbl["col"]                  → PivotTable (single column)
+        2) tbl[["col1", "col2"]]       → PivotTable (multiple columns)  
+        3) tbl[row_sel, col_sel]       → PivotTable (2D indexing)
+        
+        Parameters
+        ----------
+        key : str, list, tuple, slice, bool array, or callable
+            Index specification. Can be:
+            - str: Single column name
+            - list: Multiple column names or boolean mask
+            - tuple: (row_selector, column_selector) for 2D indexing
+            - slice: Row or column slice
+            - bool array: Boolean mask for selection
+            - callable: Function for conditional selection
+            
+        Returns
+        -------
+        PivotTable
+            Always returns a PivotTable with corresponding feature_metadata 
+            and sample_metadata preserved. Scalar results and Series are 
+            automatically converted to single-element DataFrames.
+            
+        Notes
+        -----
+        All results are wrapped as PivotTable objects to maintain consistency:
+        - Scalar values become 1×1 PivotTable
+        - Series become single-row or single-column PivotTable
+        - DataFrames maintain their structure as PivotTable
+        """
+        if isinstance(key, tuple) and len(key) == 2:
+            # Handle 2D indexing: tbl[row_sel, col_sel]
+            row_sel, col_sel = key
+            result = super().loc[row_sel, col_sel]
+        else:
+            # Handle 1D indexing: tbl["col"] or tbl[["col1", "col2"]]
+            result = super().__getitem__(key)
+
+        # Convert scalar results to DataFrame for consistency
+        if np.isscalar(result):
+            # Handle scalar selection: tbl["row1", "col1"]
+            result = pd.DataFrame({col_sel: [result]}, index=[row_sel])
+
+        # Convert Series to DataFrame for consistency
+        if isinstance(result, pd.Series):
+            if result.name in self.columns:
+                # Column selection: convert to n × 1 DataFrame
+                result = result.to_frame()
+            else:
+                # Row selection: convert to 1 × n DataFrame  
+                result = result.to_frame().T
+
+        # Always wrap as PivotTable with metadata
+        return self._wrap(result)
+
+    def _wrap(self, df: pd.DataFrame) -> "PivotTable":
+        """
+        Wrap a DataFrame as a PivotTable with corresponding metadata.
+        
+        Creates a new PivotTable instance from a DataFrame and assigns
+        the appropriate feature_metadata and sample_metadata based on
+        the DataFrame's index and columns.
+        
+        Parameters
+        ----------
+        df : pd.DataFrame
+            Input DataFrame to be wrapped as PivotTable.
+            
+        Returns
+        -------
+        PivotTable
+            New PivotTable instance with metadata aligned to df's structure.
+            
+        Notes
+        -----
+        The metadata is subset based on the DataFrame's index (features)
+        and columns (samples). Missing indices in metadata will result
+        in NaN values in the new PivotTable's metadata.
+        """
+        new = PivotTable(df)
+        new.feature_metadata = self.feature_metadata.loc[df.index]
+        new.sample_metadata = self.sample_metadata.loc[df.columns]
+        return new
+    
     def subset(self, 
         features: list = [], 
         samples: list = [], 
