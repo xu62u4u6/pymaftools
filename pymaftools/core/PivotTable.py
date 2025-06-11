@@ -4,6 +4,7 @@ import numpy as np
 import networkx as nx
 import matplotlib.pyplot as plt
 import seaborn as sns
+from typing import Union, Any, Optional, List, Tuple, Callable, Literal
 from itertools import combinations
 from statannotations.Annotator import Annotator
 from matplotlib.patches import Patch, Rectangle
@@ -76,28 +77,75 @@ class PivotTable(pd.DataFrame):
         pivot_table.sample_metadata = self.sample_metadata.copy(deep=deep)
         return pivot_table
 
-    def __getitem__(self, key) -> "PivotTable":
+    @classmethod
+    def _from_dataframe(
+        cls,
+        df: pd.DataFrame,
+        feature_meta_src: pd.DataFrame,
+        sample_meta_src: pd.DataFrame,
+        *,
+        feature_fill: Any = np.nan,
+        sample_fill: Any = np.nan,
+    ) -> "PivotTable":
+        """
+        Create a PivotTable from a DataFrame with synchronized metadata.
+        
+        This is an internal method used to construct PivotTable objects
+        with properly aligned feature and sample metadata.
+        
+        Parameters
+        ----------
+        df : pd.DataFrame
+            The main data DataFrame to wrap as PivotTable.
+        feature_meta_src : pd.DataFrame
+            Source DataFrame for feature metadata.
+        sample_meta_src : pd.DataFrame
+            Source DataFrame for sample metadata.
+        feature_fill : scalar, default np.nan
+            Value to use for missing values when reindexing feature metadata.
+        sample_fill : scalar, default np.nan
+            Value to use for missing values when reindexing sample metadata.
+            
+        Returns
+        -------
+        PivotTable
+            New PivotTable with synchronized metadata.
+            
+        Notes
+        -----
+        This method automatically reindexes the metadata DataFrames to match
+        the indices of the input DataFrame, filling missing values as specified.
+        """
+        new = cls(df)
+        new.feature_metadata = feature_meta_src.reindex(df.index, fill_value=feature_fill)
+        new.sample_metadata = sample_meta_src.reindex(df.columns, fill_value=sample_fill)
+        return new
+
+    def __getitem__(self, key: Union[str, List, Tuple, slice, pd.Series, Callable]) -> "PivotTable":
         """
         Enhanced indexing support for PivotTable.
         
         Always returns a PivotTable object with preserved metadata, regardless
-        of the indexing operation performed.
-        
-        Supports multiple indexing patterns:
-        1) tbl["col"]                  → PivotTable (single column)
-        2) tbl[["col1", "col2"]]       → PivotTable (multiple columns)  
-        3) tbl[row_sel, col_sel]       → PivotTable (2D indexing)
+        of the indexing operation performed. Supports multiple indexing patterns
+        including boolean Series and 2D indexing.
         
         Parameters
         ----------
-        key : str, list, tuple, slice, bool array, or callable
+        key : str, list, tuple, slice, pd.Series, or callable
             Index specification. Can be:
-            - str: Single column name
-            - list: Multiple column names or boolean mask
-            - tuple: (row_selector, column_selector) for 2D indexing
-            - slice: Row or column slice
-            - bool array: Boolean mask for selection
-            - callable: Function for conditional selection
+            
+            - str : Single column name
+                Example: ``tbl["gene1"]``
+            - list : Multiple column names  
+                Example: ``tbl[["gene1", "gene2"]]``
+            - tuple : (row_selector, column_selector) for 2D indexing
+                Example: ``tbl[["sample1", "sample2"], ["gene1", "gene2"]]``
+            - slice : Row or column slice
+                Example: ``tbl[:10]`` or ``tbl[:, :5]``
+            - pd.Series (bool) : Boolean mask for selection
+                Example: ``tbl[high_expression_mask]``
+            - callable : Function for conditional selection
+                Example: ``tbl[lambda x: x > 0.5]``
             
         Returns
         -------
@@ -109,9 +157,28 @@ class PivotTable(pd.DataFrame):
         Notes
         -----
         All results are wrapped as PivotTable objects to maintain consistency:
+        
         - Scalar values become 1×1 PivotTable
-        - Series become single-row or single-column PivotTable
+        - Series become single-row or single-column PivotTable  
         - DataFrames maintain their structure as PivotTable
+        
+        The metadata (feature_metadata and sample_metadata) are automatically
+        synchronized with the resulting data selection.
+        
+        Examples
+        --------
+        >>> # Single column selection
+        >>> gene_data = pivot_table["TP53"]
+        
+        >>> # Multiple column selection
+        >>> oncogenes = pivot_table[["TP53", "KRAS", "EGFR"]]
+        
+        >>> # 2D indexing 
+        >>> subset = pivot_table[["sample1", "sample2"], ["gene1", "gene2"]]
+        
+        >>> # Boolean indexing
+        >>> high_freq = pivot_table.feature_metadata["freq"] > 0.1
+        >>> frequent_genes = pivot_table[high_freq, :]
         """
         if isinstance(key, tuple) and len(key) == 2:
             # Handle 2D indexing: tbl[row_sel, col_sel]
@@ -136,75 +203,280 @@ class PivotTable(pd.DataFrame):
                 result = result.to_frame().T
 
         # Always wrap as PivotTable with metadata
-        return self._wrap(result)
-
-    def _wrap(self, df: pd.DataFrame) -> "PivotTable":
+        return self._from_dataframe(
+            result,
+            self.feature_metadata,
+            self.sample_metadata,
+        )
+    def subset(
+        self, 
+        *, 
+        features: Optional[Union[List, pd.Series, slice]] = None, 
+        samples: Optional[Union[List, pd.Series, slice]] = None
+    ) -> "PivotTable":
         """
-        Wrap a DataFrame as a PivotTable with corresponding metadata.
+        Subset PivotTable by features and/or samples.
         
-        Creates a new PivotTable instance from a DataFrame and assigns
-        the appropriate feature_metadata and sample_metadata based on
-        the DataFrame's index and columns.
+        This method provides a convenient interface for selecting specific
+        features (rows) and samples (columns) from the PivotTable while
+        preserving metadata alignment.
         
         Parameters
         ----------
-        df : pd.DataFrame
-            Input DataFrame to be wrapped as PivotTable.
+        features : list, pd.Series, or slice, optional
+            Features (rows) to select. Can be:
+            
+            - list of str : Feature names to select
+                Example: ``["TP53", "KRAS", "EGFR"]``
+            - pd.Series (bool) : Boolean mask for feature selection
+                Example: ``pivot_table.feature_metadata["freq"] > 0.1``
+            - slice : Slice object for feature selection
+                Example: ``slice(None, 10)`` for first 10 features
+            - None : Select all features (default)
+                
+        samples : list, pd.Series, or slice, optional  
+            Samples (columns) to select. Can be:
+            
+            - list of str : Sample names to select
+                Example: ``["sample1", "sample2", "sample3"]``
+            - pd.Series (bool) : Boolean mask for sample selection
+                Example: ``pivot_table.sample_metadata["subtype"] == "LUAD"``
+            - slice : Slice object for sample selection
+                Example: ``slice(None, 20)`` for first 20 samples
+            - None : Select all samples (default)
             
         Returns
         -------
         PivotTable
-            New PivotTable instance with metadata aligned to df's structure.
+            Subset PivotTable with synchronized metadata. Only keeps existing
+            labels (inner join behavior).
             
         Notes
         -----
+        This method uses inner join behavior, meaning only existing labels
+        are kept. Missing labels are silently ignored. For outer join behavior
+        that includes missing labels with NaN values, use the ``reindex`` method.
+        
+        Examples
+        --------
+        >>> # Select specific genes and samples
+        >>> subset = pivot_table.subset(
+        ...     features=["TP53", "KRAS"], 
+        ...     samples=["sample1", "sample2"]
+        ... )
+        
+        >>> # Select high-frequency mutations 
+        >>> high_freq = pivot_table.feature_metadata["freq"] > 0.1
+        >>> frequent_mutations = pivot_table.subset(features=high_freq)
+        
+        >>> # Select samples by subtype
+        >>> luad_samples = pivot_table.sample_metadata["subtype"] == "LUAD"  
+        >>> luad_data = pivot_table.subset(samples=luad_samples)
+        
         The metadata is subset based on the DataFrame's index (features)
         and columns (samples). Missing indices in metadata will result
         in NaN values in the new PivotTable's metadata.
+        
+        See Also
+        --------
+        PivotTable.reindex : For outer join behavior with missing labels.
+        PivotTable.__getitem__ : For direct indexing operations.
         """
-        new = PivotTable(df)
-        new.feature_metadata = self.feature_metadata.loc[df.index]
-        new.sample_metadata = self.sample_metadata.loc[df.columns]
-        return new
-    
-    def subset(self, 
-        features: list = [], 
-        samples: list = [], 
-        how: str = "inner") -> 'PivotTable':
+        features = slice(None) if features is None else features
+        samples = slice(None) if samples is None else samples
+        return self[features, samples]
 
-        if how not in ["inner", "outer"]:
-            raise ValueError("how must be 'inner' or 'outer'")
-
-        pivot_table = self.copy()
-
-        # Subset samples
-        if len(samples) > 0:
-            if isinstance(samples, pd.Series):  # If it's a boolean Series
-                samples = samples.reindex(self.columns, fill_value=False)  # Align with columns
-                if samples.dtype != bool:
-                    raise ValueError("When samples is a Series, it must be of boolean type.")
-                samples = samples[samples].index  # Convert to index
+    def reindex(
+        self,
+        index=None,
+        columns=None,
+        *args,
+        fill_value: Any = np.nan,
+        feature_fill_value: Any = np.nan,
+        sample_fill_value: Any = np.nan,
+        **kwargs,
+    ) -> "PivotTable":
+        """
+        Conform PivotTable to new index and/or columns with synchronized metadata.
+        
+        This method extends pandas DataFrame.reindex to also reindex the
+        associated feature_metadata and sample_metadata, maintaining consistency
+        across all components of the PivotTable.
+        
+        Parameters
+        ----------
+        index : array-like, optional
+            New labels for the rows. If None, use existing index.
+        columns : array-like, optional
+            New labels for the columns. If None, use existing columns.
+        *args
+            Additional positional arguments passed to pandas.DataFrame.reindex.
+        fill_value : scalar, default np.nan
+            Value to use for missing values in the main DataFrame.
+        feature_fill_value : scalar, default np.nan
+            Value to use for missing values when reindexing feature_metadata.
+        sample_fill_value : scalar, default np.nan
+            Value to use for missing values when reindexing sample_metadata.
+        **kwargs
+            Additional keyword arguments passed to pandas.DataFrame.reindex.
             
-            if how == "inner":
-                samples = [s for s in samples if s in self.columns]  # Remove missing samples
-            pivot_table = pivot_table.reindex(columns=samples)
-            pivot_table.sample_metadata = pivot_table.sample_metadata.reindex(samples)
-
-        # Subset features
-        if len(features) > 0:
-            if isinstance(features, pd.Series):  # If it's a boolean Series
-                features = features.reindex(self.index, fill_value=False)  # Align with index
-                if features.dtype != bool:
-                    raise ValueError("When features is a Series, it must be of boolean type.")
-                features = features[features].index  # Convert to index
+        Returns
+        -------
+        PivotTable
+            Reindexed PivotTable with synchronized metadata.
             
-            if how == "inner":
-                features = [f for f in features if f in self.index]  # Remove missing features
-            pivot_table = pivot_table.reindex(index=features)
-            pivot_table.feature_metadata = pivot_table.feature_metadata.reindex(features)
+        Notes
+        -----
+        Unlike the ``subset`` method which uses inner join behavior, this method
+        uses outer join behavior and will include missing labels filled with
+        the specified fill values.
+        
+        The metadata DataFrames are automatically reindexed to match the new
+        structure of the main DataFrame.
+        
+        Examples
+        --------
+        >>> # Reindex with new features, filling missing with 0
+        >>> new_features = ["TP53", "KRAS", "NEW_GENE"]
+        >>> reindexed = pivot_table.reindex(
+        ...     index=new_features, 
+        ...     fill_value=0,
+        ...     feature_fill_value="Unknown"
+        ... )
+        
+        >>> # Reindex with new samples
+        >>> new_samples = ["sample1", "sample2", "new_sample"] 
+        >>> reindexed = pivot_table.reindex(
+        ...     columns=new_samples,
+        ...     sample_fill_value="Missing"
+        ... )
+        
+        >>> # Reindex both dimensions
+        >>> reindexed = pivot_table.reindex(
+        ...     index=new_features,
+        ...     columns=new_samples,
+        ...     fill_value=np.nan
+        ... )
+        
+        See Also
+        --------
+        pandas.DataFrame.reindex : The underlying pandas reindex method.
+        PivotTable.subset : For inner join behavior.
+        """
+        reindexed_df = super().reindex(
+            index=index,
+            columns=columns,
+            *args,
+            fill_value=fill_value,
+            **kwargs,
+        )
 
-        return pivot_table
-    
+        return self._from_dataframe(
+            reindexed_df,
+            self.feature_metadata,
+            self.sample_metadata,
+            feature_fill=feature_fill_value,
+            sample_fill=sample_fill_value,
+        )
+
+    @staticmethod
+    def merge(
+        tables: List["PivotTable"],
+        fill_value: Any = np.nan,
+        feature_fill_value: Any = np.nan,
+        sample_fill_value: Any = np.nan,
+        join: Literal["inner", "outer"] = "outer"
+    ) -> "PivotTable":
+        """
+        Merge multiple PivotTables into a single PivotTable.
+
+        Concatenates multiple PivotTable objects along the sample axis (columns)
+        and aligns features (rows) according to the selected join strategy.
+        Metadata (feature_metadata and sample_metadata) is automatically
+        synchronized with the resulting data matrix.
+
+        Parameters
+        ----------
+        tables : List[PivotTable]
+            List of PivotTable objects to merge. All should have compatible structure.
+        fill_value : scalar, default np.nan
+            Value to use for missing values in the main data matrix after merging.
+        feature_fill_value : scalar, default np.nan
+            Value to use for missing values when reindexing feature_metadata.
+        sample_fill_value : scalar, default np.nan
+            Value to use for missing values when reindexing sample_metadata.
+        join : {'inner', 'outer'}, default 'outer'
+            Strategy for aligning features (rows) across tables:
+            - 'inner': Keep only features shared by all tables.
+            - 'outer': Keep all features from all tables (union).
+
+            Note: samples (columns) are always unioned.
+
+        Returns
+        -------
+        PivotTable
+            A new PivotTable with:
+            - Merged data matrix
+            - Reindexed feature and sample metadata
+            - Missing values filled with specified defaults
+
+        Raises
+        ------
+        ValueError
+            If `join` is not 'inner' or 'outer'.
+        ValueError
+            If sample (column) names overlap across tables.
+
+        Examples
+        --------
+        >>> # Outer merge (default): keeps all features
+        >>> merged = PivotTable.merge([table_A, table_B])
+
+        >>> # Inner merge: keeps only shared features
+        >>> merged = PivotTable.merge([table_A, table_B], join='inner')
+
+        >>> # Fill missing values with 0
+        >>> merged = PivotTable.merge([table_A, table_B], fill_value=0)
+        """
+        if join not in {"inner", "outer"}:
+            raise ValueError("join must be either 'inner' or 'outer'.")
+
+        # Step 1: merge main data (along sample axis)
+        merged_data = pd.concat(tables, axis=1)
+
+        if not merged_data.columns.is_unique:
+            duplicated = merged_data.columns[merged_data.columns.duplicated()].tolist()
+            raise ValueError(
+                f"Merged PivotTable has duplicate sample names: {duplicated}. "
+                f"Please ensure sample names are unique across tables."
+            )
+
+        # Step 2: merge metadata before trimming
+        merged_sample_meta = pd.concat([t.sample_metadata for t in tables], axis=0)
+        merged_feature_meta = pd.concat([t.feature_metadata for t in tables], axis=0)
+        merged_feature_meta = merged_feature_meta[~merged_feature_meta.index.duplicated(keep="first")]
+        # Step 3: determine features to keep
+        if join == "inner":
+            features = sorted(set.intersection(*(set(t.index) for t in tables)))
+        else:
+            features = merged_data.index
+
+        samples = merged_data.columns  # always union of all samples
+
+        # Step 4: create merged PivotTable and align metadata
+        merged = PivotTable(merged_data.fillna(fill_value))
+        merged.feature_metadata = merged_feature_meta.fillna(feature_fill_value)
+        merged.sample_metadata = merged_sample_meta.fillna(sample_fill_value)
+        merged = merged.reindex(
+            index=features,
+            columns=samples,
+            fill_value=fill_value,
+            feature_fill_value=feature_fill_value,
+            sample_fill_value=sample_fill_value,
+        )
+
+        return merged
+
     def calculate_TMB(self, default_capture_size=40, group_col="subtype", capture_size_dict=None):
         table = self.copy()
         table.sample_metadata["capture_size"] = default_capture_size
@@ -501,46 +773,7 @@ class PivotTable(pd.DataFrame):
 
         return df
     
-    def merge(tables: list["PivotTable"], fill_table_na_with=False, fill_metadata_na_with=np.nan, join="outer"):
-        if join not in ["inner", "outer"]:
-            raise ValueError("join must be either 'inner' or 'outer'.")
 
-        if join not in ["inner", "outer"]:
-            raise ValueError("join must be either 'inner' or 'outer'.")
-
-        if join == "inner":
-            common_index = set(tables[0].data.index)
-            for t in tables[1:]:
-                common_index &= set(t.data.index)
-
-            if not common_index:
-                raise ValueError("No common indices found for 'inner' merge.")
-
-            common_index = sorted(common_index)
-            merged_data = pd.concat(
-                [table.loc[common_index] for table in tables], axis=1, join="inner"
-            )
-
-            merged_metadata = pd.concat(
-                [table.sample_metadata.loc[common_index] for table in tables], axis=0, join="inner"
-            )
-
-        else:
-            merged_data = pd.concat([t for t in tables], axis=1, join="outer")
-            merged_metadata = pd.concat([t.sample_metadata for t in tables], axis=0, join="outer")
-            
-        merged_table = PivotTable(merged_data).fillna(fill_table_na_with)
-        merged_table.sample_metadata = merged_metadata.fillna(fill_metadata_na_with)
-        return merged_table
-
-    def compute_similarity(self, method="cosine"):
-        X = self.T.values if hasattr(self.T, "values") else np.array(self.T)
-        if method == "cosine":
-            similarity = cosine_similarity(X)
-        elif method in {"hamming", "jaccard"}:
-            similarity = 1 - pairwise_distances(X, metric=method)
-        else:
-            raise ValueError(f"Unsupported similarity method: {method}")
         
         similarity_df = pd.DataFrame(similarity, 
                                     index=self.columns, 
