@@ -71,7 +71,32 @@ class PivotTable(pd.DataFrame):
             'sample_linkage': sample_linkage
         }
 
-    def copy(self, deep=True):
+    def copy(self, deep: bool = True) -> "PivotTable":
+        """
+        Make a copy of this object's indices and data.
+        
+        Creates a deep or shallow copy of the PivotTable and its associated
+        feature_metadata and sample_metadata.
+        
+        Parameters
+        ----------
+        deep : bool, default True
+            Whether to make a deep copy or shallow copy.
+            
+        Returns
+        -------
+        PivotTable
+            Copy of the PivotTable with preserved metadata.
+            
+        Examples
+        --------
+        >>> pivot_copy = pivot_table.copy()
+        >>> pivot_shallow = pivot_table.copy(deep=False)
+        
+        See Also
+        --------
+        pandas.DataFrame.copy : The underlying pandas copy method.
+        """
         pivot_table = super().copy(deep=deep)
         pivot_table.feature_metadata = self.feature_metadata.copy(deep=deep)
         pivot_table.sample_metadata = self.sample_metadata.copy(deep=deep)
