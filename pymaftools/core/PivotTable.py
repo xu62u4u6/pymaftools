@@ -799,6 +799,14 @@ class PivotTable(pd.DataFrame):
         return df
     
 
+    def compute_similarity(self, method="cosine"):
+        X = self.T.values if hasattr(self.T, "values") else np.array(self.T)
+        if method == "cosine":
+            similarity = cosine_similarity(X)
+        elif method in {"hamming", "jaccard"}:
+            similarity = 1 - pairwise_distances(X, metric=method)
+        else:
+            raise ValueError(f"Unsupported similarity method: {method}")
         
         similarity_df = pd.DataFrame(similarity, 
                                     index=self.columns, 
