@@ -245,6 +245,5 @@ class MAF(pd.DataFrame):
         maf = self.copy().rename(columns=rename_dict)
 
         # 確保 Variant_Type 只有 "SNP", "INS", "DEL"
-        maf = maf[self.maf["Variant_Type"].isin(["SNP", "INS", "DEL"])]
-
-        self.maf.to_csv(output_path, sep="\t", index=False)
+        maf = maf[maf["Variant_Type"].isin(["SNP", "INS", "DEL"])]
+        maf.to_csv(output_path, sep="\t", index=False)
