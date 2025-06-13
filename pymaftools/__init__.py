@@ -3,7 +3,7 @@
 from .core.PivotTable import PivotTable
 from .core.MAF import MAF
 from .core.CNV import CNV
-from .core.CooccurMatrix import CooccurMatrix
+from .core.PairwiseMatrix import SimilarityMatrix
 from .core.Cohort import Cohort
 
 # plot
