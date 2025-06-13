@@ -86,22 +86,10 @@ class PivotTable(pd.DataFrame):
         table = cls(data)
         table.sample_metadata = sample_metadata
         table.feature_metadata = feature_metadata
-
+        table._validate_metadata()
         conn.close()
         print(f"[PivotTable] loaded from {db_path}")
         return table
-
-    def to_pickle(self, file_path):
-        with open(file_path, 'wb') as f:
-            pickle.dump(self, f)
-        print(f"Data saved to {file_path}.")
-
-    @classmethod
-    def read_pickle(cls, file_path):
-        with open(file_path, 'rb') as f:
-            pivot_table_instance = pickle.load(f)
-        pivot_table_instance._validate_metadata()
-        return pivot_table_instance
 
     def to_hierarchical_clustering(self, 
                              method: str = 'ward',

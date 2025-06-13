@@ -86,17 +86,6 @@ class Cohort:
             self.sample_metadata.copy(deep=True) if deep and self.sample_metadata is not None else self.sample_metadata
         )
         return new_instance
-
-    def to_pickle(self, file_path):
-        with open(file_path, 'wb') as f:
-            pickle.dump(self, f)
-        print(f"Data saved to {file_path}.")
-
-    @classmethod
-    def read_pickle(cls, file_path):
-        with open(file_path, 'rb') as f:
-            cohort_instance = pickle.load(f)
-        return cohort_instance
     
     def __getattr__(self, name):
         if name in self.tables:
