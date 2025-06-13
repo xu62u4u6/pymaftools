@@ -2,8 +2,9 @@ from setuptools import setup, find_packages
 
 setup(
     name='pymaftools',
-    version='0.2.2',
+    version='0.2.3',
     author = "xu62u4u6",
+    python_requires='>=3.8',
     author_email="199928ltyos@gmail.com",
     description='pymaftools is a Python package for handling and analyzing Mutation Annotation Format (MAF) files. It provides utilities for data manipulation and visualization, including classes for MAF parsing, oncoplot generation, and additional plots like lollipop and boxplots with statistical testing.',
     long_description=open('README.md').read(),
@@ -20,6 +21,7 @@ setup(
         'scikit-learn',
         'statsmodels',
         'scipy',
+        'requests'
     ],
     classifiers = [
         "Programming Language :: Python :: 3",
