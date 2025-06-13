@@ -66,6 +66,8 @@ class PivotTable(pd.DataFrame):
 
         conn = sqlite3.connect(str(db_path))
         table = self.copy().rename_index_and_columns()
+        # TODO: replace False with "WT" in all files
+        table = table.replace(False, "WT")
         table.to_sql("data", conn, index=True)
         table.sample_metadata.to_sql(f"sample_metadata", conn, index=True)
         table.feature_metadata.to_sql(f"feature_metadata", conn, index=True)
@@ -84,6 +86,8 @@ class PivotTable(pd.DataFrame):
         feature_metadata = pd.read_sql(f"SELECT * FROM 'feature_metadata'", conn, index_col="feature")
 
         table = cls(data)
+        # TODO: replace False with "WT" in all files
+        table = table.replace("WT", False)
         table.sample_metadata = sample_metadata
         table.feature_metadata = feature_metadata
         table._validate_metadata()
@@ -273,6 +277,7 @@ class PivotTable(pd.DataFrame):
             self.feature_metadata,
             self.sample_metadata,
         )
+
     def subset(
         self, 
         *, 
