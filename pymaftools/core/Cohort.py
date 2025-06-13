@@ -2,6 +2,8 @@ import pandas as pd
 import pickle
 import copy
 from .PivotTable import PivotTable
+import sqlite3
+from pathlib import Path
 
 class Cohort:
     def __init__(self, name, description=""):
@@ -100,6 +102,81 @@ class Cohort:
         if name in self.tables:
             return self.tables[name]
         raise AttributeError(f"'Cohort' object has no attribute '{name}'")
+    
+    def to_sql_registry(self) -> pd.DataFrame:
+        """
+        Generate a registry DataFrame for SQL table mapping.
+        
+        Creates a mapping between logical table names and their corresponding
+        SQL table names for data, sample metadata, and feature metadata.
+        
+        Returns
+        -------
+        pd.DataFrame
+            Registry with columns: sql_table_name, cohort_name, table_name, type
+        """
+        records = [
+            {
+                "sql_table_name": f"{table_name}{suffix}",
+                "cohort_name": self.name,
+                "table_name": table_name,
+                "type": type_name
+            }
+            for table_name in self.tables.keys()
+            for suffix, type_name in [("", "data"), ("__sample_metadata", "sample_metadata"), ("__feature_metadata", "feature_metadata")]
+        ]
+        return pd.DataFrame(records)
+    
+    def to_sqlite(self, db_path: str):
+        """ Save Cohort to SQLite database format."""
+        db_path = Path(db_path)
+
+        if db_path.exists():
+            db_path.unlink()
+        
+        conn = sqlite3.connect(str(db_path))
+        registry = self.to_sql_registry()
+
+        for _, row in registry.iterrows():
+            table_name = row["table_name"]
+            sql_table_name = row["sql_table_name"]
+            kind = row["type"]
+            table = self.tables[table_name].copy().rename_index_and_columns()
+
+            if kind == "data":
+                table.to_sql(sql_table_name, conn, if_exists="replace", index=True)
+            elif kind == "sample_metadata":
+                table.sample_metadata.to_sql(sql_table_name, conn, if_exists="replace", index=True)
+            elif kind == "feature_metadata":
+                table.feature_metadata.to_sql(sql_table_name, conn, if_exists="replace", index=True)
+
+        registry.to_sql("registry", conn, if_exists="replace", index=False)
+        conn.close()
+        print(f"[Cohort] saved to {db_path}")
+
+    @classmethod
+    def read_sqlite(cls, db_path: str):
+        """ Load Cohort from SQLite database format."""
+        conn = sqlite3.connect(db_path)
+        registry_df = pd.read_sql("SELECT * FROM registry", conn)
+
+        cohort_name = registry_df["cohort_name"].iloc[0]
+        cohort = cls(cohort_name)
+
+        for table_name in registry_df["table_name"].unique():
+            data = pd.read_sql(f"SELECT * FROM '{table_name}'", conn, index_col="feature")
+            sample_metadata = pd.read_sql(f"SELECT * FROM '{table_name}__sample_metadata'", conn, index_col="sample")
+            feature_metadata = pd.read_sql(f"SELECT * FROM '{table_name}__feature_metadata'", conn, index_col="feature")
+
+            pivot = PivotTable(data)
+            pivot.sample_metadata = sample_metadata
+            pivot.feature_metadata = feature_metadata
+
+            cohort.add_table(pivot, table_name)
+
+        conn.close()
+        print(f"[Cohort] loaded from {db_path}")
+        return cohort
     
 # cohort = Cohort(name="ASC")
 # cohort.add_table(cnv_table, "CNV")

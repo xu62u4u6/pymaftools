@@ -14,7 +14,8 @@ from sklearn.decomposition import PCA
 from statsmodels.stats.multitest import multipletests
 from scipy.stats import chi2_contingency, fisher_exact
 from .CooccurMatrix import CooccurMatrix
-
+import sqlite3
+from pathlib import Path
 
 class PivotTable(pd.DataFrame):
     # columns: gene or mutation, row: sample or case
@@ -38,7 +39,58 @@ class PivotTable(pd.DataFrame):
 
         if not self.sample_metadata.index.equals(self.columns):
             raise ValueError("sample_metadata index does not match PivotTable columns.")
+    
+    def rename_index_and_columns(self, index_name="feature", columns_name="sample"):
+        """
+        Rename the index and columns of the PivotTable.
         
+        Parameters
+        ----------
+        index_name : str, default "feature"
+            New name for the index (features).
+        columns_name : str, default "sample"
+            New name for the columns (samples).
+        """
+        table = self.copy()
+        table.index.name = index_name
+        table.columns.name = columns_name
+        table.feature_metadata.index.name = index_name
+        table.sample_metadata.index.name = columns_name
+        return table
+
+    def to_sqlite(self, db_path: str):
+        """ Save PivotTable to SQLite database format."""
+        db_path = Path(db_path)
+        if db_path.exists():
+            db_path.unlink()
+
+        conn = sqlite3.connect(str(db_path))
+        table = self.copy().rename_index_and_columns()
+        table.to_sql("data", conn, index=True)
+        table.sample_metadata.to_sql(f"sample_metadata", conn, index=True)
+        table.feature_metadata.to_sql(f"feature_metadata", conn, index=True)
+        conn.close()
+        print(f"[PivotTable] saved to {db_path}")
+
+    @classmethod
+    def read_sqlite(cls, db_path: str):
+        """Load PivotTable from SQLite database format."""
+        conn = sqlite3.connect(db_path)
+
+        data = pd.read_sql(f"SELECT * FROM 'data'", conn, index_col="feature")
+        data.columns.name = "sample"
+
+        sample_metadata = pd.read_sql(f"SELECT * FROM 'sample_metadata'", conn, index_col="sample")
+        feature_metadata = pd.read_sql(f"SELECT * FROM 'feature_metadata'", conn, index_col="feature")
+
+        table = cls(data)
+        table.sample_metadata = sample_metadata
+        table.feature_metadata = feature_metadata
+
+        conn.close()
+        print(f"[PivotTable] loaded from {db_path}")
+        return table
+
     def to_pickle(self, file_path):
         with open(file_path, 'wb') as f:
             pickle.dump(self, f)
