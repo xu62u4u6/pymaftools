@@ -13,7 +13,7 @@ from sklearn.metrics import pairwise_distances
 from sklearn.decomposition import PCA
 from statsmodels.stats.multitest import multipletests
 from scipy.stats import chi2_contingency, fisher_exact
-from .CooccurMatrix import CooccurMatrix
+from .PairwiseMatrix import SimilarityMatrix
 import sqlite3
 from pathlib import Path
 
@@ -863,7 +863,7 @@ class PivotTable(pd.DataFrame):
         similarity_df = pd.DataFrame(similarity, 
                                     index=self.columns, 
                                     columns=self.columns)
-        return similarity_df
+        return SimilarityMatrix(similarity_df)
 
     def order(self, group_col, group_order):
         subset_list = []
