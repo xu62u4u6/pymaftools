@@ -623,16 +623,13 @@ class PivotTable(pd.DataFrame):
         pivot_table.feature_metadata[freq_data.columns] = freq_data
         return pivot_table
     
-    def sort_features_by_freq(self, by="freq", ascending=False):
-        pivot_table = self.copy()
-        sorted_index = pivot_table.feature_metadata.sort_values(by=by, ascending=ascending).index
-        
-        # sort pivot table
-        pivot_table = pivot_table.loc[sorted_index]
-
-        # also sort feature_metadata
-        pivot_table.feature_metadata = pivot_table.feature_metadata.loc[sorted_index]
-        return pivot_table
+    def sort_features(self, by="freq", ascending=False):
+        if by not in self.feature_metadata.columns:
+            raise ValueError(f"Column '{by}' not found in feature_metadata.")
+        table = self.copy()
+        # get sorted index based on the specified column
+        sorted_index = table.feature_metadata.sort_values(by=by, ascending=ascending).index
+        return table.subset(features=sorted_index)
 
     def sort_samples_by_mutations(self, top: int = 10):
         def binary_sort_key(column: pd.Series) -> int: 
@@ -647,12 +644,9 @@ class PivotTable(pd.DataFrame):
         pivot_table.sample_metadata["mutations_weight"] = mutations_weight
         sorted_samples = (mutations_weight
                     .sort_values(ascending=False)  
-                    .index)                        
-        
-        # sort by order
-        pivot_table = pivot_table.loc[:, sorted_samples]
-        pivot_table.sample_metadata = pivot_table.sample_metadata.loc[sorted_samples, :]
-        return pivot_table
+                    .index
+                    .tolist())                        
+        return pivot_table.subset(samples=sorted_samples)
     
     def sort_samples_by_group(self, group_col="subtype", group_order=["LUAD", "ASC", "LUSC"], top=10):
         """
@@ -687,10 +681,7 @@ class PivotTable(pd.DataFrame):
                 sorted_samples.extend(sorted_subtype_pivot.columns)  # 儲存排序後的樣本順序
         
         # 重新排列 PivotTable
-        pivot_table = pivot_table.loc[:, sorted_samples]
-        pivot_table.sample_metadata = pivot_table.sample_metadata.loc[sorted_samples, :]
-        
-        return pivot_table
+        return pivot_table.subset(samples=sorted_samples)
 
     def PCA(self, to_binary):
         """
@@ -771,9 +762,8 @@ class PivotTable(pd.DataFrame):
 
     def head(self, n = 50):
         pivot_table = self.copy()
-        pivot_table = pivot_table.iloc[:n]
-        pivot_table.feature_metadata = pivot_table.feature_metadata.iloc[:n]
-        return pivot_table
+        head_indices = pivot_table.index[:n].tolist()
+        return pivot_table.subset(features=head_indices)
     
     def filter_by_freq(self, threshold=0.05):
         if "freq" not in self.feature_metadata.columns:
