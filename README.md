@@ -67,8 +67,8 @@ print(pivot_table.sample_metadata) # check sample metadata
 
 
 sorted_pivot_table = (pivot_table
-                    .add_freq() # Calculate mutation frequencies
-                    .sort_features_by_freq() # sort features(rows), optional
+                    .add_freq() # Calculate mutation frequencies and add to feature_metadata
+                    .sort_features(by="freq") # sort features(rows), optional
                     .sort_samples_by_mutations() # sort samples(columns), optional
                     .calculate_TMB(capture_size=50) # calculate TMB
                     )
@@ -117,7 +117,7 @@ pivot_table = pivot_table.calculate_TMB(group_col="subtype",
 
 # sort genes by frequency and sort samples by subtypes
 pivot_table = (pivot_table.add_freq()
-                .sort_features_by_freq()
+                .sort_features(by="freq")
                 .sort_samples_by_group(group_col="subtype", group_order=["LUAD", "LUSC"], top=10)
 )
 
