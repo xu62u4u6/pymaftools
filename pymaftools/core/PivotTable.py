@@ -648,7 +648,7 @@ class PivotTable(pd.DataFrame):
                     .tolist())                        
         return pivot_table.subset(samples=sorted_samples)
     
-    def sort_samples_by_group(self, group_col="subtype", group_order=["LUAD", "ASC", "LUSC"], top=10):
+    def sort_samples_by_group(self, group_col: str, group_order: list, top: int=10):
         """
         Sort samples first by the given subtype order, then within each subtype, 
         apply sort_samples_by_mutations.
@@ -771,7 +771,7 @@ class PivotTable(pd.DataFrame):
         pivot_table = self.copy()
         return pivot_table.subset(features=pivot_table.feature_metadata.freq >= threshold)
     
-    def to_cooccur_matrix(self, freq=True) -> 'CooccurMatrix':
+    def to_cooccur_matrix(self, freq=True) -> 'CooccurrenceMatrix':
         matrix = (self != False).astype(int)
         cooccur_matrix = matrix.dot(matrix.T)
         if freq:
