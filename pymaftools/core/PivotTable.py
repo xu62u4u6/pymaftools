@@ -13,7 +13,7 @@ from sklearn.metrics import pairwise_distances
 from sklearn.decomposition import PCA
 from statsmodels.stats.multitest import multipletests
 from scipy.stats import chi2_contingency, fisher_exact
-from .PairwiseMatrix import SimilarityMatrix
+from .PairwiseMatrix import SimilarityMatrix, CooccurrenceMatrix
 import sqlite3
 from pathlib import Path
 
@@ -777,7 +777,7 @@ class PivotTable(pd.DataFrame):
         if freq:
             cooccur_matrix = cooccur_matrix / matrix.shape[1]
 
-        return CooccurMatrix(cooccur_matrix)
+        return CooccurrenceMatrix(cooccur_matrix)
     
     def to_binary_table(self):
         binary_pivot_table = self.copy()

@@ -14,7 +14,12 @@ class PairwiseMatrix(pd.DataFrame):
     @property
     def _constructor(self):
         return PairwiseMatrix
-
+    
+class CooccurrenceMatrix(PairwiseMatrix):
+    @property
+    def _constructor(self):
+        return CooccurrenceMatrix
+    
 class SimilarityMatrix(PairwiseMatrix):
     @property
     def _constructor(self):
