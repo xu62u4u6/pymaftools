@@ -4,54 +4,26 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 import seaborn as sns
 from matplotlib import cm, ticker
-from matplotlib.colors import ListedColormap
+from matplotlib.colors import ListedColormap, Normalize
 from ..core.PivotTable import PivotTable
+from .ColorManager import ColorManager
 
 class OncoPlot:
-    all_mutation_cmap = {
-        'False': '#FFFFFF', 
-        'Missense_Mutation': 'gray', 
-        'Frame_Shift_Ins':'#FF4500',     # Dark red  
-        'Frame_Shift_Del': '#4682B4',    # Dark blue
-        'In_Frame_Ins': '#FF707A',       # Light red
-        'In_Frame_Del':'#ADD8E6',        # Light blue
-        'Nonsense_Mutation': '#90EE90',  # Low-saturation green
-        'Splice_Site': '#CB704D',        # Low-saturation brown
-        'Multi_Hit': '#000000',          # Black (multiple mutations)
-        "Silent": "#eeeeee",             # Light gray
-        "3'UTR": "#bbbbcc",              # Light purple
-        "5'UTR": "#bbbbcc",              # Light purple
-        "IGR": "#bbbbcc",                # Light purple
-        "Intron": "#bbbbcc",             # Light purple
-        "RNA": "#bbbbcc",                # Light purple
-    }
-
-    nonsynymous_cmap = {
-        'False': '#FFFFFF', 
-        'Missense_Mutation': 'gray', 
-        'Frame_Shift_Ins':'#FF4500',     # Dark red
-        'Frame_Shift_Del': '#4682B4',    # Dark blue
-        'In_Frame_Ins': '#FF707A',       # Light red
-        'In_Frame_Del':'#ADD8E6',        # Light blue
-        'Nonsense_Mutation': '#90EE90',  # Low-saturation green
-        'Splice_Site': '#CB704D',        # Low-saturation brown
-        'Multi_Hit': '#000000',          # Black (multiple mutations)
-    }
-
-    cnv_cmp = {"AMP": "salmon", "DEL": "steelblue", "AMP&DEL": "gray"}
-    
     def __init__(self, pivot_table: PivotTable, **kwargs):
         # load pivottable
         self.pivot_table = pivot_table
         self.feature_metadata = pivot_table.feature_metadata
         self.sample_metadata = pivot_table.sample_metadata
+        
+        # initialize ColorManager
+        self.color_manager = ColorManager()
 
         self.set_config(**kwargs)
         self.update_layout()
 
     def set_config(self, 
                    line_color: str = "white", 
-                   cmap: dict = nonsynymous_cmap, 
+                   cmap: str = "nonsynonymous",
                    figsize=(20, 15), 
                    width_ratios=[20, 1, 1.5], 
                    height_ratios=[1, 20], 
@@ -62,7 +34,7 @@ class OncoPlot:
                    ytick_fontsize=10):
         
         self.line_color = line_color
-        self.cmap = cmap
+        self.cmap = self.color_manager.get_cmap(cmap) if isinstance(cmap, str) else cmap
         self.figsize = figsize
         self.width_ratios = width_ratios
         self.height_ratios = height_ratios
@@ -123,6 +95,7 @@ class OncoPlot:
             )
             ax.set_yticks([i + 0.5 for i in range(len(data.index))])  # Shift the ticks by +0.5
             ax.set_yticklabels(data.index, rotation=0, fontsize=self.ytick_fontsize)  # Set labels horizontally
+        return self
 
     def heatmap_rectangle(self, show_frame=False, n=3, cmap=None, table=None, width=1, height=1, line_color="white"):
         if table is None:
@@ -160,6 +133,7 @@ class OncoPlot:
         legend_elements = [Rectangle((0, 0), 1, 1, color=self.cmap[key], label=key) for key in self.cmap.keys()]
         self.ax_heatmap_legend.legend(handles=legend_elements, title="Variant Types", loc='center', fontsize='small', frameon=False)
         self.ax_heatmap_legend.axis('off')
+        return self
 
     @staticmethod
     def categorical_heatmap(table, category_cmap, ax=None, fig_size=(10, 6), unknown_color="white", linecolor="white", **kwargs):
@@ -188,7 +162,7 @@ class OncoPlot:
     
     def heatmap(self, cmap_dict=None, linecolor="white", linewidth=1, show_frame=False, n=3):
         if cmap_dict is None:
-            cmap_dict = self.cmap # Your original dictionary like nonsynymous_cmap
+            cmap_dict = self.cmap
 
         fig, ax, legend_info = self.categorical_heatmap(table=self.pivot_table, 
                                                         category_cmap=cmap_dict, 
@@ -219,6 +193,7 @@ class OncoPlot:
                         for key in cmap_dict.keys() if key != "Unknown"] # Exclude placeholder if added
         self.ax_heatmap_legend.legend(handles=legend_elements, title="Variant Types", loc='center', fontsize='small', frameon=False)
         self.ax_heatmap_legend.axis('off')
+        return self
          
     def plot_bar(self, tmb=None, fontsize=6, bar_value=False):    
         tmb = tmb or self.sample_metadata.TMB
@@ -237,7 +212,7 @@ class OncoPlot:
         self.ax_bar.spines['right'].set_visible(False)
         self.ax_bar.spines['bottom'].set_visible(False)
         self.ax_bar.set_xticks([])
-        self.ax_bar.set_ylabel('TMB')
+        return self
 
     def plot_freq(self, freq_columns=["freq"]):
         freq_data = self.feature_metadata[freq_columns]
@@ -256,46 +231,8 @@ class OncoPlot:
             )
         self.ax_freq.set_ylabel("")
         self.ax_freq.set_yticks([])  # hide y-axis
+        return self
 
-    @staticmethod
-    def categorical_cmap(data, cmap_dict=None, default_cmap="pastel"):
-        """
-        Function to map categories in `data` to specific colors based on `cmap_dict`.
-        If no mapping is found for a category, it applies the default colormap.
-
-        Parameters:
-        - data: DataFrame or Series containing categorical data.
-        - cmap_dict: Dictionary of custom color mappings, such as:
-        {"subtype": {"LUAD": "orange", "LUSC": "blue", "ASC": "green"},
-        "smoke": {"is_smoke": "gray", "no_smoke": "white"}}
-        - default_cmap: Default colormap if no custom mapping is found.
-        
-        Returns:
-        - color_matrix: A DataFrame or Series of color values based on the mappings.
-        """
-        # Set default colormap
-        if cmap_dict is None:
-            cmap_dict = {}
-
-        # Get unique categories in the data
-        unique_categories = pd.unique(data.values.ravel())
-
-        # Create a color palette for categories not found in cmap_dict
-        palette = sns.color_palette(default_cmap, len(unique_categories))
-        default_color_dict = {category: palette[i] for i, category in enumerate(unique_categories)}
-
-        color_dict = default_color_dict.copy()  # Start with the default color map
-
-        # Process each key in cmap_dict and update the color_dict with custom mappings
-        for key, category_dict in cmap_dict.items():
-            for category, color in category_dict.items():
-                color_dict[category] = color  # Override the default color with the custom one
-
-        # Map the categories to their respective colors, falling back to default if necessary
-        color_matrix = data.map(lambda x: color_dict.get(x, '#ffffff'))  # Default to white if no mapping
-
-        return color_matrix
-    
     def plot_categorical_metadata(self, annotate=False, cmap_dict=None, alpha=1.0, default_cmap="pastel", annotation_font_size=10, annotate_text_color="black"):
         """
         cmap_dict = {
@@ -333,10 +270,7 @@ class OncoPlot:
                     )
 
             ax.set_xticks([])
-            ax.set_yticks([i + 0.5 for i in range(len(color_matrix.index))])  # Shift the ticks by +0.5
-            ax.set_yticklabels(color_matrix.index, rotation=0, fontsize=self.ytick_fontsize)  # Set labels horizontally
-            ax.set_xlabel("")  # Hide x-axis label if it exists
-            ax.tick_params(axis='x', which='both', bottom=False, top=False)  # Hide x ticks completely
+        return self
 
     @staticmethod
     def plot_color_heatmap(ax, 
@@ -388,7 +322,6 @@ class OncoPlot:
         ax.set_yticklabels(color_matrix.index, rotation=0, fontsize=ytick_fontsize)  # Set labels horizontally
         return ax
 
-
     def add_xticklabel(self):
         # get the maximum row number
         max_row = max([spec.rowspan.stop for spec in self.gs]) - 1
@@ -405,6 +338,7 @@ class OncoPlot:
         if target_ax:
             target_ax.set_xticks([i + 0.5 for i in range(len(self.sample_metadata))])
             target_ax.set_xticklabels(self.sample_metadata.index, rotation=90)
+        return self
 
     def numeric_heatmap(self, cmap="Blues", symmetric=False): 
         ax = self.ax_heatmap
@@ -453,6 +387,7 @@ class OncoPlot:
         
         self.ax_heatmap_legend.axis('off')
         self.ax_bar.axis('off')
+        return self
 
     @staticmethod
     def default_oncoplot(pivot_table, figsize=(30, 15), width_ratios=[20, 1, 2]):
