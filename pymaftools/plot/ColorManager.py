@@ -3,6 +3,8 @@ import numpy as np
 import seaborn as sns
 from matplotlib.colors import ListedColormap
 from typing import Dict, Union, Optional, List, Any
+from matplotlib.colors import to_rgb
+import colorsys
 
 class ColorManager:
     """
@@ -51,7 +53,7 @@ class ColorManager:
         """Initialize ColorManager with empty custom colormap registry."""
         self.custom_cmaps = {}
         
-    def register_cmap(self, name: str, cmap: Dict[str, str]) -> None:
+    def add_cmap(self, name: str, cmap: Dict[str, str], factor: Optional[float] = None) -> None:
         """
         Register a custom colormap for later use.
         
@@ -185,12 +187,11 @@ class ColorManager:
         color_list = list(colors)
         color_list.append(unknown_color)  # 為未知類別添加顏色
         return ListedColormap(color_list)
-    
+
     @staticmethod
     def hex_to_rgb(hex_color: str) -> tuple:
-        """Convert hexadecimal color to RGB tuple."""
-        hex_color = hex_color.lstrip('#')
-        return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+        """Convert any valid matplotlib color (hex, name) to RGB tuple."""
+        return tuple(int(c * 255) for c in to_rgb(hex_color))
     
     @staticmethod
     def rgb_to_hex(rgb_color: tuple) -> str:
@@ -199,21 +200,33 @@ class ColorManager:
     
     def adjust_color_brightness(self, color: str, factor: float) -> str:
         """
-        Adjust the brightness of a color.
-        
+        Adjust the brightness of a color using HLS color space.
+
         Parameters
         ----------
         color : str
-            Hexadecimal color string
+            Any valid matplotlib color (hex, name, etc.)
         factor : float
-            Brightness adjustment factor (0-1 for darker, >1 for brighter)
-            
+            Brightness adjustment factor:
+            - 1.0 = no change
+            - <1.0 = darker
+            - >1.0 = brighter
+
         Returns
         -------
         str
-            Adjusted hexadecimal color string
+            Adjusted color in hex format
         """
-        rgb = self.hex_to_rgb(color)
-        adjusted_rgb = tuple(min(255, max(0, int(c * factor))) for c in rgb)
-        return self.rgb_to_hex(adjusted_rgb)
-    
+        # Convert color to RGB (0–1 float)
+        r, g, b = to_rgb(color)
+        h, l, s = colorsys.rgb_to_hls(r, g, b)
+
+        # 調整亮度
+        l = max(0, min(1, l * factor))
+
+        # 轉回 RGB
+        r_new, g_new, b_new = colorsys.hls_to_rgb(h, l, s)
+
+        # 轉成 hex 並回傳
+        return "#{:02x}{:02x}{:02x}".format(int(r_new * 255), int(g_new * 255), int(b_new * 255))
+        
