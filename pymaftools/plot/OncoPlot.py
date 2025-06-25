@@ -362,32 +362,38 @@ class OncoPlot:
             target_ax.set_xticklabels(self.sample_metadata.index, rotation=90)
         return self
 
-    def numeric_heatmap(self, cmap="Blues", symmetric=False): 
+    def numeric_heatmap(self, cmap="Blues", vmin=None, vmax=None, symmetric=False, yticklabels=True): 
         ax = self.ax_heatmap
         table = self.pivot_table
         
         # decide color range
-        if symmetric:
-            vextreme = max(abs(table.min().min()), abs(table.max().max()))
-            vmin = -vextreme
-            vmax = vextreme
-            center = 0
+        if vmin is None and vmax is None:
+            if symmetric:
+                vextreme = max(abs(table.min().min()), abs(table.max().max()))
+                vmin = -vextreme
+                vmax = vextreme
+                center = 0
+            else:
+                vmin = table.min().min()
+                vmax = table.max().max()
+                center = (vmin + vmax) / 2
+        elif vmin is None or vmax is None:
+            raise ValueError("Both vmin and vmax must be specified.")
+
         else:
-            vmin = table.min().min()
-            vmax = table.max().max()
-            center = (vmin + vmax) / 2
-        
+            center = 0
         # Draw heatmap
         hm = sns.heatmap(table, ax=ax, cmap=cmap, cbar=False,
-                        vmin=vmin, vmax=vmax, center=center)
+                        vmin=vmin, vmax=vmax, center=center, yticklabels=yticklabels)
 
         ax.set_xticks([])
         ax.set_xlabel("")
-        ax.set_yticks([i + 0.5 for i in range(len(table.index))])
-        ax.set_yticklabels(table.index, rotation=0, fontsize=self.ytick_fontsize)
+        if yticklabels:
+            ax.set_yticks([i + 0.5 for i in range(len(table.index))])
+            ax.set_yticklabels(table.index, rotation=0, fontsize=self.ytick_fontsize)
 
         # Create colorbar
-        norm = plt.Normalize(vmin=vmin, vmax=vmax)
+        norm = Normalize(vmin=vmin, vmax=vmax)
         cbar = self.fig.colorbar(
             cm.ScalarMappable(norm=norm, cmap=cmap),
             cax=self.ax_freq,
@@ -395,18 +401,15 @@ class OncoPlot:
             shrink=0.7
         )
         cbar.ax.set_aspect(18)
-        cbar.outline.set_visible(False)
-        
-        cbar.ax.yaxis.set_tick_params(color="gray")
-        cbar.ax.yaxis.set_tick_params(labelcolor="black")
+        # cbar.outline.set_visible(False)  # Fix: outline may not be available
         cbar.ax.tick_params(labelsize=10, length=6, width=1)
-        
-        # Formatter
-        if vextreme < 0.01 or vextreme > 1000:
-            cbar.ax.yaxis.set_major_formatter(ticker.ScalarFormatter(useMathText=True))
-        else:
-            cbar.ax.yaxis.set_major_formatter(ticker.FormatStrFormatter('%.2f'))
-        
+        if yticklabels:
+            cbar.ax.yaxis.set_tick_params(color="gray", labelcolor="black")
+            # Format tick labels
+            if max(abs(vmin), abs(vmax)) < 0.01 or max(abs(vmin), abs(vmax)) > 1000:
+                cbar.ax.yaxis.set_major_formatter(ticker.ScalarFormatter(useMathText=True))
+            else:
+                cbar.ax.yaxis.set_major_formatter(ticker.FormatStrFormatter('%.2f'))
         self.ax_heatmap_legend.axis('off')
         self.ax_bar.axis('off')
         return self
@@ -420,17 +423,22 @@ class OncoPlot:
         oncoplot.add_xticklabel()
         return oncoplot
     
-    def save_figure(self, filename: str, dpi: int = 300, bbox_inches: str = 'tight', transparent: bool = False, **kwargs):
+    def save(self, filename: str, dpi: int = 300, bbox_inches: str = 'tight', transparent: bool = False, **kwargs):
         if self.fig is None:
             print("Figure is not exist.")
             return
 
         try:
+            format = filename.split('.')[-1].lower()
+            pil_kwargs = {"compression": "tiff_lzw"} if format == "tiff" else {}
+
             self.fig.savefig(
                 filename,
                 dpi=dpi,
                 bbox_inches=bbox_inches,
                 transparent=transparent,
+                format=format,
+                pil_kwargs=pil_kwargs,
                 **kwargs
             )
             print(f"Figure saved to: {filename}")
