@@ -10,7 +10,7 @@ from .ColorManager import ColorManager
 
 class OncoPlot:
     def __init__(self, pivot_table: PivotTable, **kwargs):
-        # load pivottable
+        # load PivotTable
         self.pivot_table = pivot_table
         self.feature_metadata = pivot_table.feature_metadata
         self.sample_metadata = pivot_table.sample_metadata
@@ -19,7 +19,6 @@ class OncoPlot:
         self.color_manager = ColorManager()
 
         self.set_config(**kwargs)
-        self.update_layout()
 
     def set_config(self, 
                    line_color: str = "white", 
@@ -43,12 +42,16 @@ class OncoPlot:
         self.categorical_columns = categorical_columns
         self.numeric_columns = numeric_columns
         self.ytick_fontsize = ytick_fontsize
+        self.update_layout()
+        return self
 
     def update_layout(self):
         num_categorical = len(self.categorical_columns)
         num_numeric = len(self.numeric_columns)
         height_ratios = [1, 20] + [1] * num_categorical + [1] * num_numeric
 
+        # make sure only one figure is created
+        plt.close("all")
         self.fig = plt.figure(figsize=self.figsize)
         self.gs = plt.GridSpec(
             2 + num_categorical + num_numeric, 
@@ -303,7 +306,8 @@ class OncoPlot:
                         yticklabels=True,
                         alpha=1.0,
                         width=1.0, 
-                        height=1.0):
+                        height=1.0,
+                        ytick_fontsize=10):
         
         ones_matrix = color_matrix.copy()
         ones_matrix[:] = 0 
@@ -321,7 +325,7 @@ class OncoPlot:
             cmap="Blues",
             alpha=0
         )
-        
+
         for i in range(color_matrix.shape[0]):
             for j in range(color_matrix.shape[1]):
                 face_color = color_matrix.iloc[i, j]
