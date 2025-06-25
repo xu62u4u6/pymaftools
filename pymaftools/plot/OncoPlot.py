@@ -195,16 +195,20 @@ class OncoPlot:
         self.ax_heatmap_legend.axis('off')
         return self
          
-    def plot_bar(self, tmb=None, fontsize=6, bar_value=False):    
-        tmb = tmb or self.sample_metadata.TMB
-        x = np.arange(len(tmb))
+    def plot_bar(self, fontsize=6, bar_value=False, bar_col="TMB"):
+        if bar_col == "TMB" and bar_col not in self.sample_metadata.columns:
+            raise ValueError(f"Column '{bar_col}' not found in sample metadata. Please do table.calculate_tmb() first.")
+        if bar_col not in self.sample_metadata.columns:
+            raise ValueError(f"Column '{bar_col}' not found in sample metadata.")
+        bar_values = self.sample_metadata[bar_col].values
+        x = np.arange(len(bar_values))
         width = 0.95
 
-        self.ax_bar.bar(x, tmb, width=width, color='gray', edgecolor='white')
-        self.ax_bar.set_xlim(-0.5, len(tmb) - 0.5)
+        self.ax_bar.bar(x, bar_values, width=width, color='gray', edgecolor='white')
+        self.ax_bar.set_xlim(-0.5, len(bar_values) - 0.5)
         if bar_value:
-            for i, tmb_value in enumerate(tmb):
-                self.ax_bar.text(i, tmb_value + 2, f"{tmb:.1f}", ha='center', fontsize=fontsize)
+            for i, tmb_value in enumerate(bar_values):
+                self.ax_bar.text(i, tmb_value + 2, f"{bar_values:.1f}", ha='center', fontsize=fontsize)
 
         self.ax_bar.spines['left'].set_visible(True) # True !!!
 
@@ -212,6 +216,7 @@ class OncoPlot:
         self.ax_bar.spines['right'].set_visible(False)
         self.ax_bar.spines['bottom'].set_visible(False)
         self.ax_bar.set_xticks([])
+        self.ax_bar.set_ylabel(bar_col)
         return self
 
     def plot_freq(self, freq_columns=["freq"]):
