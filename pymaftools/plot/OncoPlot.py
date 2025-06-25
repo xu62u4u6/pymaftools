@@ -248,28 +248,45 @@ class OncoPlot:
         """
         for col, ax in self.axs_categorical_columns.items():
             data = self.sample_metadata[[col]].T  # Ensure you pass a DataFrame
-            color_matrix = self.categorical_cmap(data, cmap_dict=cmap_dict, default_cmap=default_cmap)
-            self.plot_color_heatmap(ax, 
-                color_matrix=color_matrix,
+            
+            # 使用 ColorManager 生成顏色映射
+            column_cmap = cmap_dict.get(col, {}) if cmap_dict else {}
+            if not column_cmap:
+                column_cmap = self.color_manager.generate_categorical_cmap(
+                    data.iloc[0], 
+                    default_palette=default_cmap
+                )
+            
+            # 使用 categorical_heatmap 方法
+            fig, ax, legend_info = self.categorical_heatmap(
+                table=data,
+                category_cmap=column_cmap,
+                ax=ax,
                 linecolor=self.line_color,
                 linewidth=1,
                 xticklabels=False,
                 yticklabels=list(data.index),
-                alpha=alpha,
-                ytick_fontsize=self.ytick_fontsize,)
+                alpha=alpha
+            )
 
+            # 添加文字註解（如果需要）
             if annotate:
-                for i in range(color_matrix.shape[0]):
-                    for j in range(color_matrix.shape[1]):
+                for i in range(data.shape[0]):
+                    for j in range(data.shape[1]):
                         ax.text(
                             j + 0.5, i + 0.5,  # Center the text
-                            f"{data.iloc[i, j]}",  # Display the color value or any desired text
+                            f"{data.iloc[i, j]}",  # Display the actual value
                             ha='center', va='center',
                             fontsize=annotation_font_size,
                             color=annotate_text_color
-                    )
+                        )
 
+            # 設定軸標籤和刻度
             ax.set_xticks([])
+            ax.set_yticks([i + 0.5 for i in range(len(data.index))])
+            ax.set_yticklabels(data.index, rotation=0, fontsize=self.ytick_fontsize)
+            ax.set_xlabel("")
+            ax.tick_params(axis='x', which='both', bottom=False, top=False)
         return self
 
     @staticmethod
