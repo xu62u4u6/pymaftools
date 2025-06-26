@@ -27,7 +27,7 @@ class OncoPlot:
                    line_color: str = "white", 
                    cmap: str = "nonsynonymous",
                    figsize=(20, 15), 
-                   width_ratios=[20, 1, 1.5], 
+                   width_ratios=[25, 1, 1, 2], 
                    height_ratios=[1, 20], 
                    wspace=0.015, 
                    hspace=0.02, 
@@ -58,7 +58,7 @@ class OncoPlot:
         self.fig = plt.figure(figsize=self.figsize)
         self.gs = plt.GridSpec(
             2 + num_categorical + num_numeric, 
-            3, 
+            4, 
             width_ratios=self.width_ratios, 
             height_ratios=height_ratios, 
             wspace=self.wspace, 
@@ -462,10 +462,16 @@ class OncoPlot:
             cm.ScalarMappable(norm=norm, cmap=cmap),
             cax=self.ax_freq,
             ticks=np.linspace(vmin, vmax, 5),
-            shrink=0.7
-        )
+            shrink=0.5
+            )
         cbar.ax.set_aspect(18)
-        # cbar.outline.set_visible(False)  # Fix: outline may not be available
+        
+        try:
+            cbar.outline.set_visible(False)
+        except AttributeError:
+            for spine in cbar.ax.spines.values():
+                spine.set_visible(False)
+        
         cbar.ax.tick_params(labelsize=10, length=6, width=1)
         if yticklabels:
             cbar.ax.yaxis.set_tick_params(color="gray", labelcolor="black")
