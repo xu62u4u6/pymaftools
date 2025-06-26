@@ -110,7 +110,7 @@ class ColorManager:
         fg_rgb = to_rgb(color)  # 會自動處理 hex or name
         bg_rgb = to_rgb(background)
         blended_rgb = [(alpha * f + (1 - alpha) * b) for f, b in zip(fg_rgb, bg_rgb)]
-        return to_hex(tuple(blended_rgb))##{:02x}{:02x}{:02x}".format(*(int(c * 255) for c in blended_rgb))
+        return to_hex(tuple(blended_rgb))
 
     def generate_categorical_cmap(self, 
                                 data: Union[pd.DataFrame, pd.Series], 
@@ -235,5 +235,4 @@ class ColorManager:
         r_new, g_new, b_new = colorsys.hls_to_rgb(h, l, s)
 
         # 轉成 hex 並回傳
-        return "#{:02x}{:02x}{:02x}".format(int(r_new * 255), int(g_new * 255), int(b_new * 255))
-        
+        return to_hex((r_new, g_new, b_new))
