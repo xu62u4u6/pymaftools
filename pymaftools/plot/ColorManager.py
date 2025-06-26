@@ -3,7 +3,7 @@ import numpy as np
 import seaborn as sns
 from matplotlib.colors import ListedColormap
 from typing import Dict, Union, Optional, List, Any
-from matplotlib.colors import to_rgb
+from matplotlib.colors import to_rgb, to_hex
 import colorsys
 
 class ColorManager:
@@ -20,12 +20,12 @@ class ColorManager:
         'False': '#FFFFFF', 
         'Missense_Mutation': 'gray', 
         'Frame_Shift_Ins':'#FF4500',     # Dark red
-        'Frame_Shift_Del': '#4682B4',    # Dark blue
-        'In_Frame_Ins': '#FF707A',       # Light red
-        'In_Frame_Del':'#ADD8E6',        # Light blue
-        'Nonsense_Mutation': '#90EE90',  # Low-saturation green
-        'Splice_Site': '#CB704D',        # Low-saturation brown
-        'Multi_Hit': '#000000',          # Black (multiple mutations)
+        'Frame_Shift_Del': "#3E85C0",    # Dark blue
+        'In_Frame_Ins': "#E8656E",       # Light red
+        'In_Frame_Del':"#ADDBEA",        # Light blue
+        'Nonsense_Mutation': "#98E28F",  # Low-saturation green
+        'Splice_Site': "#D0875D",        # Low-saturation brown
+        'Multi_Hit': "#222222",          # Black (multiple mutations)
     }
 
     ALL_MUTATION_CMAP = NONSYNONYMOUS_CMAP | {
@@ -66,35 +66,52 @@ class ColorManager:
         """
         self.custom_cmaps[name] = cmap
         
-    def get_cmap(self, name: str) -> Dict[str, str]:
+    def get_cmap(self, name: str, factor: Optional[float] = None, alpha: Optional[float] = None) -> Dict[str, str]:
         """
-        Retrieve a colormap by name.
-        
+        Retrieve a colormap by name, optionally adjusting brightness and simulated alpha.
+
         Parameters
         ----------
         name : str
             Name of the colormap to retrieve
-            
+        factor : float, optional
+            Brightness factor (>1 = brighter, <1 = darker)
+        alpha : float, optional
+            Simulated alpha blending with white background (0–1)
+
         Returns
         -------
         dict
-            Dictionary mapping categories to colors
-            
-        Raises
-        ------
-        ValueError
-            If the specified colormap name is not found
+            Adjusted color mapping
         """
-        # 優先返回自定義的 cmap
         if name in self.custom_cmaps:
-            return self.custom_cmaps[name]
-            
-        # 返回預定義的 cmap
-        if name in self.predefined_cmaps:
-            return self.predefined_cmaps[name]
+            cmap = self.custom_cmaps[name]
+        elif name in self.predefined_cmaps:
+            cmap = self.predefined_cmaps[name]
         else:
             raise ValueError(f"Unknown colormap: {name}")
-    
+
+        adjusted_cmap = {}
+
+        for k, v in cmap.items():
+            color = v
+            if factor is not None:
+                color = self.adjust_color_brightness(color, factor)
+            if alpha is not None:
+                color = self.simulate_alpha_blend(color, alpha)
+            adjusted_cmap[k] = color
+
+        return adjusted_cmap
+
+    def simulate_alpha_blend(self, color: str, alpha: float, background: str = "#FFFFFF") -> str:
+        """
+        模擬 alpha 效果，將 color 與背景色混合，實現 alpha 混色後的結果（返回 hex）。
+        """
+        fg_rgb = to_rgb(color)  # 會自動處理 hex or name
+        bg_rgb = to_rgb(background)
+        blended_rgb = [(alpha * f + (1 - alpha) * b) for f, b in zip(fg_rgb, bg_rgb)]
+        return to_hex(tuple(blended_rgb))##{:02x}{:02x}{:02x}".format(*(int(c * 255) for c in blended_rgb))
+
     def generate_categorical_cmap(self, 
                                 data: Union[pd.DataFrame, pd.Series], 
                                 custom_cmap: Optional[Dict[str, str]] = None,
@@ -188,16 +205,6 @@ class ColorManager:
         color_list.append(unknown_color)  # 為未知類別添加顏色
         return ListedColormap(color_list)
 
-    @staticmethod
-    def hex_to_rgb(hex_color: str) -> tuple:
-        """Convert any valid matplotlib color (hex, name) to RGB tuple."""
-        return tuple(int(c * 255) for c in to_rgb(hex_color))
-    
-    @staticmethod
-    def rgb_to_hex(rgb_color: tuple) -> str:
-        """Convert RGB tuple to hexadecimal color string."""
-        return "#{:02x}{:02x}{:02x}".format(int(rgb_color[0]), int(rgb_color[1]), int(rgb_color[2]))
-    
     def adjust_color_brightness(self, color: str, factor: float) -> str:
         """
         Adjust the brightness of a color using HLS color space.
