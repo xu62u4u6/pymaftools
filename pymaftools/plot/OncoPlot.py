@@ -17,6 +17,9 @@ class OncoPlot:
         
         # initialize ColorManager
         self.color_manager = ColorManager()
+        
+        # initialize legend dictionary
+        self.legend_dict = {}
 
         self.set_config(**kwargs)
 
@@ -64,10 +67,67 @@ class OncoPlot:
 
         self.ax_bar = self.fig.add_subplot(self.gs[0, 0])
         self.ax_heatmap = self.fig.add_subplot(self.gs[1, 0])
-        self.ax_heatmap_legend = self.fig.add_subplot(self.gs[1, 2])
+        self.ax_legend = self.fig.add_subplot(self.gs[1, 3])
         self.ax_freq = self.fig.add_subplot(self.gs[1, 1])
         self.axs_categorical_columns = {col: self.fig.add_subplot(self.gs[2+i, 0]) for i, col in enumerate(self.categorical_columns)}
         self.axs_numeric_columns = {col: self.fig.add_subplot(self.gs[2+len(self.categorical_columns)+i, 0]) for i, col in enumerate(self.numeric_columns)}
+
+    def add_legend(self, legend_name: str, color_dict: dict):
+        """
+        添加圖例信息到 legend_dict
+        
+        Args:
+            legend_name: 圖例名稱，如 'mutation', 'sex', 'subtype' 等
+            color_dict: 顏色映射字典，如 {'M': 'blue', 'F': 'red'}
+        """
+        self.legend_dict[legend_name] = color_dict
+        return self
+    
+    def plot_all_legends(self, fontsize=8, title_fontsize=10, legend_spacing=0.08, item_spacing=0.02):
+        """
+        在 ax_legend 上繪製所有圖例
+        
+        Args:
+            fontsize: 圖例字體大小
+            title_fontsize: 圖例標題字體大小
+            legend_spacing: 不同圖例之間的間距
+            item_spacing: 同一圖例內項目之間的間距
+        """
+        if not self.legend_dict:
+            return self
+            
+        self.ax_legend.clear()
+        self.ax_legend.axis('off')
+        self.ax_legend.set_xlim(0, 1)
+        self.ax_legend.set_ylim(0, 1)
+        
+        # 從上往下繪製圖例，起始位置更接近頂部
+        y_position = 0.95
+        
+        for legend_name, color_dict in self.legend_dict.items():
+            # 繪製圖例標題
+            self.ax_legend.text(0.05, y_position, legend_name, 
+                               fontsize=title_fontsize, fontweight='bold', 
+                               va='top', ha='left')
+            y_position -= 0.05  # 標題後的間距縮小
+            
+            # 繪製圖例項目
+            for label, color in color_dict.items():
+                # 繪製顏色方塊（縮小尺寸，無邊框）
+                rect = Rectangle((0.05, y_position - 0.015), 0.04, 0.03, 
+                               facecolor=color, edgecolor='none', linewidth=0)
+                self.ax_legend.add_patch(rect)
+                
+                # 繪製標籤文字
+                self.ax_legend.text(0.12, y_position, label, 
+                                   fontsize=fontsize, va='center', ha='left')
+                
+                y_position -= 0.035  # 項目間距縮小
+            
+            # 添加圖例之間的間距（縮小）
+            y_position -= 0.03
+            
+        return self
 
     def plot_numeric_metadata(self, annotate=False, annotation_font_size=10, fmt=".2f", cmap="Blues", cmap_dict=None, alpha=1):
         for col, ax in self.axs_numeric_columns.items():
@@ -132,10 +192,7 @@ class OncoPlot:
                 )
                 self.ax_heatmap.add_patch(rect)
 
-        # add legend
-        legend_elements = [Rectangle((0, 0), 1, 1, color=self.cmap[key], label=key) for key in self.cmap.keys()]
-        self.ax_heatmap_legend.legend(handles=legend_elements, title="Variant Types", loc='center', fontsize='small', frameon=False)
-        self.ax_heatmap_legend.axis('off')
+        self.add_legend("Variant Types", self.cmap)
         return self
 
     @staticmethod
@@ -192,10 +249,10 @@ class OncoPlot:
                     facecolor='none'
                 )
                 self.ax_heatmap.add_patch(rect)
-        legend_elements = [Rectangle((0, 0), 1, 1, color=cmap_dict[key], label=key)
-                        for key in cmap_dict.keys() if key != "Unknown"] # Exclude placeholder if added
-        self.ax_heatmap_legend.legend(handles=legend_elements, title="Variant Types", loc='center', fontsize='small', frameon=False)
-        self.ax_heatmap_legend.axis('off')
+        
+        mutation_legend = {key: cmap_dict[key] for key in cmap_dict.keys() if key != "Unknown"}
+        self.add_legend("Mutation", mutation_legend)
+        
         return self
          
     def plot_bar(self, fontsize=6, bar_value=False, bar_col="TMB"):
@@ -295,6 +352,9 @@ class OncoPlot:
             ax.set_yticklabels(data.index, rotation=0, fontsize=self.ytick_fontsize)
             ax.set_xlabel("")
             ax.tick_params(axis='x', which='both', bottom=False, top=False)
+            
+            self.add_legend(col, column_cmap)
+            
         return self
 
     @staticmethod
@@ -414,7 +474,7 @@ class OncoPlot:
                 cbar.ax.yaxis.set_major_formatter(ticker.ScalarFormatter(useMathText=True))
             else:
                 cbar.ax.yaxis.set_major_formatter(ticker.FormatStrFormatter('%.2f'))
-        self.ax_heatmap_legend.axis('off')
+        self.ax_legend.axis('off')
         self.ax_bar.axis('off')
         return self
 
@@ -424,6 +484,7 @@ class OncoPlot:
         oncoplot.heatmap()
         oncoplot.plot_freq()
         oncoplot.plot_bar()
+        oncoplot.plot_all_legends()  # 繪製所有圖例
         oncoplot.add_xticklabel()
         return oncoplot
     
