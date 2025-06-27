@@ -9,4 +9,6 @@ from .core.Cohort import Cohort
 # plot
 from .plot.OncoPlot import OncoPlot
 from .plot.LollipopPlot import LollipopPlot
+from .plot.ColorManager import ColorManager
+from .plot.FontManager import FontManager
 
