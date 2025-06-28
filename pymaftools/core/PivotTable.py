@@ -815,7 +815,7 @@ class PivotTable(pd.DataFrame):
 
         return ax
 
-    def calculate_feature_frequency(self) -> pd.Series:
+    def calculate_feature_frequency(self) -> pd.Series[float]:
         """
         Calculate mutation frequency for each feature.
 
@@ -872,7 +872,9 @@ class PivotTable(pd.DataFrame):
         filter_by_freq : Filter features by frequency threshold
         """
         binary_table = self.to_binary_table()
-        return binary_table.sum(axis=1) / binary_table.shape[1]
+        # Ensure result is float64 type, not object
+        frequency = binary_table.sum(axis=1).astype(float) / binary_table.shape[1]
+        return frequency
 
 
     def add_freq(self, groups: Dict[str, "PivotTable"] = {}) -> "PivotTable":
@@ -1233,11 +1235,12 @@ class PivotTable(pd.DataFrame):
         Returns
         -------
         PivotTable
-            Binary PivotTable where True indicates mutation presence.
+            Bool PivotTable where True indicates mutation presence.
         """
         binary_pivot_table = self.copy()
-        # avoid class transform
-        binary_pivot_table[:] = (binary_pivot_table != False)
+        # Convert to boolean and ensure proper dtype
+        binary_data = (binary_pivot_table != False).astype(bool)
+        binary_pivot_table[:] = binary_data
         return binary_pivot_table
 
     def mutation_enrichment_test(
