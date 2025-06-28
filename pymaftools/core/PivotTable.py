@@ -591,6 +591,9 @@ class PivotTable(pd.DataFrame):
                                 dpi=300):
         if ax is None:
             fig, ax = plt.subplots(figsize=(10, 6))
+        else:
+            fig = ax.figure
+
         if title is None:
             title = f"Boxplot of {test_col} by {group_col}"
 
@@ -624,6 +627,18 @@ class PivotTable(pd.DataFrame):
 
         ax.set_xlabel(group_col, fontsize=fontsize)
         ax.set_ylabel(test_col, fontsize=fontsize)
+
+        # save if path is given
+        if save_path is not None:
+            pil_kwargs = {
+                "compression": "tiff_lzw"} if format == "tiff" else {}
+            fig.savefig(save_path, 
+                        dpi=dpi, 
+                        bbox_inches='tight',
+                        pil_kwargs=pil_kwargs)
+            print(f"[INFO] Figure saved to: {save_path}")
+
+        return ax
 
     @staticmethod
     def calculate_frequency(df: pd.DataFrame) -> pd.Series:
