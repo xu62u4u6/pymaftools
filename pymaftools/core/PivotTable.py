@@ -1032,41 +1032,91 @@ class PivotTable(pd.DataFrame):
 
     def sort_samples_by_group(self, group_col: str, group_order: List[str], top: int = 10) -> "PivotTable":
         """
-        Sort samples first by the given subtype order, then within each subtype, 
-        apply sort_samples_by_mutations.
+        Sort samples by group membership and then by mutation patterns.
 
-        Parameters:
-        - group_col (str): The column in sample_metadata containing group information.
-        - group_order (list): The order to sort the groups.
-        - top (int): The number of top features used for sorting within each subtype.
+        First sorts samples according to the specified group order, then within
+        each group, applies mutation-based sorting using `sort_samples_by_mutations`.
+        This creates a hierarchical sorting where group membership is the primary
+        sort key and mutation patterns are the secondary key.
 
-        Returns:
-        - PivotTable: A new PivotTable sorted by subtype and mutations.
+        Parameters
+        ----------
+        group_col : str
+            The column name in sample_metadata containing group information
+            (e.g., "subtype", "treatment", "stage").
+        group_order : List[str]
+            The desired order of groups for sample arrangement.
+            Groups will be ordered as specified in this list.
+        top : int, default 10
+            The number of top features (highest frequency) to consider
+            when sorting samples by mutation patterns within each group.
+
+        Returns
+        -------
+        PivotTable
+            A new PivotTable with samples sorted first by group membership,
+            then by mutation patterns within each group.
+
+        Raises
+        ------
+        ValueError
+            If the specified group_col is not found in sample_metadata.
+
+        Notes
+        -----
+        This method is useful for creating organized visualizations where you want
+        to group samples by a specific criterion (e.g., cancer subtype) while
+        maintaining mutation-based ordering within each group.
+
+        The mutation-based sorting within groups uses the `sort_samples_by_mutations`
+        method, which converts mutation patterns to binary encodings for sorting.
+
+        Examples
+        --------
+        >>> # Sort samples by cancer subtype, then by mutation patterns
+        >>> sorted_table = pivot_table.sort_samples_by_group(
+        ...     group_col="subtype",
+        ...     group_order=["LUAD", "LUSC", "SCLC"],
+        ...     top=15
+        ... )
+
+        >>> # Sort by treatment response, considering top 20 mutations
+        >>> sorted_table = pivot_table.sort_samples_by_group(
+        ...     group_col="response",
+        ...     group_order=["Complete", "Partial", "Stable", "Progressive"],
+        ...     top=20
+        ... )
+
+        See Also
+        --------
+        sort_samples_by_mutations : Sort samples by mutation patterns only
+        sort_features : Sort features by metadata columns
+        subset : Select specific samples or features
         """
         pivot_table = self.copy()
 
-        # 確保 group_col 存在於 sample_metadata
+        # Ensure group_col exists in sample_metadata
         if group_col not in pivot_table.sample_metadata.columns:
             raise ValueError(
                 f"Column '{group_col}' not found in sample_metadata.")
 
         sorted_samples = []
 
-        # 依照 subtype_order 進行分組排序
+        # Sort samples by group order
         for subtype in group_order:
             subtype_samples = pivot_table.sample_metadata[
                 pivot_table.sample_metadata[group_col] == subtype].index
 
             if len(subtype_samples) > 0:
-                # 篩選出該 subtype 的樣本，並應用 sort_samples_by_mutations
+                # Filter samples for this subtype and apply sort_samples_by_mutations
                 subtype_pivot = pivot_table.subset(samples=subtype_samples)
                 sorted_subtype_pivot = subtype_pivot.sort_samples_by_mutations(
                     top=top)
 
                 sorted_samples.extend(
-                    sorted_subtype_pivot.columns)  # 儲存排序後的樣本順序
+                    sorted_subtype_pivot.columns)  # Store sorted sample order
 
-        # 重新排列 PivotTable
+        # Reorder PivotTable with sorted samples
         return pivot_table.subset(samples=sorted_samples)
 
     def PCA(self, to_binary: bool) -> Tuple[pd.DataFrame, np.ndarray, PCA]:
@@ -1087,7 +1137,7 @@ class PivotTable(pd.DataFrame):
         """
         pivot_table = self.to_binary_table() if to_binary else self
         pca = PCA(n_components=2)
-        pca_result = pca.fit_transform(pivot_table.T)  # 樣本在 row，所以轉置
+        pca_result = pca.fit_transform(pivot_table.T)  # Transpose since samples should be rows
         explained_variance = pca.explained_variance_ratio_
         pca_result_df = pd.DataFrame(
             pca_result, index=pivot_table.columns, columns=["PC1", "PC2"])
@@ -1129,7 +1179,7 @@ class PivotTable(pd.DataFrame):
                                   c=pca_result_df[group_col],
                                   cmap=cmap,
                                   alpha=alpha)
-            plt.colorbar(scatter, label=group_col)  # 手動加上 colorbar
+            plt.colorbar(scatter, label=group_col)  # Add colorbar manually
         else:
             # categorical → palette
             scatter = sns.scatterplot(data=pca_result_df,
