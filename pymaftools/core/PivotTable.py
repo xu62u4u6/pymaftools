@@ -717,8 +717,8 @@ class PivotTable(pd.DataFrame):
         # Step 4: create merged PivotTable and align metadata
         merged = PivotTable(merged_data.fillna(fill_value))
         merged.feature_metadata = merged_feature_meta.fillna(
-            feature_fill_value)
-        merged.sample_metadata = merged_sample_meta.fillna(sample_fill_value)
+            feature_fill_value).infer_objects(copy=False)
+        merged.sample_metadata = merged_sample_meta.fillna(sample_fill_value).infer_objects(copy=False)
         merged = merged.reindex(
             index=features,
             columns=samples,
@@ -1471,8 +1471,21 @@ class PivotTable(pd.DataFrame):
         for group in group_order:
             subset_list.append(self.subset(
                 samples=self.sample_metadata[group_col] == group))
-        table = PivotTable.merge(subset_list)
-        return table
+        
+        # Use the merge method but preserve the original class type
+        merged_table = PivotTable.merge(subset_list)
+        
+        # Convert back to the original class type using _constructor
+        if type(self) != PivotTable:
+            # Use _constructor to preserve subclass type
+            constructor = self._constructor
+            table = constructor(merged_table)
+            table.feature_metadata = merged_table.feature_metadata
+            table.sample_metadata = merged_table.sample_metadata
+            table._validate_metadata()
+            return table
+        else:
+            return merged_table
 
     @staticmethod
     def prepare_data(maf: 'MAF') -> "PivotTable":
