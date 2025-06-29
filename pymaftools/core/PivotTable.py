@@ -1503,7 +1503,162 @@ class PivotTable(pd.DataFrame):
                               )
         return sorted_pivot_table
 
-
+    def add_sample_metadata(
+        self, 
+        sample_metadata: pd.DataFrame, 
+        fill_value: Optional[Union[str, float]] = None,
+        force: bool = False
+    ) -> "PivotTable":
+        """
+        Safely add sample metadata to the PivotTable.
+        
+        This method ensures that:
+        1. Only samples existing in the PivotTable are added
+        2. Existing columns are not overwritten unless forced
+        3. Type consistency is maintained
+        
+        Parameters
+        ----------
+        sample_metadata : pd.DataFrame
+            New metadata to add, indexed by sample names.
+        fill_value : Optional[Union[str, float]], default None
+            Value to use for missing data.
+        force : bool, default False
+            If True, allow overwriting existing columns.
+            
+        Returns
+        -------
+        PivotTable
+            PivotTable with updated sample metadata.
+            
+        Raises
+        ------
+        ValueError
+            If sample names don't match or columns conflict without force=True.
+            
+        Examples
+        --------
+        >>> # Add new metadata columns
+        >>> new_meta = pd.DataFrame({
+        ...     'age': [65, 72, 58],
+        ...     'stage': ['I', 'II', 'III']
+        ... }, index=['sample1', 'sample2', 'sample3'])
+        >>> table_with_meta = table.add_sample_metadata(new_meta)
+        """
+        pivot_table = self.copy()
+        
+        # Check for samples not in the PivotTable
+        missing_samples = set(sample_metadata.index) - set(self.columns)
+        if missing_samples:
+            print(f"Warning: {len(missing_samples)} samples not found in PivotTable and will be ignored:")
+            print(f"  {list(missing_samples)[:5]}{'...' if len(missing_samples) > 5 else ''}")
+            sample_metadata = sample_metadata.loc[sample_metadata.index.isin(self.columns)]
+        
+        # Check for column conflicts
+        existing_cols = set(pivot_table.sample_metadata.columns)
+        new_cols = set(sample_metadata.columns)
+        conflicts = existing_cols & new_cols
+        
+        if conflicts and not force:
+            raise ValueError(
+                f"Column conflicts detected: {list(conflicts)}. "
+                "Use force=True to overwrite existing columns."
+            )
+        
+        # If forcing, remove conflicting columns from existing metadata
+        if conflicts and force:
+            print(f"Overwriting existing columns: {list(conflicts)}")
+            pivot_table.sample_metadata = pivot_table.sample_metadata.drop(columns=conflicts)
+        
+        # Add new metadata, only for non-conflicting columns if not forcing
+        if not force:
+            sample_metadata = sample_metadata[[col for col in sample_metadata.columns if col not in existing_cols]]
+        
+        # Combine metadata
+        pivot_table.sample_metadata = pivot_table.sample_metadata.combine_first(
+            sample_metadata
+        ).fillna(fill_value)
+        
+        return pivot_table
+    
+    def add_feature_metadata(
+        self, 
+        feature_metadata: pd.DataFrame, 
+        fill_value: Optional[Union[str, float]] = None,
+        force: bool = False
+    ) -> "PivotTable":
+        """
+        Safely add feature metadata to the PivotTable.
+        
+        This method ensures that:
+        1. Only features existing in the PivotTable are added
+        2. Existing columns are not overwritten unless forced
+        3. Type consistency is maintained
+        
+        Parameters
+        ----------
+        feature_metadata : pd.DataFrame
+            New metadata to add, indexed by feature names.
+        fill_value : Optional[Union[str, float]], default None
+            Value to use for missing data.
+        force : bool, default False
+            If True, allow overwriting existing columns.
+            
+        Returns
+        -------
+        PivotTable
+            PivotTable with updated feature metadata.
+            
+        Raises
+        ------
+        ValueError
+            If feature names don't match or columns conflict without force=True.
+            
+        Examples
+        --------
+        >>> # Add gene annotation metadata
+        >>> gene_anno = pd.DataFrame({
+        ...     'chromosome': ['17', '12', '3'],
+        ...     'gene_type': ['tumor_suppressor', 'oncogene', 'oncogene']
+        ... }, index=['TP53', 'KRAS', 'PIK3CA'])
+        >>> table_with_anno = table.add_feature_metadata(gene_anno)
+        """
+        pivot_table = self.copy()
+        
+        # Check for features not in the PivotTable
+        missing_features = set(feature_metadata.index) - set(self.index)
+        if missing_features:
+            print(f"Warning: {len(missing_features)} features not found in PivotTable and will be ignored:")
+            print(f"  {list(missing_features)[:5]}{'...' if len(missing_features) > 5 else ''}")
+            feature_metadata = feature_metadata.loc[feature_metadata.index.isin(self.index)]
+        
+        # Check for column conflicts
+        existing_cols = set(pivot_table.feature_metadata.columns)
+        new_cols = set(feature_metadata.columns)
+        conflicts = existing_cols & new_cols
+        
+        if conflicts and not force:
+            raise ValueError(
+                f"Column conflicts detected: {list(conflicts)}. "
+                "Use force=True to overwrite existing columns."
+            )
+        
+        # If forcing, remove conflicting columns from existing metadata
+        if conflicts and force:
+            print(f"Overwriting existing columns: {list(conflicts)}")
+            pivot_table.feature_metadata = pivot_table.feature_metadata.drop(columns=conflicts)
+        
+        # Add new metadata, only for non-conflicting columns if not forcing
+        if not force:
+            feature_metadata = feature_metadata[[col for col in feature_metadata.columns if col not in existing_cols]]
+        
+        # Combine metadata
+        pivot_table.feature_metadata = pivot_table.feature_metadata.combine_first(
+            feature_metadata
+        ).fillna(fill_value)
+        
+        return pivot_table
+    
 def capture_size(bed_path: str) -> float:
     """
     Calculate the total capture size (in megabases) from a BED file.
