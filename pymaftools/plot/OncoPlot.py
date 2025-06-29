@@ -220,7 +220,7 @@ class OncoPlot:
 
         return fig, ax, legend_info
     
-    def heatmap(self, cmap_dict=None, linecolor="white", linewidth=1, show_frame=False, n=3):
+    def heatmap(self, cmap_dict=None, linecolor="white", linewidth=1, show_frame=False, n=3, yticklabels=True):
         if cmap_dict is None:
             cmap_dict = self.cmap
 
@@ -234,8 +234,9 @@ class OncoPlot:
         
         ax.set_xticks([])
         ax.set_xlabel("")
-        ax.set_yticks([i + 0.5 for i in range(len(self.pivot_table.index))])  # Shift the ticks by +0.5
-        ax.set_yticklabels(self.pivot_table.index, rotation=0, fontsize=self.ytick_fontsize)  # Set labels horizontally
+        if yticklabels:
+            ax.set_yticks([i + 0.5 for i in range(len(self.pivot_table.index))])
+            ax.set_yticklabels(self.pivot_table.index, rotation=0, fontsize=self.ytick_fontsize)
 
         # Show frame every `n` columns
         if show_frame:
@@ -255,7 +256,7 @@ class OncoPlot:
         
         return self
          
-    def plot_bar(self, fontsize=6, bar_value=False, bar_col="TMB"):
+    def plot_bar(self, fontsize=6, bar_value=False, bar_col="TMB", ylabel_size=8):
         if bar_col == "TMB" and bar_col not in self.sample_metadata.columns:
             raise ValueError(f"Column '{bar_col}' not found in sample metadata. Please do table.calculate_tmb() first.")
         if bar_col not in self.sample_metadata.columns:
@@ -276,7 +277,7 @@ class OncoPlot:
         self.ax_bar.spines['right'].set_visible(False)
         self.ax_bar.spines['bottom'].set_visible(False)
         self.ax_bar.set_xticks([])
-        self.ax_bar.set_ylabel(bar_col)
+        self.ax_bar.set_ylabel(bar_col, fontsize=ylabel_size)
         return self
 
     def plot_freq(self, freq_columns=["freq"]):
