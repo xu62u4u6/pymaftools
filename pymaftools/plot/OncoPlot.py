@@ -220,7 +220,7 @@ class OncoPlot:
 
         return fig, ax, legend_info
     
-    def heatmap(self, cmap_dict=None, linecolor="white", linewidth=1, show_frame=False, n=3, yticklabels=True):
+    def mutation_heatmap(self, cmap_dict=None, linecolor="white", linewidth=1, show_frame=False, n=3, yticklabels=True):
         if cmap_dict is None:
             cmap_dict = self.cmap
 
