@@ -2,7 +2,7 @@ import pandas as pd
 from typing import Optional, List
 from .PivotTable import PivotTable
 
-class CNV(PivotTable):
+class CopyNumberVariationTable(PivotTable):
     
     @classmethod
     def read_gistic(cls, 
