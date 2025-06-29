@@ -50,8 +50,16 @@ class Cohort:
     def add_table(self, table: PivotTable, table_name: str):
         if not isinstance(table, PivotTable):
             raise TypeError(f"Assay data for '{table_name}' must be an instance of PivotTable.")
-        table = table.subset(samples=self.sample_IDs)
-        self.tables[table_name] = table
+        
+        # If this is the first table added, use its sample IDs as the reference
+        if self.sample_IDs is None:
+            self.sample_IDs = table.sample_metadata.index
+            self.tables[table_name] = table
+        else:
+            # Otherwise, align the samples before adding the table
+            table = table.subset(samples=self.sample_IDs)
+            self.tables[table_name] = table
+            
         self.add_sample_metadata(table.sample_metadata, source=table_name)
 
     def _is_index_matched(self, table):
@@ -70,7 +78,9 @@ class Cohort:
             cohort.tables[table_name] = table.subset(samples=samples)
         
         # subset sample_metadata
-        cohort.sample_metadata = cohort.sample_metadata.loc[samples, :].copy()
+        if cohort.sample_metadata is not None:
+            cohort.sample_metadata = cohort.sample_metadata.loc[samples, :].copy()
+        cohort.sample_IDs = samples
         return cohort
     
     def order(self, group_col=None, group_order=None):
