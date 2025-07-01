@@ -14,6 +14,8 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 # Third-party imports
 import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
+from matplotlib.patches import Rectangle
 import numpy as np
 import pandas as pd
 import seaborn as sns
@@ -21,12 +23,16 @@ from matplotlib.axes import Axes
 from sklearn.decomposition import PCA
 from statannotations.Annotator import Annotator
 
-class PivotTablePlot:
+# Local imports
+from .BasePlot import BasePlot
+
+class PivotTablePlot(BasePlot):
     """
     Plotting functionality for PivotTable objects.
     
     This class provides a clean interface for various visualization methods
     while keeping plotting logic separate from the core PivotTable class.
+    Inherits from BasePlot to provide legend management and figure saving capabilities.
     
     Parameters
     ----------
@@ -36,12 +42,12 @@ class PivotTablePlot:
     Examples
     --------
     >>> # Using property accessor (recommended)
-    >>> pivot_table.plot.plot_pca_samples(group_col="subtype")
+    >>> pivot_table.plot.plot_pca_samples(color_col="subtype")
     >>> pivot_table.plot.plot_boxplot_with_annot(test_col="TMB")
     
     >>> # Direct instantiation (not recommended)
     >>> plotter = PivotTablePlot(pivot_table)
-    >>> plotter.plot_pca_samples(group_col="subtype")
+    >>> plotter.plot_pca_samples(color_col="subtype")
     """
     
     def __init__(self, pivot_table):
@@ -53,6 +59,7 @@ class PivotTablePlot:
         pivot_table : PivotTable
             The PivotTable instance to create plots for.
         """
+        super().__init__()  # Initialize BasePlot
         self.pivot_table = pivot_table
     
     def plot_boxplot_with_annot(
@@ -178,60 +185,60 @@ class PivotTablePlot:
         ax.set_xlabel(group_col, fontsize=fontsize)
         ax.set_ylabel(test_col, fontsize=fontsize)
 
-        # save if path is given
+        # Save figure using inherited method
         if save_path is not None:
-            format_ext = save_path.split('.')[-1].lower()
-            pil_kwargs = {
-                "compression": "tiff_lzw"} if format_ext == "tiff" else {}
-            fig.savefig(save_path, 
-                        dpi=dpi, 
-                        bbox_inches='tight',
-                        pil_kwargs=pil_kwargs)
-            print(f"[INFO] Figure saved to: {save_path}")
+            self.save_figure(fig, save_path, dpi)
 
         return ax
     
     def plot_pca_samples(
         self,
-        group_col: str = "subtype",
-        figsize: Tuple[int, int] = (8, 6),
+        color_col: str = "subtype",
+        shape_col: Optional[str] = None,
+        figsize: Tuple[int, int] = (12, 6),
         to_binary: bool = False,
-        palette_dict: Optional[Dict[str, str]] = None,
+        palette: Optional[Union[str, Dict[str, str]]] = None,
         alpha: float = 0.8,
         title: str = "PCA of samples",
-        cmap: str = "summer",
         is_numeric: bool = False,
         save_path: Optional[str] = None,
         fontsize: int = 12,
-        titlesize: int = 14
+        titlesize: int = 14,
+        width_ratios: Tuple[int, int] = (4, 1),
+        legend_item_spacing: float = 0.04,
+        legend_group_spacing: float = 0.06
     ) -> Tuple[pd.DataFrame, np.ndarray, PCA]:
         """
-        Plot PCA scatter plot of samples colored by group_col.
+        Plot PCA scatter plot of samples with color and shape encoding.
 
         Performs Principal Component Analysis on the PivotTable data and creates
         a scatter plot showing the first two principal components. Samples are
-        colored by the specified grouping variable.
+        colored by one variable and optionally shaped by another variable.
+        Uses GridSpec layout with legend displayed in a separate axis.
 
         Parameters
         ----------
-        group_col : str, default "subtype"
+        color_col : str, default "subtype"
             Column name in sample_metadata to use for coloring points.
-        figsize : tuple of int, default (8, 6)
+        shape_col : str, optional
+            Column name in sample_metadata to use for point shapes.
+            If None, all points use the same shape.
+        figsize : tuple of int, default (12, 6)
             Figure size as (width, height) in inches.
         to_binary : bool, default False
             Whether to convert data to binary (0/1) before PCA.
             Useful for mutation data where only presence/absence matters.
-        palette_dict : dict, optional
-            Dictionary mapping group values to colors.
-            Example: {"LUAD": "orange", "ASC": "green", "LUSC": "blue"}
+        palette : str or dict, optional
+            Color palette for the plot. Can be:
+            - seaborn palette name (e.g., "Set1", "viridis") for categorical data
+            - dictionary mapping values to colors for categorical data
+            - colormap name (e.g., "viridis", "plasma") for numeric data
         alpha : float, default 0.8
             Transparency level for scatter points (0-1).
         title : str, default "PCA of samples"
             Plot title.
-        cmap : str, default "summer"
-            Colormap name for numeric group_col values.
         is_numeric : bool, default False
-            Whether group_col contains numeric values.
+            Whether color_col contains numeric values.
             If True, uses colormap; if False, uses discrete colors.
         save_path : str, optional
             Path to save the figure. Format determined by file extension.
@@ -239,6 +246,12 @@ class PivotTablePlot:
             Font size for axis labels.
         titlesize : int, default 14
             Font size for plot title.
+        width_ratios : tuple of int, default (4, 1)
+            Width ratio between PCA plot and legend axis.
+        legend_item_spacing : float, default 0.04
+            Vertical spacing between items within the same legend group.
+        legend_group_spacing : float, default 0.06
+            Vertical spacing between different legend groups (color vs shape).
 
         Returns
         -------
@@ -257,71 +270,172 @@ class PivotTablePlot:
         --------
         >>> # Basic PCA plot colored by subtype
         >>> pca_df, variance, pca_obj = pivot_table.plot.plot_pca_samples(
-        ...     group_col="subtype"
+        ...     color_col="subtype"
         ... )
 
-        >>> # Binary mutation data with custom colors
+        >>> # PCA with both color and shape encoding
         >>> pivot_table.plot.plot_pca_samples(
-        ...     group_col="subtype",
-        ...     to_binary=True,
-        ...     palette_dict={"LUAD": "orange", "ASC": "green", "LUSC": "blue"},
-        ...     title="PCA of Binary Mutation Data"
+        ...     color_col="subtype",
+        ...     shape_col="sex",
+        ...     palette={"LUAD": "orange", "ASC": "green", "LUSC": "blue"},
+        ...     title="PCA with Subtype and Sex Encoding"
         ... )
 
-        >>> # Numeric grouping (e.g., age) with colormap
+        >>> # Numeric coloring with colormap
         >>> pivot_table.plot.plot_pca_samples(
-        ...     group_col="age",
+        ...     color_col="age",
         ...     is_numeric=True,
-        ...     cmap="viridis"
+        ...     palette="viridis"
         ... )
         """
         # Calculate PCA result
         pca_result_df, explained_variance, pca = self.pivot_table.PCA(to_binary=to_binary)
 
-        # Ensure group_col exists in sample_metadata
-        if group_col not in self.pivot_table.sample_metadata.columns:
+        # Ensure color_col exists in sample_metadata
+        if color_col not in self.pivot_table.sample_metadata.columns:
             raise ValueError(
-                f"Column '{group_col}' not found in sample_metadata.")
-        pca_result_df[group_col] = self.pivot_table.sample_metadata[group_col]
+                f"Column '{color_col}' not found in sample_metadata.")
+        pca_result_df[color_col] = self.pivot_table.sample_metadata[color_col]
+        
+        # Add shape_col if specified
+        if shape_col is not None:
+            if shape_col not in self.pivot_table.sample_metadata.columns:
+                raise ValueError(
+                    f"Column '{shape_col}' not found in sample_metadata.")
+            pca_result_df[shape_col] = self.pivot_table.sample_metadata[shape_col]
 
-        # Plot PCA scatter plot
-        plt.figure(figsize=figsize)
+        # Create GridSpec layout for PCA plot and legend
+        fig = plt.figure(figsize=figsize)
+        gs = gridspec.GridSpec(1, 2, width_ratios=width_ratios, figure=fig)
+        ax_pca = fig.add_subplot(gs[0])
+        ax_legend = fig.add_subplot(gs[1])
+
+        # Set up palette/colormap
+        if palette is None:
+            palette = "viridis" if is_numeric else "Set1"
 
         if is_numeric:
-            # Numeric → cmap
-            scatter = plt.scatter(pca_result_df["PC1"],
-                                  pca_result_df["PC2"],
-                                  c=pca_result_df[group_col],
-                                  cmap=cmap,
-                                  alpha=alpha)
-            plt.colorbar(scatter, label=group_col)  # Add colorbar manually
+            # Numeric color encoding with colormap
+            if isinstance(palette, dict):
+                raise ValueError("For numeric data, palette should be a colormap name (str), not a dictionary")
+            
+            scatter = ax_pca.scatter(
+                pca_result_df["PC1"],
+                pca_result_df["PC2"], 
+                c=pca_result_df[color_col],
+                cmap=str(palette),
+                alpha=alpha,
+                s=60  # marker size
+            )
+            # Add colorbar to legend axis
+            cbar = plt.colorbar(scatter, cax=ax_legend)
+            cbar.set_label(color_col, fontsize=fontsize)
+            
         else:
-            # Categorical → palette
-            scatter = sns.scatterplot(data=pca_result_df,
-                                      x="PC1",
-                                      y="PC2",
-                                      hue=group_col,
-                                      palette=palette_dict or "Set1",
-                                      alpha=alpha)
+            # Categorical color encoding
+            unique_colors = pca_result_df[color_col].unique()
+            
+            # Handle shape encoding
+            if shape_col is not None:
+                unique_shapes = pca_result_df[shape_col].unique()
+                shape_markers = ['o', 's', '^', 'D', 'v', '<', '>', 'p', '*', 'h'][:len(unique_shapes)]
+                shape_dict = dict(zip(unique_shapes, shape_markers))
+                
+                # Get colors for color_col
+                if isinstance(palette, dict):
+                    # Use provided color mapping
+                    color_palette = palette
+                else:
+                    # Generate colors using seaborn palette
+                    colors = sns.color_palette(palette, len(unique_colors))
+                    color_palette = dict(zip(unique_colors, colors))
+                
+                # Plot with both color and shape
+                for color_val in unique_colors:
+                    for shape_val in unique_shapes:
+                        mask = (pca_result_df[color_col] == color_val) & (pca_result_df[shape_col] == shape_val)
+                        subset = pca_result_df[mask]
+                        if len(subset) > 0:
+                            ax_pca.scatter(
+                                subset["PC1"], subset["PC2"],
+                                c=[color_palette.get(color_val, 'gray')], 
+                                marker=shape_dict[shape_val],  # type: ignore
+                                alpha=alpha, s=60,
+                                # Don't add labels here - we'll create separate legends
+                            )
+                
+                # Create separate legends in the legend axis
+                ax_legend.axis('off')
+                
+                # Color legend (top half)
+                legend_y_start = 0.9
+                ax_legend.text(0.05, 0.95, color_col, fontsize=fontsize, fontweight='bold', 
+                              transform=ax_legend.transAxes)
+                
+                y_pos = legend_y_start
+                for color_val in unique_colors:
+                    # Color rectangle
+                    rect_color = Rectangle((0.05, y_pos-0.015), 0.06, 0.025, 
+                                         facecolor=color_palette.get(color_val, 'gray'),
+                                         transform=ax_legend.transAxes)
+                    ax_legend.add_patch(rect_color)
+                    # Color label
+                    ax_legend.text(0.15, y_pos, str(color_val), fontsize=fontsize-1, 
+                                  va='center', transform=ax_legend.transAxes)
+                    y_pos -= legend_item_spacing
+                
+                # Shape legend (bottom half)
+                shape_y_start = y_pos - legend_group_spacing
+                ax_legend.text(0.05, shape_y_start + 0.03, shape_col, fontsize=fontsize, fontweight='bold',
+                              transform=ax_legend.transAxes)
+                
+                y_pos = shape_y_start
+                for shape_val in unique_shapes:
+                    # Shape marker
+                    ax_legend.scatter([0.08], [y_pos], marker=shape_dict[shape_val],  # type: ignore
+                                    c='black', s=40, transform=ax_legend.transAxes)
+                    # Shape label
+                    ax_legend.text(0.15, y_pos, str(shape_val), fontsize=fontsize-1, 
+                                  va='center', transform=ax_legend.transAxes)
+                    y_pos -= legend_item_spacing
+                
+            else:
+                # Color only
+                if isinstance(palette, dict):
+                    colors = [palette.get(val, 'gray') for val in unique_colors]
+                    color_palette = palette
+                else:
+                    colors = sns.color_palette(palette, len(unique_colors))
+                    color_palette = dict(zip(unique_colors, colors))
+                
+                for color_val in unique_colors:
+                    mask = pca_result_df[color_col] == color_val
+                    subset = pca_result_df[mask]
+                    if len(subset) > 0:
+                        ax_pca.scatter(
+                            subset["PC1"], subset["PC2"],
+                            c=[color_palette[color_val]], alpha=alpha, s=60,
+                            label=f"{color_val}"
+                        )
+                
+                # Create single legend in the legend axis
+                ax_legend.axis('off')
+                handles, labels = ax_pca.get_legend_handles_labels()
+                legend = ax_legend.legend(handles, labels, loc='upper left', 
+                           title=color_col, title_fontsize=fontsize, fontsize=fontsize-1,
+                           labelspacing=0.3, handletextpad=0.5, handlelength=1.0)
 
-        plt.title(title, fontsize=titlesize)
-        plt.xlabel(
+        # Set PCA plot properties
+        ax_pca.set_title(title, fontsize=titlesize)
+        ax_pca.set_xlabel(
             f"Principal Component 1 ({explained_variance[0] * 100:.2f}%)", fontsize=fontsize)
-        plt.ylabel(
+        ax_pca.set_ylabel(
             f"Principal Component 2 ({explained_variance[1] * 100:.2f}%)", fontsize=fontsize)
 
-        if not is_numeric:
-            plt.legend(title=group_col, title_fontsize=fontsize)
-        if save_path:
-            format_ext = save_path.split('.')[-1].lower()
-            pil_kwargs = {
-                "compression": "tiff_lzw"} if format_ext == "tiff" else {}
-
-            plt.savefig(save_path,
-                        dpi=300,
-                        format=format_ext,
-                        bbox_inches='tight',
-                        pil_kwargs=pil_kwargs)
-            print(f"[INFO] Figure saved to: {save_path}")
+        # Save figure using inherited method
+        if save_path is not None:
+            self.save_figure(fig, save_path)
+        
+        plt.tight_layout()
         plt.show()
         return pca_result_df, explained_variance, pca

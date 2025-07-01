@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
+from matplotlib.gridspec import GridSpec
 import seaborn as sns
 from matplotlib import cm, ticker
 from matplotlib.colors import ListedColormap, Normalize
@@ -57,7 +58,7 @@ class OncoPlot(BasePlot):
         # make sure only one figure is created
         plt.close("all")
         self.fig = plt.figure(figsize=self.figsize)
-        self.gs = plt.GridSpec(
+        self.gs = GridSpec(
             2 + num_categorical + num_numeric, 
             4, 
             width_ratios=self.width_ratios, 
@@ -357,13 +358,17 @@ class OncoPlot(BasePlot):
         # get the maximum row number
         max_row = max([spec.rowspan.stop for spec in self.gs]) - 1
 
-        # find target axis
+        # Find target axis
         target_ax = None
         for ax in self.fig.axes:
-            subplotspec = ax.get_subplotspec()
-            if subplotspec.rowspan.start == max_row and subplotspec.colspan.start == 0:
-                target_ax = ax
-                break
+            try:
+                subplotspec = ax.get_subplotspec()
+                if subplotspec.rowspan.start == max_row and subplotspec.colspan.start == 0:
+                    target_ax = ax
+                    break
+            except AttributeError:
+                # Handle cases where get_subplotspec is not available
+                continue
 
         # add xtick labels and xticks
         if target_ax:
@@ -411,11 +416,9 @@ class OncoPlot(BasePlot):
             )
         cbar.ax.set_aspect(18)
         
-        try:
-            cbar.outline.set_visible(False)
-        except AttributeError:
-            for spine in cbar.ax.spines.values():
-                spine.set_visible(False)
+        # Hide colorbar borders
+        for spine in cbar.ax.spines.values():
+            spine.set_visible(False)
         
         cbar.ax.tick_params(labelsize=10, length=6, width=1)
         if yticklabels:

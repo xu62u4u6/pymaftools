@@ -160,6 +160,35 @@ class BasePlot:
         except Exception as e:
             print(f"Error while saving figure: {e}")
     
+    def save_figure(self, fig, save_path: str, dpi: int = 300, **kwargs):
+        """
+        Save a specific figure to file (utility method for subclasses)
+        
+        Args:
+            fig: matplotlib Figure object to save
+            save_path: Path to save the figure
+            dpi: Resolution
+            **kwargs: Other save parameters
+        """
+        if save_path is None:
+            return
+            
+        try:
+            format_ext = save_path.split('.')[-1].lower()
+            pil_kwargs = {"compression": "tiff_lzw"} if format_ext == "tiff" else {}
+            
+            fig.savefig(
+                save_path,
+                dpi=dpi,
+                bbox_inches='tight',
+                format=format_ext,
+                pil_kwargs=pil_kwargs,
+                **kwargs
+            )
+            print(f"[INFO] Figure saved to: {save_path}")
+        except Exception as e:
+            print(f"Error while saving figure: {e}")
+    
     def close(self):
         """
         Close the figure
