@@ -5,11 +5,15 @@ from matplotlib.patches import Rectangle
 import seaborn as sns
 from matplotlib import cm, ticker
 from matplotlib.colors import ListedColormap, Normalize
-from ..core.PivotTable import PivotTable
 from .ColorManager import ColorManager
 
+# Type checking imports to avoid circular dependencies
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from ..core.PivotTable import PivotTable
+
 class OncoPlot:
-    def __init__(self, pivot_table: PivotTable, **kwargs):
+    def __init__(self, pivot_table, **kwargs):
         # load PivotTable
         self.pivot_table = pivot_table
         self.feature_metadata = pivot_table.feature_metadata

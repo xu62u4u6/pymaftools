@@ -32,6 +32,10 @@ from statsmodels.stats.multitest import multipletests
 # Local imports
 from .PairwiseMatrix import CooccurrenceMatrix, SimilarityMatrix
 
+# Import for lazy loading in property accessor
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from ..plot.PivotTablePlot import PivotTablePlot
 
 class PivotTable(pd.DataFrame):
     """
@@ -89,6 +93,31 @@ class PivotTable(pd.DataFrame):
             obj._validate_metadata()
             return obj
         return _new_constructor
+
+    @property
+    def plot(self) -> "PivotTablePlot":
+        """
+        Access plotting functionality for the PivotTable.
+        
+        Returns
+        -------
+        PivotTablePlot
+            Plotting interface providing various visualization methods.
+            
+        Examples
+        --------
+        >>> # PCA plot colored by subtype
+        >>> pivot_table.plot.plot_pca_samples(group_col="subtype")
+        
+        >>> # Boxplot with statistical annotations
+        >>> pivot_table.plot.plot_boxplot_with_annot(
+        ...     test_col="TMB",
+        ...     group_col="subtype"
+        ... )
+        """
+        # Lazy import to avoid circular dependencies
+        from ..plot.PivotTablePlot import PivotTablePlot
+        return PivotTablePlot(self)
 
     def _validate_metadata(self) -> None:
         """Validate that metadata indices match DataFrame structure."""
@@ -749,71 +778,6 @@ class PivotTable(pd.DataFrame):
             table.sample_metadata["capture_size"]
         return table
 
-    @staticmethod
-    def plot_boxplot_with_annot(
-        data: pd.DataFrame,
-        group_col: str = "subtype",
-        test_col: str = "mutations_count",
-        palette: Optional[Union[str, Dict]] = None,
-        title: Optional[str] = None,
-        ax: Optional[Axes] = None,
-        test: str = 'Mann-Whitney',
-        alpha: float = 0.8,
-        order: Optional[List[str]] = None,
-        fontsize: int = 12,
-        save_path: Optional[str] = None,
-        dpi: int = 300
-    ) -> Axes:
-        if ax is None:
-            fig, ax = plt.subplots(figsize=(10, 6))
-        else:
-            fig = ax.figure
-
-        if title is None:
-            title = f"Boxplot of {test_col} by {group_col}"
-
-        gb = data.groupby(group_col)
-        group_pairs = list(combinations(gb.groups.keys(), 2))
-        ax.set_title(title, fontsize=fontsize)
-
-        # boxplot
-        boxplot = sns.boxplot(data=data, x=group_col, y=test_col,
-                              ax=ax, hue=group_col, palette=palette, order=order)
-
-        # alpha
-        for patch in boxplot.patches:
-            patch.set_facecolor((patch.get_facecolor()[0],  # R
-                                patch.get_facecolor()[1],  # G
-                                patch.get_facecolor()[2],  # B
-                                alpha))
-
-        # stat
-        annotator = Annotator(ax=ax, pairs=group_pairs,
-                              data=data, x=group_col, y=test_col, order=order)
-        annotator.configure(test=test, text_format='star',
-                            loc='inside', verbose=False)
-        annotator.apply_and_annotate()
-
-        # xticklabel with sample size
-        sample_counts = gb.size().to_dict()
-        xticks_labels = [
-            f"{group} (n={sample_counts[group]})" for group in order]
-        ax.set_xticklabels(xticks_labels, fontsize=fontsize)
-
-        ax.set_xlabel(group_col, fontsize=fontsize)
-        ax.set_ylabel(test_col, fontsize=fontsize)
-
-        # save if path is given
-        if save_path is not None:
-            pil_kwargs = {
-                "compression": "tiff_lzw"} if format == "tiff" else {}
-            fig.savefig(save_path, 
-                        dpi=dpi, 
-                        bbox_inches='tight',
-                        pil_kwargs=pil_kwargs)
-            print(f"[INFO] Figure saved to: {save_path}")
-
-        return ax
 
     def calculate_feature_frequency(self) -> pd.Series[float]:
         """
@@ -1143,72 +1107,6 @@ class PivotTable(pd.DataFrame):
             pca_result, index=pivot_table.columns, columns=["PC1", "PC2"])
         return pca_result_df, explained_variance, pca
 
-    def plot_pca_samples(
-        self,
-        group_col: str = "subtype",
-        figsize: Tuple[int, int] = (8, 6),
-        to_binary: bool = False,
-        palette_dict: Optional[Dict[str, str]] = None,
-        alpha: float = 0.8,
-        title: str = "PCA of samples",
-        cmap: str = "summer",
-        is_numeric: bool = False,
-        save_path: Optional[str] = None,
-        fontsize: int = 12,
-        titlesize: int = 14
-    ) -> Tuple[pd.DataFrame, np.ndarray, PCA]:
-        """
-        Plot PCA scatter plot of samples colored by group_col.
-        """
-        # caculte PCA result
-        pca_result_df, explained_variance, pca = self.PCA(to_binary=to_binary)
-
-        # ensure group_col exists in sample_metadata
-        if group_col not in self.sample_metadata.columns:
-            raise ValueError(
-                f"Column '{group_col}' not found in sample_metadata.")
-        pca_result_df[group_col] = self.sample_metadata[group_col]
-
-        # plot PCA scatter plot
-        plt.figure(figsize=figsize)
-
-        if is_numeric:
-            # numeric → cmap
-            scatter = plt.scatter(pca_result_df["PC1"],
-                                  pca_result_df["PC2"],
-                                  c=pca_result_df[group_col],
-                                  cmap=cmap,
-                                  alpha=alpha)
-            plt.colorbar(scatter, label=group_col)  # Add colorbar manually
-        else:
-            # categorical → palette
-            scatter = sns.scatterplot(data=pca_result_df,
-                                      x="PC1",
-                                      y="PC2",
-                                      hue=group_col,
-                                      palette=palette_dict or "Set1",
-                                      alpha=alpha)
-
-        plt.title(title, fontsize=titlesize)
-        plt.xlabel(
-            f"Principal Component 1 ({explained_variance[0] * 100:.2f}%)", fontsize=fontsize)
-        plt.ylabel(
-            f"Principal Component 2 ({explained_variance[1] * 100:.2f}%)", fontsize=fontsize)
-
-        if not is_numeric:
-            plt.legend(title=group_col, title_fontsize=fontsize)
-        if save_path:
-            format = save_path.split('.')[-1].lower()
-            pil_kwargs = {
-                "compression": "tiff_lzw"} if format == "tiff" else {}
-
-            plt.savefig(save_path,
-                        dpi=300,
-                        format=format,
-                        bbox_inches='tight',
-                        pil_kwargs=pil_kwargs)
-        plt.show()
-        return pca_result_df, explained_variance, pca
 
     def head(self, n: int = 50) -> "PivotTable":
         """
