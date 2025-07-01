@@ -14,11 +14,31 @@ if TYPE_CHECKING:
     from ..core.PivotTable import PivotTable
 
 class OncoPlot(BasePlot):
+    """
+    OncoPlot class for creating oncoplots (mutation heatmaps) with metadata annotations.
+    
+    This class provides comprehensive functionality for visualizing mutation data along with
+    sample and feature metadata, including TMB (Tumor Mutation Burden) plots, frequency plots,
+    and categorical/numeric metadata annotations.
+    
+    Inherits from BasePlot to utilize unified legend management and save functionality.
+    """
+    
     def __init__(self, pivot_table, **kwargs):
-        # initialize BasePlot
+        """
+        Initialize OncoPlot with a PivotTable and configuration options.
+        
+        Parameters:
+        -----------
+        pivot_table : PivotTable
+            The PivotTable instance containing mutation data and metadata
+        **kwargs : dict
+            Configuration options passed to set_config()
+        """
+        # Initialize BasePlot
         super().__init__()
         
-        # load PivotTable
+        # Load PivotTable
         self.pivot_table = pivot_table
         self.feature_metadata = pivot_table.feature_metadata
         self.sample_metadata = pivot_table.sample_metadata
@@ -36,6 +56,37 @@ class OncoPlot(BasePlot):
                    categorical_columns=[], 
                    numeric_columns=[],
                    ytick_fontsize=10):
+        """
+        Configure OncoPlot appearance and layout settings.
+        
+        Parameters:
+        -----------
+        line_color : str, default "white"
+            Color of lines between heatmap cells
+        cmap : str or dict, default "nonsynonymous"
+            Color map for mutation types
+        figsize : tuple, default (20, 15)
+            Figure size (width, height)
+        width_ratios : list, default [25, 1, 1, 2]
+            Width ratios for subplot columns
+        height_ratios : list, default [1, 20]
+            Height ratios for subplot rows
+        wspace : float, default 0.015
+            Width spacing between subplots
+        hspace : float, default 0.02
+            Height spacing between subplots
+        categorical_columns : list, default []
+            List of categorical metadata columns to display
+        numeric_columns : list, default []
+            List of numeric metadata columns to display
+        ytick_fontsize : int, default 10
+            Font size for y-axis tick labels
+            
+        Returns:
+        --------
+        self : OncoPlot
+            Returns self for method chaining
+        """
         
         self.line_color = line_color
         self.cmap = self.color_manager.get_cmap(cmap) if isinstance(cmap, str) else cmap
@@ -51,11 +102,17 @@ class OncoPlot(BasePlot):
         return self
 
     def update_layout(self):
+        """
+        Update the subplot layout based on configured metadata columns.
+        
+        Creates a GridSpec layout with appropriate dimensions for the main heatmap,
+        TMB bar plot, frequency plot, legend area, and metadata annotations.
+        """
         num_categorical = len(self.categorical_columns)
         num_numeric = len(self.numeric_columns)
         height_ratios = [1, 20] + [1] * num_categorical + [1] * num_numeric
 
-        # make sure only one figure is created
+        # Make sure only one figure is created
         plt.close("all")
         self.fig = plt.figure(figsize=self.figsize)
         self.gs = GridSpec(
@@ -75,10 +132,33 @@ class OncoPlot(BasePlot):
         self.axs_numeric_columns = {col: self.fig.add_subplot(self.gs[2+len(self.categorical_columns)+i, 0]) for i, col in enumerate(self.numeric_columns)}
 
     def plot_numeric_metadata(self, annotate=False, annotation_font_size=10, fmt=".2f", cmap="Blues", cmap_dict=None, alpha=1):
+        """
+        Plot numeric metadata as heatmaps below the main mutation heatmap.
+        
+        Parameters:
+        -----------
+        annotate : bool, default False
+            Whether to display numeric values on the heatmap
+        annotation_font_size : int, default 10
+            Font size for annotations
+        fmt : str, default ".2f"
+            Format string for numeric annotations
+        cmap : str, default "Blues"
+            Default colormap for numeric data
+        cmap_dict : dict, optional
+            Dictionary mapping column names to specific colormaps
+        alpha : float, default 1
+            Transparency level (0-1)
+            
+        Returns:
+        --------
+        self : OncoPlot
+            Returns self for method chaining
+        """
         for col, ax in self.axs_numeric_columns.items():
             cmap = cmap_dict.get(col, "Blues") if cmap_dict else "Blues"
             data = self.sample_metadata[[col]].T 
-            # set vmin and vmax if coolwarm cmap 
+            # Set vmin and vmax if coolwarm cmap 
             if cmap == "coolwarm":
                 vextreme = max(abs(data.min().min()), abs(data.max().max()))
                 vmin, vmax = -vextreme, vextreme 
@@ -106,6 +186,31 @@ class OncoPlot(BasePlot):
         return self
 
     def heatmap_rectangle(self, show_frame=False, n=3, cmap=None, table=None, width=1, height=1, line_color="white"):
+        """
+        Plot mutation heatmap using colored rectangles for each mutation type.
+        
+        Parameters:
+        -----------
+        show_frame : bool, default False
+            Whether to show frames around groups of columns
+        n : int, default 3
+            Number of columns per frame group
+        cmap : dict, optional
+            Color mapping for mutation types
+        table : DataFrame, optional
+            Mutation table to plot (defaults to self.pivot_table)
+        width : float, default 1
+            Width of rectangles (0-1)
+        height : float, default 1
+            Height of rectangles (0-1)
+        line_color : str, default "white"
+            Color of lines between rectangles
+            
+        Returns:
+        --------
+        self : OncoPlot
+            Returns self for method chaining
+        """
         if table is None:
             table = self.pivot_table
         if cmap is None:
@@ -124,7 +229,7 @@ class OncoPlot(BasePlot):
                         height=height,
                         ytick_fontsize=self.ytick_fontsize,)
         
-        # add frame every n columns
+        # Add frame every n columns
         if show_frame:
             for i in range(0, color_matrix.shape[1], n): 
                 rect = Rectangle(
@@ -166,6 +271,29 @@ class OncoPlot(BasePlot):
         return fig, ax, legend_info
     
     def mutation_heatmap(self, cmap_dict=None, linecolor="white", linewidth=1, show_frame=False, n=3, yticklabels=True):
+        """
+        Plot the main mutation heatmap using categorical color coding.
+        
+        Parameters:
+        -----------
+        cmap_dict : dict, optional
+            Color mapping for mutation types
+        linecolor : str, default "white"
+            Color of lines between cells
+        linewidth : int, default 1
+            Width of lines between cells
+        show_frame : bool, default False
+            Whether to show frames around groups of columns
+        n : int, default 3
+            Number of columns per frame group
+        yticklabels : bool, default True
+            Whether to show y-axis labels (gene names)
+            
+        Returns:
+        --------
+        self : OncoPlot
+            Returns self for method chaining
+        """
         if cmap_dict is None:
             cmap_dict = self.cmap
 
@@ -202,6 +330,25 @@ class OncoPlot(BasePlot):
         return self
          
     def plot_bar(self, fontsize=6, bar_value=False, bar_col="TMB", ylabel_size=8):
+        """
+        Plot bar chart showing values (typically TMB) for each sample.
+        
+        Parameters:
+        -----------
+        fontsize : int, default 6
+            Font size for bar value annotations
+        bar_value : bool, default False
+            Whether to show values on top of bars
+        bar_col : str, default "TMB"
+            Column name in sample_metadata to use for bar values
+        ylabel_size : int, default 8
+            Font size for y-axis label
+            
+        Returns:
+        --------
+        self : OncoPlot
+            Returns self for method chaining
+        """
         if bar_col == "TMB" and bar_col not in self.sample_metadata.columns:
             raise ValueError(f"Column '{bar_col}' not found in sample metadata. Please do table.calculate_tmb() first.")
         if bar_col not in self.sample_metadata.columns:
@@ -246,21 +393,43 @@ class OncoPlot(BasePlot):
 
     def plot_categorical_metadata(self, annotate=False, cmap_dict=None, alpha=1.0, default_cmap="pastel", annotation_font_size=10, annotate_text_color="black"):
         """
-        cmap_dict = {
-        "subtype": {
-            "LUAD": "orange",
-            "LUSC": "blue",
-            "ASC": "green"
-        },
-        "smoke": {
-            "is_smoke": "gray",
-            "no_smoke": "white"
-        },
+        Plot categorical metadata as color-coded heatmaps below the main mutation heatmap.
+        
+        Parameters:
+        -----------
+        annotate : bool, default False
+            Whether to display category labels on the heatmap
+        cmap_dict : dict, optional
+            Dictionary mapping columns to color mappings
+            Example: {
+                "subtype": {
+                    "LUAD": "orange",
+                    "LUSC": "blue",
+                    "ASC": "green"
+                },
+                "smoke": {
+                    "is_smoke": "gray",
+                    "no_smoke": "white"
+                }
+            }
+        alpha : float, default 1.0
+            Transparency level (0-1)
+        default_cmap : str, default "pastel"
+            Default color palette for categories without specified colors
+        annotation_font_size : int, default 10
+            Font size for annotations
+        annotate_text_color : str, default "black"
+            Color of annotation text
+            
+        Returns:
+        --------
+        self : OncoPlot
+            Returns self for method chaining
         """
         for col, ax in self.axs_categorical_columns.items():
             data = self.sample_metadata[[col]].T  # Ensure you pass a DataFrame
             
-            # 使用 ColorManager 生成顏色映射
+            # Use ColorManager to generate color mapping
             column_cmap = cmap_dict.get(col, {}) if cmap_dict else {}
             if not column_cmap:
                 column_cmap = self.color_manager.generate_categorical_cmap(
@@ -268,7 +437,7 @@ class OncoPlot(BasePlot):
                     default_palette=default_cmap
                 )
             
-            # 使用 categorical_heatmap 方法
+            # Use categorical_heatmap method
             fig, ax, legend_info = self.categorical_heatmap(
                 table=data,
                 category_cmap=column_cmap,
@@ -280,7 +449,7 @@ class OncoPlot(BasePlot):
                 alpha=alpha
             )
 
-            # 添加文字註解（如果需要）
+            # Add text annotations (if needed)
             if annotate:
                 for i in range(data.shape[0]):
                     for j in range(data.shape[1]):
@@ -292,7 +461,7 @@ class OncoPlot(BasePlot):
                             color=annotate_text_color
                         )
 
-            # 設定軸標籤和刻度
+            # Set axis labels and ticks
             ax.set_xticks([])
             ax.set_yticks([i + 0.5 for i in range(len(data.index))])
             ax.set_yticklabels(data.index, rotation=0, fontsize=self.ytick_fontsize)
@@ -314,6 +483,37 @@ class OncoPlot(BasePlot):
                         width=1.0, 
                         height=1.0,
                         ytick_fontsize=10):
+        """
+        Plot a heatmap using colored rectangles based on a color matrix.
+        
+        Parameters:
+        -----------
+        ax : matplotlib.axes.Axes
+            The axes to plot on
+        color_matrix : pd.DataFrame
+            DataFrame containing hex color codes for each cell
+        linecolor : str, default 'white'
+            Color of lines between cells
+        linewidth : int, default 1
+            Width of lines between cells
+        xticklabels : bool, default False
+            Whether to show x-axis labels
+        yticklabels : bool, default True
+            Whether to show y-axis labels
+        alpha : float, default 1.0
+            Transparency level (0-1)
+        width : float, default 1.0
+            Width of rectangles (0-1)
+        height : float, default 1.0
+            Height of rectangles (0-1)
+        ytick_fontsize : int, default 10
+            Font size for y-axis tick labels
+            
+        Returns:
+        --------
+        ax : matplotlib.axes.Axes
+            The modified axes
+        """
         
         ones_matrix = color_matrix.copy()
         ones_matrix[:] = 0 
@@ -338,7 +538,7 @@ class OncoPlot(BasePlot):
                 if face_color == "#ffffff":
                     continue
                 ax.add_patch(Rectangle(
-                    (j + (1 - width) / 2, i + (1 - height) / 2),  # 調整 x 和 y，讓方格置中
+                    (j + (1 - width) / 2, i + (1 - height) / 2),  # Adjust x and y to center the rectangle
                     width,  
                     height,
                     fill=True,
@@ -355,7 +555,18 @@ class OncoPlot(BasePlot):
         return ax
 
     def add_xticklabel(self):
-        # get the maximum row number
+        """
+        Add x-axis tick labels to the bottom-most subplot.
+        
+        Finds the subplot in the bottom row and first column, then adds
+        sample names as x-axis tick labels with 90-degree rotation.
+        
+        Returns:
+        --------
+        self : OncoPlot
+            Returns self for method chaining
+        """
+        # Get the maximum row number
         max_row = max([spec.rowspan.stop for spec in self.gs]) - 1
 
         # Find target axis
@@ -370,7 +581,7 @@ class OncoPlot(BasePlot):
                 # Handle cases where get_subplotspec is not available
                 continue
 
-        # add xtick labels and xticks
+        # Add xtick labels and xticks
         if target_ax:
             target_ax.set_xticks([i + 0.5 for i in range(len(self.sample_metadata))])
             target_ax.set_xticklabels(self.sample_metadata.index, rotation=90)
@@ -434,11 +645,32 @@ class OncoPlot(BasePlot):
 
     @staticmethod
     def default_oncoplot(pivot_table, figsize=(30, 15), width_ratios=[20, 1, 2]):
+        """
+        Create a default oncoplot with standard configuration.
+        
+        This is a convenience method that creates an OncoPlot with commonly used
+        settings and plots the main components (mutation heatmap, frequency plot,
+        TMB bar plot, and legends).
+        
+        Parameters:
+        -----------
+        pivot_table : PivotTable
+            The PivotTable instance containing mutation data
+        figsize : tuple, default (30, 15)
+            Figure size (width, height)
+        width_ratios : list, default [20, 1, 2]
+            Width ratios for subplot columns
+            
+        Returns:
+        --------
+        oncoplot : OncoPlot
+            Configured and plotted OncoPlot instance
+        """
         oncoplot = OncoPlot(pivot_table=pivot_table, figsize=figsize, width_ratios=width_ratios)
         oncoplot.mutation_heatmap()
         oncoplot.plot_freq()
         oncoplot.plot_bar()
-        oncoplot.plot_all_legends()  # 繪製所有圖例
+        oncoplot.plot_all_legends()  # Plot all legends
         oncoplot.add_xticklabel()
         return oncoplot
 
