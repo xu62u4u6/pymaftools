@@ -286,6 +286,31 @@ class CopyNumberVariationTable(PivotTable):
 
         return sorted_cnv_table
 
+
+    def to_thresholded_cnv(self):
+        """
+        Convert cnv table to a thresholded version.
+        
+        del_high_threshold, del_low_threshold, amp_low_threshold, amp_high_threshold must be defined in sample_metadata.
+        """
+        cutoffs = self.sample_metadata.loc[:, ["del_high_threshold", 
+                                                "del_low_threshold", 
+                                                "amp_low_threshold", 
+                                                "amp_high_threshold", 
+                                                ]]
+        def classify_cnv_column(column, cutoffs):
+            sample = column.name
+            thresholds = cutoffs.loc[sample]
+            return column.apply(lambda x: 
+                -2 if x < thresholds['del_high_threshold'] else
+                -1 if x < thresholds['del_low_threshold'] else
+                +2 if x > thresholds['amp_high_threshold'] else
+                +1 if x > thresholds['amp_low_threshold'] else
+                0
+            )
+        thresholded_cnv = self.apply(lambda col: classify_cnv_column(col, cutoffs), axis=0)
+        return thresholded_cnv
+
     @staticmethod
     def read_all_gistic(all_data_by_genes_file,
                         sample_cutoffs_file,

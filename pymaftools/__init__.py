@@ -2,7 +2,8 @@
 # core
 from .core.PivotTable import PivotTable
 from .core.MAF import MAF
-from .core.CNV import CNV
+from .core.CopyNumberVariationTable import CopyNumberVariationTable
+from .core.SmallVariationTable import SmallVariationTable
 from .core.PairwiseMatrix import SimilarityMatrix
 from .core.Cohort import Cohort
 
@@ -12,3 +13,5 @@ from .plot.LollipopPlot import LollipopPlot
 from .plot.ColorManager import ColorManager
 from .plot.FontManager import FontManager
 
+
+from .utils.geneset import read_GMT, fetch_msigdb_geneset
