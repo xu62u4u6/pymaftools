@@ -5,25 +5,22 @@ from matplotlib.patches import Rectangle
 import seaborn as sns
 from matplotlib import cm, ticker
 from matplotlib.colors import ListedColormap, Normalize
-from .ColorManager import ColorManager
+from .BasePlot import BasePlot
 
 # Type checking imports to avoid circular dependencies
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from ..core.PivotTable import PivotTable
 
-class OncoPlot:
+class OncoPlot(BasePlot):
     def __init__(self, pivot_table, **kwargs):
+        # initialize BasePlot
+        super().__init__()
+        
         # load PivotTable
         self.pivot_table = pivot_table
         self.feature_metadata = pivot_table.feature_metadata
         self.sample_metadata = pivot_table.sample_metadata
-        
-        # initialize ColorManager
-        self.color_manager = ColorManager()
-        
-        # initialize legend dictionary
-        self.legend_dict = {}
 
         self.set_config(**kwargs)
 
@@ -75,63 +72,6 @@ class OncoPlot:
         self.ax_freq = self.fig.add_subplot(self.gs[1, 1])
         self.axs_categorical_columns = {col: self.fig.add_subplot(self.gs[2+i, 0]) for i, col in enumerate(self.categorical_columns)}
         self.axs_numeric_columns = {col: self.fig.add_subplot(self.gs[2+len(self.categorical_columns)+i, 0]) for i, col in enumerate(self.numeric_columns)}
-
-    def add_legend(self, legend_name: str, color_dict: dict):
-        """
-        添加圖例信息到 legend_dict
-        
-        Args:
-            legend_name: 圖例名稱，如 'mutation', 'sex', 'subtype' 等
-            color_dict: 顏色映射字典，如 {'M': 'blue', 'F': 'red'}
-        """
-        self.legend_dict[legend_name] = color_dict
-        return self
-    
-    def plot_all_legends(self, fontsize=8, title_fontsize=10, legend_spacing=0.08, item_spacing=0.02):
-        """
-        在 ax_legend 上繪製所有圖例
-        
-        Args:
-            fontsize: 圖例字體大小
-            title_fontsize: 圖例標題字體大小
-            legend_spacing: 不同圖例之間的間距
-            item_spacing: 同一圖例內項目之間的間距
-        """
-        if not self.legend_dict:
-            return self
-            
-        self.ax_legend.clear()
-        self.ax_legend.axis('off')
-        self.ax_legend.set_xlim(0, 1)
-        self.ax_legend.set_ylim(0, 1)
-        
-        # 從上往下繪製圖例，起始位置更接近頂部
-        y_position = 0.95
-        
-        for legend_name, color_dict in self.legend_dict.items():
-            # 繪製圖例標題
-            self.ax_legend.text(0.05, y_position, legend_name, 
-                               fontsize=title_fontsize, fontweight='bold', 
-                               va='top', ha='left')
-            y_position -= 0.05  # 標題後的間距縮小
-            
-            # 繪製圖例項目
-            for label, color in color_dict.items():
-                # 繪製顏色方塊（縮小尺寸，無邊框）
-                rect = Rectangle((0.05, y_position - 0.015), 0.04, 0.03, 
-                               facecolor=color, edgecolor='none', linewidth=0)
-                self.ax_legend.add_patch(rect)
-                
-                # 繪製標籤文字
-                self.ax_legend.text(0.12, y_position, label, 
-                                   fontsize=fontsize, va='center', ha='left')
-                
-                y_position -= 0.035  # 項目間距縮小
-            
-            # 添加圖例之間的間距（縮小）
-            y_position -= 0.03
-            
-        return self
 
     def plot_numeric_metadata(self, annotate=False, annotation_font_size=10, fmt=".2f", cmap="Blues", cmap_dict=None, alpha=1):
         for col, ax in self.axs_numeric_columns.items():
@@ -492,31 +432,10 @@ class OncoPlot:
     @staticmethod
     def default_oncoplot(pivot_table, figsize=(30, 15), width_ratios=[20, 1, 2]):
         oncoplot = OncoPlot(pivot_table=pivot_table, figsize=figsize, width_ratios=width_ratios)
-        oncoplot.heatmap()
+        oncoplot.mutation_heatmap()
         oncoplot.plot_freq()
         oncoplot.plot_bar()
         oncoplot.plot_all_legends()  # 繪製所有圖例
         oncoplot.add_xticklabel()
         return oncoplot
-    
-    def save(self, filename: str, dpi: int = 300, bbox_inches: str = 'tight', transparent: bool = False, **kwargs):
-        if self.fig is None:
-            print("Figure is not exist.")
-            return
 
-        try:
-            format = filename.split('.')[-1].lower()
-            pil_kwargs = {"compression": "tiff_lzw"} if format == "tiff" else {}
-
-            self.fig.savefig(
-                filename,
-                dpi=dpi,
-                bbox_inches=bbox_inches,
-                transparent=transparent,
-                format=format,
-                pil_kwargs=pil_kwargs,
-                **kwargs
-            )
-            print(f"Figure saved to: {filename}")
-        except Exception as e:
-            print(f"Error while saving figure: {e}")
