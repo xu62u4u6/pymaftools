@@ -205,7 +205,7 @@ class MAF(pd.DataFrame):
             # get domain info from https://github.com/PoisonAlien/maftools/blob/master/inst/extdata/protein_domains.RDs
             protein_domains_path = os.path.join(script_dir, "../data/protein_domains.csv")
 
-        protein_domains =  pd.read_csv(protein_domains_path, index_col=0)   
+        protein_domains =  pd.read_csv(protein_domains_path, index_col=0, low_memory=False)   
         subset = protein_domains.loc[
             (protein_domains.HGNC == gene_name) & 
             (protein_domains["aa.length"] == AA_length)
