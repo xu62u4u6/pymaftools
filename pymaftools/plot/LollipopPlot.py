@@ -118,26 +118,39 @@ class LollipopPlot(BasePlot):
 
         self.ax_main.set_xlim(-10, self.protein_length + 10)
         self.ax_main.set_ylim(self.config['domain_bottom_y'] - 0.1,
-                         self.min_lollipop_candy_y + self.config['max_additional_scaled_height'] + 0.1)
+                        self.min_lollipop_candy_y + self.config['max_additional_scaled_height'] + 0.1)
         self.ax_main.set_xlabel("Amino Acid Position", fontsize=12)
         self.ax_main.set_title(f'Protein Domains and Mutations for {self.protein_name}', fontsize=16, pad=20)
 
-        # Hide Y-axis and unnecessary spines
+        # Smart Y-axis tick handling to avoid duplicate labels
+        if self.max_mutation_count <= 5:
+            # For small mutation counts, use integer steps
+            mutation_counts = list(range(self.max_mutation_count + 1))
+            num_ticks = len(mutation_counts)
+        else:
+            # For larger mutation counts, use 5-6 evenly spaced ticks
+            num_ticks = min(6, self.max_mutation_count + 1)
+            mutation_counts = np.round(
+                np.linspace(0, self.max_mutation_count, num=num_ticks)
+            ).astype(int)
+            # Remove duplicates while preserving order
+            mutation_counts = list(dict.fromkeys(mutation_counts))
+            num_ticks = len(mutation_counts)
+
+        # Calculate corresponding Y positions
         y_ticks = np.linspace(
             self.config['backbone_y'], 
             self.min_lollipop_candy_y + self.config['max_additional_scaled_height'],
-            num=5
+            num=num_ticks
         )
-        mutation_counts = np.round(
-            np.linspace(0, self.max_mutation_count, num=5)
-        ).astype(int)
 
         self.ax_main.set_yticks(y_ticks)
         self.ax_main.set_yticklabels(mutation_counts)
         self.ax_main.set_ylabel("Mutation Count", fontsize=12)
-        for spine in ['top', 'right', 'left', 'bottom']:
-            if spine != 'bottom':
-                self.ax_main.spines[spine].set_visible(False)
+        
+        # Hide unnecessary spines
+        for spine in ['top', 'right', 'left']:
+            self.ax_main.spines[spine].set_visible(False)
 
     def _plot_backbone(self):
         """Plot protein backbone line."""
