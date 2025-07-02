@@ -236,3 +236,79 @@ class ColorManager:
 
         # 轉成 hex 並回傳
         return to_hex((r_new, g_new, b_new))
+
+    def generate_cmap_from_list(self, 
+                               categories: List[Any], 
+                               cmap_name: str = "tab20",
+                               as_hex: bool = True) -> Dict[str, str]:
+        """
+        Generate a color mapping dictionary from a list of categories using a matplotlib colormap.
+
+        This method automatically creates evenly spaced colors from the specified colormap
+        and maps them to the provided categories. Very useful for creating consistent 
+        color mappings for categorical data like case_IDs, sample_types, etc.
+
+        Parameters
+        ----------
+        categories : list
+            List of unique categories to create color mapping for
+        cmap_name : str, default "tab20"
+            Name of matplotlib colormap to use. Popular choices:
+            - "tab20": 20 distinct colors, good for many categories
+            - "Set1": 9 bright colors, good for fewer categories  
+            - "Set3": 12 pastel colors
+            - "viridis", "plasma": continuous colormaps
+        as_hex : bool, default True
+            If True, return colors as hex strings. If False, return as RGBA tuples.
+
+        Returns
+        -------
+        dict
+            Dictionary mapping categories to color values
+
+        Examples
+        --------
+        >>> cm = ColorManager()
+        >>> case_ids = ["LUAD_001", "LUAD_002", "ASC_001", "ASC_002"]
+        >>> colors = cm.generate_cmap_from_list(case_ids, "tab20")
+        >>> print(colors)
+        {"LUAD_001": "#1f77b4", "LUAD_002": "#ff7f0e", ...}
+
+        >>> # For many categories, tab20 works well
+        >>> many_categories = [f"sample_{i}" for i in range(15)]
+        >>> colors = cm.generate_cmap_from_list(many_categories, "tab20")
+
+        >>> # For fewer categories, Set1 gives more distinct colors
+        >>> few_categories = ["Control", "Treatment", "Placebo"]
+        >>> colors = cm.generate_cmap_from_list(few_categories, "Set1")
+        """
+
+        
+        # Get the colormap
+        cmap = plt.get_cmap(cmap_name)
+        
+        # Generate evenly spaced values for the colormap
+        num_categories = len(categories)
+        if num_categories == 0:
+            return {}
+        
+        # For discrete colormaps like tab20, use integer indices
+        # For continuous colormaps, use linspace
+        if cmap_name.startswith(('tab', 'Set', 'Pastel', 'Dark2', 'Paired')):
+            # Discrete colormap - use indices with modulo for cycling
+            color_values = [cmap(i % cmap.N) for i in range(num_categories)]
+        else:
+            # Continuous colormap - use evenly spaced values
+            color_values = [cmap(i / max(1, num_categories - 1)) for i in range(num_categories)]
+        
+        # Create the mapping dictionary
+        color_dict = {}
+        for category, color_rgba in zip(categories, color_values):
+            if as_hex:
+                # Convert RGBA to hex string
+                color_dict[str(category)] = mcolors.to_hex(color_rgba)
+            else:
+                # Keep as RGBA tuple
+                color_dict[str(category)] = color_rgba
+        
+        return color_dict
