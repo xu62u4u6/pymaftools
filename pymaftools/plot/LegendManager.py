@@ -1,7 +1,14 @@
 import matplotlib.pyplot as plt
+from matplotlib import ticker
 from matplotlib.patches import Rectangle
-from typing import Dict, Optional, Tuple, List, Union
+from matplotlib.collections import LineCollection
+from matplotlib.colorbar import ColorbarBase
+from matplotlib.cm import ScalarMappable, get_cmap
+from matplotlib.colors import Normalize
+import numpy as np
+from typing import Dict, Optional, Tuple, List, Union, Any
 import matplotlib.axes as Axes
+import matplotlib.gridspec as gridspec
 
 
 class LegendManager:
@@ -9,6 +16,7 @@ class LegendManager:
     Specialized class for legend management
     
     Responsible for managing and plotting various types of legends, including mutation types, categorical variables, numeric variables, etc.
+    Supports advanced features for PCA plots including shape markers, numeric colorbars, and mixed legends.
     """
     
     def __init__(self, ax: Optional[Axes.Axes] = None):
@@ -20,7 +28,9 @@ class LegendManager:
         """
         self.ax = ax
         self.legend_dict: Dict[str, Dict[str, str]] = {}
-        
+        self.shape_dict: Dict[str, Dict[str, str]] = {}  # For shape legends
+        self.numeric_legends: Dict[str, Dict[str, Any]] = {}  # For numeric colorbars
+
     def set_axis(self, ax: Axes.Axes) -> 'LegendManager':
         """
         Set the axis for legend plotting
@@ -303,3 +313,155 @@ class LegendManager:
         manager = LegendManager(ax)
         manager.legend_dict = legend_dict.copy()
         return manager
+
+    def add_shape_legend(self, legend_name: str, shape_dict: Dict[str, str]) -> 'LegendManager':
+        """
+        Add shape legend information
+        
+        Args:
+            legend_name: Legend name, such as 'Sex', 'Stage', etc.
+            shape_dict: Shape mapping dictionary, such as {'M': 'o', 'F': 's'}
+        
+        Returns:
+            LegendManager: Support method chaining
+        """
+        self.shape_dict[legend_name] = shape_dict
+        return self
+
+    def add_numeric_legend(self, 
+                          legend_name: str, 
+                          colormap: str, 
+                          vmin: float, 
+                          vmax: float, 
+                          label: Optional[str] = None) -> 'LegendManager':
+        """
+        Add numeric colorbar legend
+        
+        Args:
+            legend_name: Legend name
+            colormap: Colormap name (e.g., 'viridis', 'plasma')
+            vmin: Minimum value for colormap
+            vmax: Maximum value for colormap
+            label: Colorbar label (default to legend_name)
+        
+        Returns:
+            LegendManager: Support method chaining
+        """
+        self.numeric_legends[legend_name] = {
+            'colormap': colormap,
+            'vmin': vmin,
+            'vmax': vmax,
+            'label': label or legend_name
+        }
+        return self
+
+    def plot_pca_legends(self,
+                        ax: Optional[Axes.Axes] = None,
+                        color_legend: Optional[str] = None,
+                        shape_legend: Optional[str] = None,
+                        numeric_legend: Optional[str] = None,
+                        fontsize: int = 12,
+                        title_fontsize: int = 12,
+                        legend_item_spacing: float = 0.04,
+                        legend_group_spacing: float = 0.06) -> 'LegendManager':
+        """
+        Plot PCA-style legends with support for color, shape, and numeric legends
+        
+        Args:
+            ax: matplotlib axis object
+            color_legend: Name of categorical color legend to display
+            shape_legend: Name of shape legend to display
+            numeric_legend: Name of numeric colorbar legend to display
+            fontsize: Font size for legend items
+            title_fontsize: Font size for legend titles
+            legend_item_spacing: Vertical spacing between items within the same legend group
+            legend_group_spacing: Vertical spacing between different legend groups
+        
+        Returns:
+            LegendManager: Support method chaining
+        """
+        target_ax = ax if ax is not None else self.ax
+        if target_ax is None:
+            raise ValueError("No axis provided. Please set axis using set_axis() or provide ax parameter.")
+        
+        target_ax.clear()
+        target_ax.axis('off')
+        target_ax.set_xlim(0, 1)
+        target_ax.set_ylim(0, 1)
+        
+        y_position = 0.95
+        
+        # Plot numeric colorbar if specified
+        if numeric_legend and numeric_legend in self.numeric_legends:
+            info = self.numeric_legends[numeric_legend]
+            
+            # Create vertical colorbar with proper mappable
+            cmap = get_cmap(info['colormap'])
+            norm = Normalize(vmin=info['vmin'], vmax=info['vmax'])
+            sm = ScalarMappable(norm=norm, cmap=cmap)
+            data_range = np.linspace(info['vmin'], info['vmax'], 100)
+            sm.set_array(data_range)
+            
+            # 清空 legend 區域
+            target_ax.clear()
+            target_ax.set_xlim(0, 1)
+            target_ax.set_ylim(0, 1)
+            target_ax.axis('off')
+            
+            # 用 inset_axes 產生一個窄且與主圖等高的 colorbar
+            from mpl_toolkits.axes_grid1.inset_locator import inset_axes
+            cax = inset_axes(target_ax, 
+                             width="30%", 
+                             height="100%", 
+                             loc='center left', 
+                             borderpad=0, 
+                             )
+            cbar = plt.colorbar(sm, cax=cax, orientation='vertical')
+            cbar.set_label(info['label'], fontsize=fontsize, labelpad=10)
+            cbar.outline.set_visible(False)
+            cbar.ax.tick_params(
+                labelsize=fontsize-2, length=4, width=0.5, color="gray", labelcolor="black", direction='out')
+            vmin, vmax = info['vmin'], info['vmax']
+            if max(abs(vmin), abs(vmax)) < 0.01 or max(abs(vmin), abs(vmax)) > 1000:
+                cbar.ax.yaxis.set_major_formatter(ticker.ScalarFormatter(useMathText=True))
+            else:
+                cbar.ax.yaxis.set_major_formatter(ticker.FormatStrFormatter('%.2f'))
+            cbar.set_ticks(np.linspace(vmin, vmax, 5))
+            return self
+        
+        # Plot categorical color legend if specified
+        if color_legend and color_legend in self.legend_dict:
+            target_ax.text(0.05, y_position, color_legend, fontsize=title_fontsize, fontweight='bold', 
+                          transform=target_ax.transAxes)
+            y_position -= 0.05
+            
+            color_dict = self.legend_dict[color_legend]
+            for label, color in color_dict.items():
+                # Color rectangle
+                rect = Rectangle((0.05, y_position-0.015), 0.06, 0.025, 
+                               facecolor=color, transform=target_ax.transAxes)
+                target_ax.add_patch(rect)
+                # Color label
+                target_ax.text(0.15, y_position, str(label), fontsize=fontsize-1, 
+                              va='center', transform=target_ax.transAxes)
+                y_position -= legend_item_spacing
+            
+            y_position -= legend_group_spacing
+        
+        # Plot shape legend if specified
+        if shape_legend and shape_legend in self.shape_dict:
+            target_ax.text(0.05, y_position, shape_legend, fontsize=title_fontsize, fontweight='bold',
+                          transform=target_ax.transAxes)
+            y_position -= 0.05
+            
+            shape_dict = self.shape_dict[shape_legend]
+            for label, marker in shape_dict.items():
+                # Shape marker
+                target_ax.scatter([0.08], [y_position], marker=marker,  # type: ignore
+                                c='black', s=40, transform=target_ax.transAxes)
+                # Shape label
+                target_ax.text(0.15, y_position, str(label), fontsize=fontsize-1, 
+                              va='center', transform=target_ax.transAxes)
+                y_position -= legend_item_spacing
+        
+        return self

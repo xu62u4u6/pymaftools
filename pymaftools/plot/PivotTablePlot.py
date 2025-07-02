@@ -146,9 +146,9 @@ class PivotTablePlot(BasePlot):
             data = self.pivot_table.sample_metadata
             
         if ax is None:
-            fig, ax = plt.subplots(figsize=(10, 6))
+            self.fig, ax = plt.subplots(figsize=(10, 6))
         else:
-            fig = ax.figure
+            self.fig = ax.figure
 
         if title is None:
             title = f"Boxplot of {test_col} by {group_col}"
@@ -185,10 +185,9 @@ class PivotTablePlot(BasePlot):
         ax.set_xlabel(group_col, fontsize=fontsize)
         ax.set_ylabel(test_col, fontsize=fontsize)
 
-        # Save figure using inherited method
+        # Save figure
         if save_path is not None:
-            self.save_figure(fig, save_path, dpi)
-
+            self.save(save_path, dpi=dpi, bbox_inches='tight', facecolor='white')
         return ax
     
     def plot_pca_samples(
@@ -199,95 +198,54 @@ class PivotTablePlot(BasePlot):
         to_binary: bool = False,
         palette: Optional[Union[str, Dict[str, str]]] = None,
         alpha: float = 0.8,
-        title: str = "PCA of samples",
+        title: Optional[str] = None,
+        titlesize: int = 14,
         is_numeric: bool = False,
         save_path: Optional[str] = None,
         fontsize: int = 12,
-        titlesize: int = 14,
         width_ratios: Tuple[int, int] = (4, 1),
         legend_item_spacing: float = 0.04,
         legend_group_spacing: float = 0.06
     ) -> Tuple[pd.DataFrame, np.ndarray, PCA]:
         """
-        Plot PCA scatter plot of samples with color and shape encoding.
+        Plot PCA scatter plot using ColorManager and LegendManager for unified styling.
 
-        Performs Principal Component Analysis on the PivotTable data and creates
-        a scatter plot showing the first two principal components. Samples are
-        colored by one variable and optionally shaped by another variable.
-        Uses GridSpec layout with legend displayed in a separate axis.
+        This method leverages the full power of ColorManager for color generation
+        and LegendManager for consistent legend appearance across all plot types.
+        Provides better integration with the overall plotting architecture.
 
         Parameters
         ----------
-        color_col : str, default "subtype"
-            Column name in sample_metadata to use for coloring points.
-        shape_col : str, optional
-            Column name in sample_metadata to use for point shapes.
-            If None, all points use the same shape.
-        figsize : tuple of int, default (12, 6)
-            Figure size as (width, height) in inches.
-        to_binary : bool, default False
-            Whether to convert data to binary (0/1) before PCA.
-            Useful for mutation data where only presence/absence matters.
-        palette : str or dict, optional
-            Color palette for the plot. Can be:
-            - seaborn palette name (e.g., "Set1", "viridis") for categorical data
-            - dictionary mapping values to colors for categorical data
-            - colormap name (e.g., "viridis", "plasma") for numeric data
-        alpha : float, default 0.8
-            Transparency level for scatter points (0-1).
-        title : str, default "PCA of samples"
-            Plot title.
-        is_numeric : bool, default False
-            Whether color_col contains numeric values.
-            If True, uses colormap; if False, uses discrete colors.
-        save_path : str, optional
-            Path to save the figure. Format determined by file extension.
-        fontsize : int, default 12
-            Font size for axis labels.
-        titlesize : int, default 14
-            Font size for plot title.
-        width_ratios : tuple of int, default (4, 1)
-            Width ratio between PCA plot and legend axis.
-        legend_item_spacing : float, default 0.04
-            Vertical spacing between items within the same legend group.
-        legend_group_spacing : float, default 0.06
-            Vertical spacing between different legend groups (color vs shape).
+        Same as plot_pca_samples method.
 
         Returns
         -------
         tuple
-            - pca_result_df : pd.DataFrame with PC1 and PC2 for each sample
-            - explained_variance : np.ndarray of variance ratios for PC1 and PC2
-            - pca : sklearn.decomposition.PCA fitted object
+            Same as plot_pca_samples method.
 
         Notes
         -----
-        PCA is performed on the transposed data matrix where samples are rows
-        and features (genes/mutations) are columns. Missing values should be
-        handled before calling this method.
+        This method uses ColorManager for automatic color generation and LegendManager 
+        for legend rendering, providing the most consistent styling with other plot 
+        types in the package.
 
         Examples
         --------
-        >>> # Basic PCA plot colored by subtype
-        >>> pca_df, variance, pca_obj = pivot_table.plot.plot_pca_samples(
+        >>> # Basic PCA plot with unified legend style
+        >>> pca_df, variance, pca_obj = pivot_table.plot.plot_pca_samples_with_legend_manager(
         ...     color_col="subtype"
         ... )
-
-        >>> # PCA with both color and shape encoding
-        >>> pivot_table.plot.plot_pca_samples(
-        ...     color_col="subtype",
-        ...     shape_col="sex",
-        ...     palette={"LUAD": "orange", "ASC": "green", "LUSC": "blue"},
-        ...     title="PCA with Subtype and Sex Encoding"
-        ... )
-
-        >>> # Numeric coloring with colormap
-        >>> pivot_table.plot.plot_pca_samples(
-        ...     color_col="age",
-        ...     is_numeric=True,
-        ...     palette="viridis"
+        
+        >>> # PCA with both color and shape encoding using ColorManager
+        >>> pca_df, variance, pca_obj = pivot_table.plot.plot_pca_samples_with_legend_manager(
+        ...     color_col="case_ID",
+        ...     shape_col="sample_type",
+        ...     palette="tab20"  # ColorManager will handle the conversion
         ... )
         """
+        from .LegendManager import LegendManager
+        from .ColorManager import ColorManager
+        
         # Calculate PCA result
         pca_result_df, explained_variance, pca = self.pivot_table.PCA(to_binary=to_binary)
 
@@ -305,16 +263,28 @@ class PivotTablePlot(BasePlot):
             pca_result_df[shape_col] = self.pivot_table.sample_metadata[shape_col]
 
         # Create GridSpec layout for PCA plot and legend
-        fig = plt.figure(figsize=figsize)
-        gs = gridspec.GridSpec(1, 2, width_ratios=width_ratios, figure=fig)
-        ax_pca = fig.add_subplot(gs[0])
-        ax_legend = fig.add_subplot(gs[1])
+        self.fig = plt.figure(figsize=figsize)
+        gs = gridspec.GridSpec(1, 2, width_ratios=width_ratios, figure=self.fig)
+        ax_pca = self.fig.add_subplot(gs[0])
+        ax_legend = self.fig.add_subplot(gs[1])
+
+        # Initialize managers
+        legend_manager = LegendManager(ax_legend)
+        color_manager = ColorManager()
 
         # Set up palette/colormap
         if palette is None:
             palette = "viridis" if is_numeric else "Set1"
 
-        if is_numeric:
+        # Check if data is actually numeric
+        is_actually_numeric = is_numeric and pd.api.types.is_numeric_dtype(pca_result_df[color_col])
+        
+        # Show warning if user specified is_numeric=True but data is not numeric
+        if is_numeric and not is_actually_numeric:
+            print(f"Warning: Column '{color_col}' contains non-numeric data but is_numeric=True. "
+                  f"Treating as categorical data instead.")
+        
+        if is_actually_numeric:
             # Numeric color encoding with colormap
             if isinstance(palette, dict):
                 raise ValueError("For numeric data, palette should be a colormap name (str), not a dictionary")
@@ -325,30 +295,44 @@ class PivotTablePlot(BasePlot):
                 c=pca_result_df[color_col],
                 cmap=str(palette),
                 alpha=alpha,
-                s=60  # marker size
+                s=60
             )
-            # Add colorbar to legend axis
-            cbar = plt.colorbar(scatter, cax=ax_legend)
-            cbar.set_label(color_col, fontsize=fontsize)
+            
+            # Add numeric legend using LegendManager
+            legend_manager.add_numeric_legend(
+                legend_name=color_col,
+                colormap=str(palette),
+                vmin=float(pca_result_df[color_col].min()),
+                vmax=float(pca_result_df[color_col].max()),
+                label=color_col
+            )
+            legend_manager.plot_pca_legends(numeric_legend=color_col, fontsize=fontsize)
             
         else:
-            # Categorical color encoding
+            # Categorical color encoding using ColorManager
             unique_colors = pca_result_df[color_col].unique()
+            
+            # Generate colors using ColorManager
+            if isinstance(palette, dict):
+                # Use provided color mapping directly
+                color_palette = palette
+            elif isinstance(palette, str):
+                # Use ColorManager to generate colors from colormap name
+                color_palette = color_manager.generate_cmap_from_list(
+                    categories=unique_colors.tolist(), 
+                    cmap_name=palette, 
+                    as_hex=True
+                )
+            else:
+                # Fallback to seaborn palette
+                colors = sns.color_palette("Set1", len(unique_colors))
+                color_palette = {str(cat): color for cat, color in zip(unique_colors, colors)}
             
             # Handle shape encoding
             if shape_col is not None:
                 unique_shapes = pca_result_df[shape_col].unique()
                 shape_markers = ['o', 's', '^', 'D', 'v', '<', '>', 'p', '*', 'h'][:len(unique_shapes)]
                 shape_dict = dict(zip(unique_shapes, shape_markers))
-                
-                # Get colors for color_col
-                if isinstance(palette, dict):
-                    # Use provided color mapping
-                    color_palette = palette
-                else:
-                    # Generate colors using seaborn palette
-                    colors = sns.color_palette(palette, len(unique_colors))
-                    color_palette = dict(zip(unique_colors, colors))
                 
                 # Plot with both color and shape
                 for color_val in unique_colors:
@@ -358,84 +342,68 @@ class PivotTablePlot(BasePlot):
                         if len(subset) > 0:
                             ax_pca.scatter(
                                 subset["PC1"], subset["PC2"],
-                                c=[color_palette.get(color_val, 'gray')], 
+                                c=[color_palette.get(str(color_val), 'gray')], 
                                 marker=shape_dict[shape_val],  # type: ignore
-                                alpha=alpha, s=60,
-                                # Don't add labels here - we'll create separate legends
+                                alpha=alpha, s=60
                             )
                 
-                # Create separate legends in the legend axis
-                ax_legend.axis('off')
+                # Add legends using LegendManager
+                # Ensure colors are in hex format for LegendManager
+                color_legend_dict = {}
+                for val, color in color_palette.items():
+                    if isinstance(color, (tuple, list, np.ndarray)):
+                        # Convert RGB/RGBA to hex
+                        import matplotlib.colors as mcolors
+                        color_legend_dict[str(val)] = mcolors.to_hex(color)
+                    else:
+                        color_legend_dict[str(val)] = str(color)
                 
-                # Color legend (top half)
-                legend_y_start = 0.9
-                ax_legend.text(0.05, 0.95, color_col, fontsize=fontsize, fontweight='bold', 
-                              transform=ax_legend.transAxes)
-                
-                y_pos = legend_y_start
-                for color_val in unique_colors:
-                    # Color rectangle
-                    rect_color = Rectangle((0.05, y_pos-0.015), 0.06, 0.025, 
-                                         facecolor=color_palette.get(color_val, 'gray'),
-                                         transform=ax_legend.transAxes)
-                    ax_legend.add_patch(rect_color)
-                    # Color label
-                    ax_legend.text(0.15, y_pos, str(color_val), fontsize=fontsize-1, 
-                                  va='center', transform=ax_legend.transAxes)
-                    y_pos -= legend_item_spacing
-                
-                # Shape legend (bottom half)
-                shape_y_start = y_pos - legend_group_spacing
-                ax_legend.text(0.05, shape_y_start + 0.03, shape_col, fontsize=fontsize, fontweight='bold',
-                              transform=ax_legend.transAxes)
-                
-                y_pos = shape_y_start
-                for shape_val in unique_shapes:
-                    # Shape marker
-                    ax_legend.scatter([0.08], [y_pos], marker=shape_dict[shape_val],  # type: ignore
-                                    c='black', s=40, transform=ax_legend.transAxes)
-                    # Shape label
-                    ax_legend.text(0.15, y_pos, str(shape_val), fontsize=fontsize-1, 
-                                  va='center', transform=ax_legend.transAxes)
-                    y_pos -= legend_item_spacing
+                legend_manager.add_legend(color_col, color_legend_dict)
+                legend_manager.add_shape_legend(shape_col, {str(k): str(v) for k, v in shape_dict.items()})
+                legend_manager.plot_pca_legends(
+                    color_legend=color_col, 
+                    shape_legend=shape_col, 
+                    fontsize=fontsize,
+                    legend_item_spacing=legend_item_spacing,
+                    legend_group_spacing=legend_group_spacing
+                )
                 
             else:
                 # Color only
-                if isinstance(palette, dict):
-                    colors = [palette.get(val, 'gray') for val in unique_colors]
-                    color_palette = palette
-                else:
-                    colors = sns.color_palette(palette, len(unique_colors))
-                    color_palette = dict(zip(unique_colors, colors))
-                
                 for color_val in unique_colors:
                     mask = pca_result_df[color_col] == color_val
                     subset = pca_result_df[mask]
                     if len(subset) > 0:
                         ax_pca.scatter(
                             subset["PC1"], subset["PC2"],
-                            c=[color_palette[color_val]], alpha=alpha, s=60,
-                            label=f"{color_val}"
+                            c=[color_palette.get(str(color_val), 'gray')], 
+                            alpha=alpha, s=60
                         )
                 
-                # Create single legend in the legend axis
-                ax_legend.axis('off')
-                handles, labels = ax_pca.get_legend_handles_labels()
-                legend = ax_legend.legend(handles, labels, loc='upper left', 
-                           title=color_col, title_fontsize=fontsize, fontsize=fontsize-1,
-                           labelspacing=0.3, handletextpad=0.5, handlelength=1.0)
+                # Add color legend using LegendManager
+                color_legend_dict = {}
+                for val, color in color_palette.items():
+                    if isinstance(color, (tuple, list, np.ndarray)):
+                        import matplotlib.colors as mcolors
+                        color_legend_dict[str(val)] = mcolors.to_hex(color)
+                    else:
+                        color_legend_dict[str(val)] = str(color)
+                
+                legend_manager.add_legend(color_col, color_legend_dict)
+                legend_manager.plot_pca_legends(color_legend=color_col, fontsize=fontsize)
 
         # Set PCA plot properties
-        ax_pca.set_title(title, fontsize=titlesize)
+        if title:
+            ax_pca.set_title(title, fontsize=titlesize)
         ax_pca.set_xlabel(
             f"Principal Component 1 ({explained_variance[0] * 100:.2f}%)", fontsize=fontsize)
         ax_pca.set_ylabel(
             f"Principal Component 2 ({explained_variance[1] * 100:.2f}%)", fontsize=fontsize)
 
-        # Save figure using inherited method
+        # Save figure using BasePlot's save method
         if save_path is not None:
-            self.save_figure(fig, save_path)
-        
+            self.save(save_path, dpi=300)
+                    
         plt.tight_layout()
         plt.show()
         return pca_result_df, explained_variance, pca

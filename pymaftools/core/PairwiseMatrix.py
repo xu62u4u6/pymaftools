@@ -541,7 +541,7 @@ class SimilarityMatrix(PairwiseMatrix):
         filename_base = title.replace(" ", "_")
 
         similarity_matrix = table.compute_similarity(method=method)
-        true_group_similarity = similarity_matrix.get_group_similarity(groups, 
+        true_group_similarity = similarity_matrix.get_mean_group_similarity(groups, 
                                                                         group_order=group_order)
         permutated_group_similarities = similarity_matrix.generate_permutation_list(groups, 
                                                                                         group_order=group_order, 
