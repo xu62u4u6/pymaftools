@@ -1,5 +1,4 @@
 import matplotlib.pyplot as plt
-from matplotlib import ticker
 from matplotlib.patches import Rectangle
 from matplotlib.collections import LineCollection
 from matplotlib.colorbar import ColorbarBase
@@ -395,39 +394,19 @@ class LegendManager:
         if numeric_legend and numeric_legend in self.numeric_legends:
             info = self.numeric_legends[numeric_legend]
             
-            # Create vertical colorbar with proper mappable
+            # Create colorbar
             cmap = get_cmap(info['colormap'])
             norm = Normalize(vmin=info['vmin'], vmax=info['vmax'])
             sm = ScalarMappable(norm=norm, cmap=cmap)
-            data_range = np.linspace(info['vmin'], info['vmax'], 100)
-            sm.set_array(data_range)
+            sm.set_array([])
             
-            # 清空 legend 區域
-            target_ax.clear()
-            target_ax.set_xlim(0, 1)
-            target_ax.set_ylim(0, 1)
-            target_ax.axis('off')
+            # Add colorbar to the axis
+            cbar_ax = target_ax.inset_axes([0.1, y_position-0.15, 0.8, 0.03])
+            cbar = plt.colorbar(sm, cax=cbar_ax, orientation='horizontal')
+            cbar.set_label(info['label'], fontsize=fontsize)
+            cbar.ax.tick_params(labelsize=fontsize-2)
             
-            # 用 inset_axes 產生一個窄且與主圖等高的 colorbar
-            from mpl_toolkits.axes_grid1.inset_locator import inset_axes
-            cax = inset_axes(target_ax, 
-                             width="30%", 
-                             height="100%", 
-                             loc='center left', 
-                             borderpad=0, 
-                             )
-            cbar = plt.colorbar(sm, cax=cax, orientation='vertical')
-            cbar.set_label(info['label'], fontsize=fontsize, labelpad=10)
-            cbar.outline.set_visible(False)
-            cbar.ax.tick_params(
-                labelsize=fontsize-2, length=4, width=0.5, color="gray", labelcolor="black", direction='out')
-            vmin, vmax = info['vmin'], info['vmax']
-            if max(abs(vmin), abs(vmax)) < 0.01 or max(abs(vmin), abs(vmax)) > 1000:
-                cbar.ax.yaxis.set_major_formatter(ticker.ScalarFormatter(useMathText=True))
-            else:
-                cbar.ax.yaxis.set_major_formatter(ticker.FormatStrFormatter('%.2f'))
-            cbar.set_ticks(np.linspace(vmin, vmax, 5))
-            return self
+            y_position -= 0.25
         
         # Plot categorical color legend if specified
         if color_legend and color_legend in self.legend_dict:
