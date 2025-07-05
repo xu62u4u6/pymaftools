@@ -25,7 +25,7 @@ class SimilarityMatrix(PairwiseMatrix):
     def _constructor(self):
         return SimilarityMatrix
     
-    def get_group_similarity(self, groups, group_order=None):
+    def get_mean_group_similarity(self, groups, group_order=None):
         if group_order is None:
             group_order = groups.unique()
 
@@ -46,7 +46,7 @@ class SimilarityMatrix(PairwiseMatrix):
         permutation_list = []
         for _ in range(n_permutations):
             shuffled_groups = groups.sample(frac=1, replace=False).reset_index(drop=True)
-            permuted_similarity = self.get_group_similarity(shuffled_groups, group_order)
+            permuted_similarity = self.get_mean_group_similarity(shuffled_groups, group_order)
             permutation_list.append(permuted_similarity)
         return permutation_list
 
@@ -431,7 +431,7 @@ class SimilarityMatrix(PairwiseMatrix):
                     groups,
                     figsize=(20, 20), 
                     group_cmap={"LUAD": "orange", "ASC": "green", "LUSC": "blue"},
-                    title="cosine similarity",
+                    title=None,
                     cmap="coolwarm",
                     ax=None, 
                     save_path=None, 
@@ -484,7 +484,9 @@ class SimilarityMatrix(PairwiseMatrix):
         ax_groupbar.set_yticks([])
         # 儲存圖片（如果有指定）
         #plt.suptitle(title, fontsize=20, y=0.9)
-        ax_heatmap.set_title(title, fontsize=20)
+        if title:
+            ax_heatmap.set_title(title, fontsize=20)
+
         if save_path is not None:
             plt.savefig(save_path, bbox_inches="tight", dpi=dpi)
 
@@ -528,15 +530,16 @@ class SimilarityMatrix(PairwiseMatrix):
     @staticmethod
     def analyze_similarity(table, 
                         groups,
-                        title,
                         group_order,
                         method,
+                        title=None,
                         similarity_cmap="coolwarm",
                         group_cmap={"LUAD": "orange", "ASC": "green", "LUSC": "blue"},
                         group_avg_cmap="Blues",
                         group_pvalues_cmap="Reds_r",
                         save_dir="./figures/Similarity",
-                        dpi=300):
+                        dpi=300,
+                        file_format="png"):
         os.makedirs(save_dir, exist_ok=True)
         filename_base = title.replace(" ", "_")
 
@@ -577,7 +580,7 @@ class SimilarityMatrix(PairwiseMatrix):
             groups,
             group_cmap=group_cmap,
             cmap=similarity_cmap,
-            title=f"{title} Matrix",
+            #title=f"{title} Matrix",
             ax=(ax_similarity, ax_colorbar, ax_groupbar),
             #save_path=os.path.join(save_dir, filename_base + "_matrix.png"),
         )
@@ -605,8 +608,14 @@ class SimilarityMatrix(PairwiseMatrix):
         )
 
         # ---- 儲存 / 顯示
+        pil_kwargs = {"compression": "tiff_lzw"} if format == "tiff" else {}
         if save_dir:
-            plt.savefig(os.path.join(save_dir, filename_base + ".png"), bbox_inches="tight", dpi=dpi)
+            plt.savefig(os.path.join(save_dir, filename_base + "." + file_format), 
+                        bbox_inches="tight", 
+                        dpi=dpi, 
+                        format=file_format,
+                        pil_kwargs=pil_kwargs
+                        )
         else:
             plt.show()
 
