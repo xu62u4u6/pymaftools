@@ -205,7 +205,9 @@ class PivotTablePlot(BasePlot):
         fontsize: int = 12,
         width_ratios: Tuple[int, int] = (4, 1),
         legend_item_spacing: float = 0.04,
-        legend_group_spacing: float = 0.06
+        legend_group_spacing: float = 0.06,
+        dpi: int = 300,
+        s: int = 60
     ) -> Tuple[pd.DataFrame, np.ndarray, PCA]:
         """
         Plot PCA scatter plot using ColorManager and LegendManager for unified styling.
@@ -295,7 +297,7 @@ class PivotTablePlot(BasePlot):
                 c=pca_result_df[color_col],
                 cmap=str(palette),
                 alpha=alpha,
-                s=60
+                s=s
             )
             
             # Add numeric legend using LegendManager
@@ -377,7 +379,7 @@ class PivotTablePlot(BasePlot):
                         ax_pca.scatter(
                             subset["PC1"], subset["PC2"],
                             c=[color_palette.get(str(color_val), 'gray')], 
-                            alpha=alpha, s=60
+                            alpha=alpha, s=s
                         )
                 
                 # Add color legend using LegendManager
@@ -402,7 +404,7 @@ class PivotTablePlot(BasePlot):
 
         # Save figure using BasePlot's save method
         if save_path is not None:
-            self.save(save_path, dpi=300)
+            self.save(save_path, dpi=dpi)
                     
         plt.tight_layout()
         plt.show()
