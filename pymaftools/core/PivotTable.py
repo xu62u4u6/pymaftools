@@ -1127,6 +1127,19 @@ class PivotTable(pd.DataFrame):
         return pivot_table.subset(features=head_indices)
     
     def tail(self, n : int = 50) -> "PivotTable":
+        """
+        Return the last n features (rows) subset of the PivotTable.
+        
+        Parameters
+        ----------
+        n : int, default 50
+            Number of features to return.
+            
+        Returns
+        -------
+        PivotTable
+            PivotTable subset containing only the last n features.
+        """
         pivot_table = self.copy()
         tail_indices = pivot_table.index[-n:].tolist()
         return pivot_table.subset(features=tail_indices)

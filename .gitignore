@@ -2,3 +2,8 @@ build/
 dist/
 *.egg-info/
 *.pyc
+*.ttf
+*.TTF
+docs/
+fonts/
+__pycache__/
