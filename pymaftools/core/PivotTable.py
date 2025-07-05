@@ -1125,6 +1125,12 @@ class PivotTable(pd.DataFrame):
         pivot_table = self.copy()
         head_indices = pivot_table.index[:n].tolist()
         return pivot_table.subset(features=head_indices)
+    
+    def tail(self, n : int = 50) -> "PivotTable":
+        pivot_table = self.copy()
+        tail_indices = pivot_table.index[-n:].tolist()
+        return pivot_table.subset(features=tail_indices)
+
 
     def filter_by_freq(self, threshold: float = 0.05) -> "PivotTable":
         """
