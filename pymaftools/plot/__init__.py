@@ -11,6 +11,7 @@ from .LegendManager import LegendManager
 from .LollipopPlot import LollipopPlot
 from .OncoPlot import OncoPlot
 from .PivotTablePlot import PivotTablePlot
+from .MethodsPlot import MethodsPlot
 
 __all__ = [
     "BasePlot",
