@@ -354,7 +354,24 @@ class CopyNumberVariationTable(PivotTable):
                 sample_cutoff_df,
                 thresholded_cnv_table,
                 broad_values_by_arm_table)
-
+    
+    def to_cluster_table(self, cluster_col="cluster") -> pd.DataFrame:
+        """
+        cluster must in feature_metadata.
+        """
+        if cluster_col not in self.feature_metadata.columns:
+            raise ValueError(f"Column '{cluster_col}' not found in feature_metadata.")
+        # save clustering results
+        table = self.copy()
+        table.feature_metadata["chr_arm"] = table.feature_metadata["Chromosome"].astype(str) + table.feature_metadata["Arm"]
+        #table.feature_metadata.cluster.to_csv("data/clustering/best_k_cluster_labels.csv", index=True)
+        table[cluster_col] = table.feature_metadata[cluster_col]
+        # to cluster table
+        cluster_table = PivotTable(pd.DataFrame(table).groupby(cluster_col).mean())
+        cluster_table.sample_metadata = table.sample_metadata
+        cluster_table.feature_metadata["unique_chr_arm"]  = table.feature_metadata.groupby(cluster_col)["chr_arm"].unique()
+        cluster_table.feature_metadata["gene_count"] = table.feature_metadata.groupby(cluster_col).size()
+        return cluster_table.rename_index_and_columns()
 
 def read_sample_cutoff_file(sample_cutoff_file):
     """
