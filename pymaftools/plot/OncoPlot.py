@@ -600,7 +600,7 @@ class OncoPlot(BasePlot):
             target_ax.set_xticklabels(self.sample_metadata.index, rotation=90)
         return self
 
-    def numeric_heatmap(self, cmap="Blues", vmin=None, vmax=None, symmetric=False, yticklabels=True): 
+    def numeric_heatmap(self, cmap="Blues", vmin=None, vmax=None, symmetric=False, yticklabels=True, annot=False, fmt=".2f"): 
         ax = self.ax_heatmap
         table = self.pivot_table
         
@@ -621,8 +621,16 @@ class OncoPlot(BasePlot):
         else:
             center = 0
         # Draw heatmap
-        hm = sns.heatmap(table, ax=ax, cmap=cmap, cbar=False,
-                        vmin=vmin, vmax=vmax, center=center, yticklabels=yticklabels)
+        hm = sns.heatmap(table, 
+                         ax=ax, 
+                         cmap=cmap, 
+                         cbar=False,
+                        vmin=vmin, 
+                        vmax=vmax, 
+                        center=center, 
+                        yticklabels=yticklabels, 
+                        annot=annot,
+                        fmt=fmt,)
 
         ax.set_xticks([])
         ax.set_xlabel("")
