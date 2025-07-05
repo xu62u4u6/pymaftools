@@ -373,6 +373,19 @@ class OncoPlot(BasePlot):
         return self
 
     def plot_freq(self, freq_columns=["freq"]):
+        """
+        Plot frequency heatmap showing mutation frequencies for each gene.
+        
+        Parameters:
+        -----------
+        freq_columns : list, default ["freq"]
+            List of frequency columns to display
+            
+        Returns:
+        --------
+        self : OncoPlot
+            Returns self for method chaining
+        """
         freq_data = self.feature_metadata[freq_columns]
         sns.heatmap(
                 freq_data,
