@@ -364,13 +364,16 @@ class CopyNumberVariationTable(PivotTable):
         # save clustering results
         table = self.copy()
         table.feature_metadata["chr_arm"] = table.feature_metadata["Chromosome"].astype(str) + table.feature_metadata["Arm"]
-        #table.feature_metadata.cluster.to_csv("data/clustering/best_k_cluster_labels.csv", index=True)
         table[cluster_col] = table.feature_metadata[cluster_col]
+        
         # to cluster table
         cluster_table = PivotTable(pd.DataFrame(table).groupby(cluster_col).mean())
         cluster_table.sample_metadata = table.sample_metadata
-        cluster_table.feature_metadata["unique_chr_arm"]  = table.feature_metadata.groupby(cluster_col)["chr_arm"].unique()
-        cluster_table.feature_metadata["gene_count"] = table.feature_metadata.groupby(cluster_col).size()
+
+        gb = table.feature_metadata.groupby(cluster_col)
+        cluster_table.feature_metadata["unique_chr_arm"]  = gb["chr_arm"].unique()
+        cluster_table.feature_metadata["features"] = gb.apply(lambda df: list(df.index))
+        cluster_table.feature_metadata["features_count"] = cluster_table.feature_metadata["features"].apply(len)
         return cluster_table.rename_index_and_columns()
 
 def read_sample_cutoff_file(sample_cutoff_file):
