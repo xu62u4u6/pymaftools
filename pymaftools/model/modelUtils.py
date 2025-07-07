@@ -111,43 +111,46 @@ def plot_metric_comparison_with_annotation(data,
                                            alpha=0.8,
                                            fontsize=14, 
                                            figsize=None,
-                                           title_prefix="Metric:"):
-    if figsize is None:
-        figsize = (5 * len(metrics), 6)
-    fig, axes = plt.subplots(1, len(metrics), figsize=figsize)
-
-    if order is None:
-        order = sorted(data[group_col].unique())
-
-    for i, metric in enumerate(metrics):
-        ax = axes[i]
-        test_col = metric
-        title = f"{title_prefix} {metric.upper()}"
-
-        gb = data.groupby(group_col)
-        group_pairs = list(combinations(order, 2))
-
-        sns.boxplot(data=data, x=group_col, y=test_col,
-                    ax=ax, hue=group_col, palette=palette, order=order)
-
-        # 設定 alpha 半透明
-        for patch in ax.patches:
-            r, g, b, _ = patch.get_facecolor()
-            patch.set_facecolor((r, g, b, alpha))
-
-        # 顯著性標註
-        annotator = Annotator(ax=ax, pairs=group_pairs,
-                              data=data, x=group_col, y=test_col, order=order)
-        annotator.configure(test=test, text_format='star', loc="inside", verbose=0,)
-                            #loc='inside', verbose=0)
-        annotator.apply_and_annotate()
-
-        #ax.set_title(title, fontsize=fontsize)
-        ax.set_xlabel('')
-        ax.set_ylabel(metric.upper())
-        #ax.set_ylim(0.4, 1.1)
-    plt.tight_layout()
-    plt.show()
+                                           title_prefix=None,
+                                           save_path=None,
+                                           **save_kwargs):
+    """
+    Plot metric comparison with statistical annotation
+    
+    Args:
+        data: DataFrame with model metrics
+        metrics: List of metrics to plot
+        group_col: Column name for grouping
+        order: Order of groups
+        palette: Color palette
+        test: Statistical test method
+        alpha: Transparency level
+        fontsize: Font size
+        figsize: Figure size
+        title_prefix: Title prefix (optional, set to None to disable titles)
+        save_path: Path to save figure (optional)
+        **save_kwargs: Additional arguments for save method
+    
+    Returns:
+        ModelPlot instance
+    """
+    from .ModelPlot import ModelPlot
+    
+    plotter = ModelPlot()
+    return plotter.plot_metric_comparison_with_annotation(
+        data=data,
+        metrics=metrics,
+        group_col=group_col,
+        order=order,
+        palette=palette,
+        test=test,
+        alpha=alpha,
+        fontsize=fontsize,
+        figsize=figsize,
+        title_prefix=title_prefix,
+        save_path=save_path,
+        **save_kwargs
+    )
 
 
 def to_importance_table(all_importance_df, omic):
@@ -168,16 +171,39 @@ def to_importance_table(all_importance_df, omic):
     sorted_table = table.sort_features(by="mean", ascending=False)
     return sorted_table
 
-def plot_top_feature_importance_heatmap(mean_importance_df, omic, top_n=20, cmap="viridis"):
-    table = to_importance_table(mean_importance_df, omic)
-    # 繪製 heatmap
-    plt.figure(figsize=(10, 6))
-    sns.heatmap(table.head(top_n), cmap=cmap)
-    plt.title(f"Top {top_n} Important Features in {omic.upper()}")
-    plt.xlabel("Seed")
-    plt.ylabel("Feature")
-    plt.tight_layout()
-    plt.show()
+def plot_top_feature_importance_heatmap(mean_importance_df, omic, top_n=20, 
+                                        cmap="viridis", figsize=(10, 6),
+                                        title=None,
+                                        save_path=None, **save_kwargs):
+    """
+    Plot heatmap of top feature importance
+    
+    Args:
+        mean_importance_df: DataFrame with feature importance data
+        omic: Name of the omic type
+        top_n: Number of top features to show
+        cmap: Colormap for heatmap
+        figsize: Figure size
+        title: Title for the plot (optional, set to None to disable title)
+        save_path: Path to save figure (optional)
+        **save_kwargs: Additional arguments for save method
+    
+    Returns:
+        ModelPlot instance
+    """
+    from .ModelPlot import ModelPlot
+    
+    plotter = ModelPlot()
+    return plotter.plot_top_feature_importance_heatmap(
+        importance_df=mean_importance_df,
+        omic=omic,
+        top_n=top_n,
+        cmap=cmap,
+        figsize=figsize,
+        title=title,
+        save_path=save_path,
+        **save_kwargs
+    )
 
 def run_rfecv_feature_selection(pivot: PivotTable,
                                 label_col: str = "subtype",
@@ -186,7 +212,10 @@ def run_rfecv_feature_selection(pivot: PivotTable,
                                 scoring: str = "accuracy",
                                 min_features_to_select: int = 10,
                                 plot: bool = True,
-                                random_state: int = 42):
+                                random_state: int = 42,
+                                title=None,
+                                save_path=None,
+                                **save_kwargs):
     """
     執行 RFECV 特徵選擇，適用於 PivotTable (SNV or CNV)
 
@@ -208,17 +237,25 @@ def run_rfecv_feature_selection(pivot: PivotTable,
         是否繪製 performance 曲線
     random_state : int
         隨機種子
+    title : str, optional
+        圖表標題（設定為 None 則不顯示標題）
+    save_path : str, optional
+        圖片儲存路徑
+    **save_kwargs : dict
+        儲存圖片的額外參數
     
     Returns
     -------
     selected_features : list
         被選中的特徵名稱（pivot.index）
+    selector : RFECV
+        訓練好的 RFECV 物件
     """
     if estimator is None:
         estimator = RandomForestClassifier(n_estimators=100, random_state=random_state)
 
     X = pivot.T.values
-    y = pivot.sample_metadata[label_col].values
+    y = np.array(pivot.sample_metadata[label_col].values)  # 轉換為 numpy array 以解決類型問題
 
     selector = RFECV(
         estimator=estimator,
@@ -235,20 +272,18 @@ def run_rfecv_feature_selection(pivot: PivotTable,
     selected_features = pivot.index[selector.support_].tolist()
 
     if plot:
-        # 計算真實的特徵數量（對應到每次 step）
-        total = X.shape[1]
-        steps = list(range(total, total - step * len(selector.cv_results_["mean_test_score"]), -step))
-        steps = steps[:len(selector.cv_results_["mean_test_score"])]
         
-        plt.figure()
-        plt.plot(steps, selector.cv_results_["mean_test_score"])
-        plt.xlabel("Number of features selected")
-        plt.ylabel(f"Cross-validation score ({scoring})")
-        plt.title("RFECV Feature Selection Curve")
-        plt.tight_layout()
-        plt.show()
+        from .ModelPlot import ModelPlot
+        plotter = ModelPlot()
+        plotter.plot_rfecv_curve(
+            selector=selector,
+            title=title,
+            scoring=scoring,
+            save_path=save_path,
+            **save_kwargs
+        )
 
-    return selected_features
+    return selected_features, selector
 
 
 def run_model_evaluation(
