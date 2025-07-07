@@ -295,20 +295,23 @@ class PivotTablePlot(BasePlot):
                 pca_result_df["PC1"],
                 pca_result_df["PC2"], 
                 c=pca_result_df[color_col],
-                cmap=str(palette),
+                cmap=palette,
                 alpha=alpha,
                 s=s
             )
             
-            # Add numeric legend using LegendManager
-            legend_manager.add_numeric_legend(
+            # Use LegendManager but modify it to create custom colorbar
+            legend_manager.add_numeric_colorbar(
                 legend_name=color_col,
-                colormap=str(palette),
-                vmin=float(pca_result_df[color_col].min()),
-                vmax=float(pca_result_df[color_col].max()),
-                label=color_col
+                scatter_obj=scatter,
+                target_ax=ax_pca,
+                label=color_col,
+                orientation='vertical', 
+                fraction=0.08, 
+                pad=0.02
             )
-            legend_manager.plot_pca_legends(numeric_legend=color_col, fontsize=fontsize)
+            # Hide the legend axis since we're using colorbar on the plot
+            ax_legend.set_visible(False)
             
         else:
             # Categorical color encoding using ColorManager

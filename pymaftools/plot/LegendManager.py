@@ -354,6 +354,42 @@ class LegendManager:
         }
         return self
 
+    def add_numeric_colorbar(self, 
+                            legend_name: str,
+                            scatter_obj: Any,
+                            target_ax: Axes.Axes,
+                            label: Optional[str] = None,
+                            orientation: str = 'vertical',
+                            fraction: float = 0.08,
+                            pad: float = 0.02) -> 'LegendManager':
+        """
+        Add numeric colorbar directly to the target axis with custom format
+        
+        Args:
+            legend_name: Legend name
+            scatter_obj: The scatter plot object for colorbar
+            target_ax: Target axis to add colorbar to
+            label: Colorbar label (default to legend_name)
+            orientation: Colorbar orientation ('vertical' or 'horizontal')
+            fraction: Size of colorbar relative to parent axis
+            pad: Padding between colorbar and parent axis
+        
+        Returns:
+            LegendManager: Support method chaining
+        """
+        # Get the figure from the target axis
+        fig = target_ax.figure
+        
+        # Create colorbar with custom format
+        cbar = fig.colorbar(scatter_obj, ax=target_ax, 
+                           orientation=orientation, 
+                           fraction=fraction, 
+                           pad=pad)
+        cbar.set_label(label or legend_name)
+        cbar.outline.set_linewidth(0)
+        
+        return self
+
     def plot_pca_legends(self,
                         ax: Optional[Axes.Axes] = None,
                         color_legend: Optional[str] = None,
