@@ -68,7 +68,7 @@ class OmicsStackingModel:
     def predict_proba(self, X):
         return self.model.predict_proba(X)
 
-    def get_feature_importance(self, omics_key):
+    def get_omics_feature_importance(self, omics_key)-> pd.Series:
         base = self.model.named_estimators_[omics_key]
         rf = base.named_steps["model"]
         return pd.Series(rf.feature_importances_, index=self.omics_dict[omics_key].index)

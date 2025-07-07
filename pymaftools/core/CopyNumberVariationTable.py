@@ -367,7 +367,7 @@ class CopyNumberVariationTable(PivotTable):
         table[cluster_col] = table.feature_metadata[cluster_col]
         
         # to cluster table
-        cluster_table = PivotTable(pd.DataFrame(table).groupby(cluster_col).mean())
+        cluster_table = CopyNumberVariationTable(pd.DataFrame(table).groupby(cluster_col).mean())
         cluster_table.sample_metadata = table.sample_metadata
 
         gb = table.feature_metadata.groupby(cluster_col)
