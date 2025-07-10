@@ -34,3 +34,4 @@ Homepage = "https://github.com/xu62u4u6/pymaftools"
 
 [tool.setuptools]
 packages = ["pymaftools"]
+package-dir = {"" = "pymaftools"}
