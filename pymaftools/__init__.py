@@ -15,4 +15,14 @@ from .plot.ColorManager import ColorManager
 from .plot.FontManager import FontManager
 
 from .model.StackingModel import OmicsStackingModel, ASCStackingModel
+from .model.modelUtils import (
+    evaluate_model,
+    get_importance,
+    cross_validate_importance,
+    plot_metric_comparison_with_annotation,
+    to_importance_table,
+    plot_top_feature_importance_heatmap,
+    run_rfecv_feature_selection,
+    run_model_evaluation
+)
 from .utils.geneset import read_GMT, fetch_msigdb_geneset
