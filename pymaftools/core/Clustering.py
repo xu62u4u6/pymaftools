@@ -12,6 +12,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import silhouette_score, confusion_matrix, adjusted_rand_score, classification_report
 from scipy.optimize import linear_sum_assignment
 from tqdm import tqdm
+from typing import Literal
 
 from .PivotTable import PivotTable
 
@@ -22,12 +23,12 @@ def table_to_distance(table):
     distance = 1 - similarity.values
     return distance
 
-
 def k_fold_clustering_evaluation(table: PivotTable,
                                  min_clusters: int = 2,
                                  max_clusters: int = 50,
-                                 metric: str = "cosine",
-                                 random_state: int = 42):
+                                 metric: Literal['cosine', 'hamming', 'jaccard'] = "cosine",
+                                 random_state: int = 42, 
+                                 group_col="subtype"):
     """
     使用K-fold交叉驗證評估基因聚類的最佳聚類數
 
@@ -47,7 +48,7 @@ def k_fold_clustering_evaluation(table: PivotTable,
     pd.DataFrame
         包含每個fold和聚類數的silhouette分數
     """
-    subtype = table.sample_metadata.subtype.values
+    group = table.sample_metadata[group_col].values
     kf = KFold(n_splits=5, shuffle=True, random_state=random_state)
     if not isinstance(table, PivotTable):
         raise ValueError("Input table must be a PivotTable instance.")
@@ -56,17 +57,17 @@ def k_fold_clustering_evaluation(table: PivotTable,
             "min_clusters must be at least 2 and max_clusters must be greater than or equal to min_clusters.")
     all_results = []
     cluster_label_dict = {}
-
-    for fold, (train_idx, test_idx) in enumerate(kf.split(table.T.values, np.array(subtype))):
+    # only use (k-1)/k train part for clustering
+    for fold, (train_idx, _) in enumerate(kf.split(table.T.values, np.array(group))):
         print(f"Processing fold {fold + 1}/5")
 
         # 獲取訓練樣本
         sample_train = table.sample_metadata.iloc[train_idx].index
         table_train = table.subset(samples=sample_train)
-        distance_matrix_train = table_to_distance(table_train)
-        X_train = table_train.values
-
-        # 測試不同的聚類數
+        similarity_matrix = table_train.T.compute_similarity(method=metric)
+        distance_matrix_train = 1 - similarity_matrix # dist = 1 - similarity
+        
+        # test different number of clusters
         for k in tqdm(range(min_clusters, max_clusters + 1), desc=f"Fold {fold + 1}"):
             model = AgglomerativeClustering(
                 n_clusters=k,
@@ -79,7 +80,7 @@ def k_fold_clustering_evaluation(table: PivotTable,
             cluster_label_dict[k][fold+1] = labels
 
             # 計算silhouette分數
-            score = silhouette_score(X_train, labels, metric=metric)
+            score = silhouette_score(table_train, labels, metric=metric)
 
             all_results.append({
                 'fold': fold + 1,
@@ -88,7 +89,6 @@ def k_fold_clustering_evaluation(table: PivotTable,
             })
 
     return pd.DataFrame(all_results), cluster_label_dict
-
 
 def align_clusters(ref_labels, target_labels, n_clusters):
     cm = confusion_matrix(ref_labels, target_labels, labels=range(n_clusters))
