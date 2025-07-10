@@ -6,6 +6,7 @@ from .core.CopyNumberVariationTable import CopyNumberVariationTable
 from .core.SmallVariationTable import SmallVariationTable
 from .core.PairwiseMatrix import SimilarityMatrix
 from .core.Cohort import Cohort
+from .core.Clustering import *
 
 # plot
 from .plot.OncoPlot import OncoPlot
