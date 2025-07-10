@@ -29,12 +29,6 @@ dependencies = [
   "tqdm"
 ]
 
-classifiers = [
-  "Programming Language :: Python :: 3",
-  "License :: OSI Approved :: MIT License",
-  "Operating System :: OS Independent"
-]
-
 [project.urls]
 Homepage = "https://github.com/xu62u4u6/pymaftools"
 
