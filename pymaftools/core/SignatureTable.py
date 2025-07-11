@@ -7,7 +7,6 @@ class SignatureTable(PivotTable):
     """
     @property
     def _constructor(self):
-        """Return constructor for pandas operations that preserves CNV type."""
         def _new_constructor(*args, **kwargs):
             obj = SignatureTable(*args, **kwargs)
             # attempt to preserve metadata if available

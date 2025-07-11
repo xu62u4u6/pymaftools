@@ -1,8 +1,28 @@
+from .PivotTable import PivotTable
+import pandas as pd
+
 class CancerCellFractionTable:
     """
     A class to handle cancer cell fraction data, including sorting and clustering.
     """
-
+    @property
+    def _constructor(self):
+        def _new_constructor(*args, **kwargs):
+            obj = CancerCellFractionTable(*args, **kwargs)
+            # attempt to preserve metadata if available
+            if hasattr(self, 'sample_metadata') and not self.sample_metadata.empty:
+                try:
+                    obj.sample_metadata = self.sample_metadata.copy()
+                except:
+                    pass
+            if hasattr(self, 'feature_metadata') and not self.feature_metadata.empty:
+                try:
+                    obj.feature_metadata = self.feature_metadata.copy()
+                except:
+                    pass
+            return obj
+        return _new_constructor
+    
     def pyclone_to_sorted_table(filepath):
         df = pd.read_csv(filepath, sep="\t")
         ccf_pivot = df.pivot(index="mutation_id", 
