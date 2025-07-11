@@ -5,6 +5,9 @@ from .core.MAF import MAF
 from .core.CopyNumberVariationTable import CopyNumberVariationTable
 from .core.SmallVariationTable import SmallVariationTable
 from .core.PairwiseMatrix import SimilarityMatrix
+from .core.ExpressionTable import ExpressionTable
+from .core.SignatureTable import SignatureTable
+from .core.CancerCellFractionTable import CancerCellFractionTable
 from .core.Cohort import Cohort
 from .core.Clustering import *
 
