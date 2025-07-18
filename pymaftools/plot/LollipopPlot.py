@@ -44,15 +44,6 @@ class LollipopPlot(BasePlot):
         self._default_config = {
             'figsize': (15, 5),
             'domain_cmap_name': 'tab20c', # Default colormap for domains
-            'mutation_colors': {
-                'Missense_Mutation': 'gray', 
-                'Frame_Shift_Ins':'#FF4500',     # Dark red
-                'Frame_Shift_Del': '#4682B4',    # Dark blue
-                'In_Frame_Ins': '#FF707A',       # Light red
-                'In_Frame_Del':'#ADD8E6',        # Light blue
-                'Nonsense_Mutation': '#90EE90',  # Low-saturation green
-                'Splice_Site': '#CB704D',        # Low-saturation brown
-            },
             'backbone_y': 0,
             'domain_bottom_y': -0.05,
             'domain_height': 0.1,
@@ -349,12 +340,17 @@ class LollipopPlot(BasePlot):
         cohort_plots = []
         all_mutation_colors = {}
         all_domain_colors = {}
+        first_ax = None
         
         for i, (cohort_name, cohort_data) in enumerate(cohorts_data.items()):
             AA_length, mutations_data, domains_data, refseq_ID = cohort_data
             
-            # Create subplot for this cohort
-            ax = fig.add_subplot(gs[i, 0])  # Left column, specific row
+            # Create subplot for this cohort, sharing x-axis
+            if i == 0:
+                ax = fig.add_subplot(gs[i, 0])
+                first_ax = ax
+            else:
+                ax = fig.add_subplot(gs[i, 0], sharex=first_ax)
             
             # Create plot instance for this cohort
             cohort_plot = cls(
@@ -373,6 +369,11 @@ class LollipopPlot(BasePlot):
             
             # Set cohort name as title
             ax.set_title(f"{cohort_name}", fontsize=14, pad=10)
+            
+            # Hide x-axis labels and ticks for all but the last plot
+            if i < n_cohorts - 1:
+                ax.set_xlabel("")
+                plt.setp(ax.get_xticklabels(), visible=False)
             
             # Collect colors for unified legend
             # Merge domain colors
@@ -400,8 +401,8 @@ class LollipopPlot(BasePlot):
             main_plot.plot_all_legends(ax=main_plot.ax_legend, 
                                      fontsize=10, 
                                      title_fontsize=12,
-                                     legend_spacing=0.15,
-                                     item_spacing=0.03)
+                                     legend_spacing=0.2,
+                                     item_spacing=0.04)
         
         # Set main title
         if title:
