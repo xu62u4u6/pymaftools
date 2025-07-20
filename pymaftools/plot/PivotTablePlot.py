@@ -154,7 +154,10 @@ class PivotTablePlot(BasePlot):
             title = f"Boxplot of {test_col} by {group_col}"
 
         gb = data.groupby(group_col)
-        group_pairs = list(combinations(gb.groups.keys(), 2))
+        if order is None:
+            group_pairs = list(combinations(gb.groups.keys(), 2))
+        else:
+            group_pairs = list(combinations(order, 2))
 
         ax.set_title(title, fontsize=fontsize)
 
