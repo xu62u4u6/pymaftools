@@ -64,8 +64,8 @@ class LollipopPlot(BasePlot):
         self.max_mutation_count = self._calculate_max_mutation_count()
         self.domain_colors = self._generate_domain_colors()
         
-        # Store mutation colors in ColorManager for consistency
-        self.color_manager.add_cmap('lollipop_mutations', self.config['mutation_colors'])
+        # Use predefined NONSYNONYMOUS_CMAP from ColorManager
+        self.color_manager.add_cmap('lollipop_mutations', self.color_manager.get_cmap('nonsynonymous'))
 
         # Placeholders for plot objects
         self.ax_main = None

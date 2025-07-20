@@ -183,6 +183,8 @@ class OncoPlot(BasePlot):
             )
             ax.set_yticks([i + 0.5 for i in range(len(data.index))])  # Shift the ticks by +0.5
             ax.set_yticklabels(data.index, rotation=0, fontsize=self.ytick_fontsize)  # Set labels horizontally
+            ax.set_xticks([])  # Hide x-axis ticks
+            ax.set_xlabel("")  # Clear x-axis label
         return self
 
     def heatmap_rectangle(self, show_frame=False, n=3, cmap=None, table=None, width=1, height=1, line_color="white"):
