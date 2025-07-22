@@ -66,7 +66,8 @@ def k_fold_clustering_evaluation(table: PivotTable,
         table_train = table.subset(samples=sample_train)
         similarity_matrix = table_train.T.compute_similarity(method=metric)
         distance_matrix_train = 1 - similarity_matrix # dist = 1 - similarity
-        
+        np.fill_diagonal(distance_matrix_train, 0)
+
         # test different number of clusters
         for k in tqdm(range(min_clusters, max_clusters + 1), desc=f"Fold {fold + 1}"):
             model = AgglomerativeClustering(
