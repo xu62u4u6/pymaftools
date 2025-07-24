@@ -1335,13 +1335,13 @@ class PivotTable(pd.DataFrame):
 
         return df
 
-    def compute_similarity(self, method: Literal["cosine", "hamming", "jaccard"] = "cosine") -> 'SimilarityMatrix':
+    def compute_similarity(self, method: Literal["cosine", "hamming", "jaccard", "pearson", "spearman", "kendall"] = "cosine") -> 'SimilarityMatrix':
         """
         Compute sample similarity matrix using specified metric.
         
         Parameters
         ----------
-        method : {"cosine", "hamming", "jaccard"}, default "cosine"
+        method : {"cosine", "hamming", "jaccard", "pearson", "spearman", "kendall"}, default "cosine"
             Similarity metric to use.
             
         Returns
@@ -1354,14 +1354,25 @@ class PivotTable(pd.DataFrame):
         ValueError
             If unsupported similarity method is specified.
         """
+        # Get the data as a numpy array if it's not already in that format
         X = self.T.values if hasattr(self.T, "values") else np.array(self.T)
-        if method == "cosine":
-            similarity = cosine_similarity(X)
-        elif method in {"hamming", "jaccard"}:
-            similarity = 1 - pairwise_distances(X, metric=method)
-        else:
-            raise ValueError(f"Unsupported similarity method: {method}")
-
+        try:
+            if method == "cosine":
+                # Calculate cosine similarity
+                similarity = cosine_similarity(X)
+                
+            elif method in {"hamming", "jaccard"}:
+                # Calculate Hamming or Jaccard similarity (1 - distance)
+                similarity = 1 - pairwise_distances(X, metric=method)
+            elif method in {"pearson", "spearman", "kendall"}:
+                X_df = pd.DataFrame(X.T)
+                similarity = X_df.corr(method=method).values
+            else:
+                raise ValueError(f"Unsupported similarity method: {method}")
+        except ValueError:
+            raise ValueError(f"Error calculating similarity with method '{method}'. "
+                              "Ensure the data is numeric and properly formatted.")
+        
         similarity_df = pd.DataFrame(similarity,
                                      index=self.columns,
                                      columns=self.columns)
