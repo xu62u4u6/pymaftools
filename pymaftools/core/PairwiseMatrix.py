@@ -223,7 +223,6 @@ class SimilarityMatrix(PairwiseMatrix):
                 facecolor=c,
                 edgecolor="white",
                 lw=0.1,
-                alpha=0.4
             ))
 
         ax_groupbar.set_xticks([])
@@ -533,13 +532,16 @@ class SimilarityMatrix(PairwiseMatrix):
                         group_order,
                         method,
                         title=None,
+                        layout="grid",
                         similarity_cmap="coolwarm",
                         group_cmap={"LUAD": "orange", "ASC": "green", "LUSC": "blue"},
                         group_avg_cmap="Blues",
                         group_pvalues_cmap="Reds_r",
                         save_dir="./figures/Similarity",
                         dpi=300,
-                        file_format="png"):
+                        file_format="tiff"
+                        ):
+        
         os.makedirs(save_dir, exist_ok=True)
         filename_base = title.replace(" ", "_")
 
@@ -554,33 +556,54 @@ class SimilarityMatrix(PairwiseMatrix):
                                                                             group_order=group_order)
         
 
-        fig = plt.figure(figsize=(20, 12))
-
-        # 定義 gridspec：4, 4
-        gs = gridspec.GridSpec(4, 4, 
-                width_ratios=[15, 1, 1, 9],  
-                height_ratios=[15, 2, 14, 1], 
+        # ---- 建立 Figure 與 Layout
+        if layout == "grid":
+            # 原本 4x4 grid
+            fig = plt.figure(figsize=(20, 12))
+            gs = gridspec.GridSpec(
+                4, 4,
+                width_ratios=[15, 1, 1, 9],
+                height_ratios=[15, 2, 14, 1],
                 wspace=0.06, hspace=0.04
-        )
+            )
+            # 左：Similarity + colorbar + groupbar
+            ax_similarity = fig.add_subplot(gs[0:3, 0])
+            ax_colorbar   = fig.add_subplot(gs[0:3, 1])
+            ax_groupbar   = fig.add_subplot(gs[3, 0])
+            # 右上：Group Mean
+            ax_group_mean = fig.add_subplot(gs[0, 3])
+            # 右下：P-values
+            ax_group_pval = fig.add_subplot(gs[2:4, 3])
 
-        # 左邊：Similarity Heatmap
-        ax_similarity = fig.add_subplot(gs[0:3, 0])      # 左邊兩列都佔
-        ax_colorbar   = fig.add_subplot(gs[0:3, 1])      # 垂直 colorbar
-        ax_groupbar   = fig.add_subplot(gs[3, 0])      # groupbar 疊在下方 (可改用 inset)
+        elif layout == "horizontal":
+            # 由左至右
+            fig = plt.figure(figsize=(20, 6))
+            outer = gridspec.GridSpec(
+                1, 3, width_ratios=[1.1, 1, 1], wspace=0.18, hspace=0.0
+            )
 
-        # 右邊上：Group Mean Similarity
-        ax_group_mean = fig.add_subplot(gs[0, 3])
+            left_gs = outer[0].subgridspec(
+                2, 2,
+                width_ratios=[19, 1],  # 主圖 + 垂直 colorbar
+                height_ratios=[19, 1],  # matrix, (保留行距), groupbar
+                hspace=0.04, wspace=0.04
+            )
+            ax_similarity = fig.add_subplot(left_gs[0, 0])
+            ax_colorbar   = fig.add_subplot(left_gs[0, 1])
+            ax_groupbar   = fig.add_subplot(left_gs[1, 0])
 
-        # 右邊下：Group Similarity P-values
-        ax_group_pval = fig.add_subplot(gs[2:4, 3])
+            ax_group_mean = fig.add_subplot(outer[1])
+            ax_group_pval = fig.add_subplot(outer[2])
 
+        else:
+            raise ValueError("layout must be 'grid' or 'horizontal'")
 
         # ---- 相似度矩陣
         similarity_matrix.plot_similarity(
             groups,
             group_cmap=group_cmap,
             cmap=similarity_cmap,
-            #title=f"{title} Matrix",
+            title=f"{title}",
             ax=(ax_similarity, ax_colorbar, ax_groupbar),
             #save_path=os.path.join(save_dir, filename_base + "_matrix.png"),
         )
@@ -607,8 +630,13 @@ class SimilarityMatrix(PairwiseMatrix):
             #save_path=os.path.join(save_dir, f"{filename_base}_{'_'.join(title)}.png"),
         )
 
+        # utest for pairwise group comparisons
+        stat, p = similarity_matrix.paired_similarity_utest(groups=table.sample_metadata.subtype.values, 
+                             pair1=("LUAD", "ASC"), 
+                             pair2=("ASC", "LUSC"))
+        print(f"{title}: (LUAD, ASC) vs (ASC, LUSC) P-value: {p}")
         # ---- 儲存 / 顯示
-        pil_kwargs = {"compression": "tiff_lzw"} if format == "tiff" else {}
+        pil_kwargs = {"compression": "tiff_lzw"} if file_format == "tiff" else {}
         if save_dir:
             plt.savefig(os.path.join(save_dir, filename_base + "." + file_format), 
                         bbox_inches="tight", 
