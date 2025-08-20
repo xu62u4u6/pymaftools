@@ -247,3 +247,13 @@ class MAF(pd.DataFrame):
         # 確保 Variant_Type 只有 "SNP", "INS", "DEL"
         maf = maf[maf["Variant_Type"].isin(["SNP", "INS", "DEL"])]
         maf.to_csv(output_path, sep="\t", index=False)
+
+    def select_samples(self, sample_IDs: list):
+        """
+        選擇特定樣本的 MAF 資料。
+
+        :param sample_IDs: 要選擇的樣本 ID 列表
+        :return: 選擇後的 MAF 資料
+        """
+        return self[self.sample_ID.isin(sample_IDs)].copy()
+        
