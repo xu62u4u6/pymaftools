@@ -74,6 +74,7 @@ class PivotTablePlot(BasePlot):
         alpha: float = 0.8,
         order: Optional[List[str]] = None,
         fontsize: int = 12,
+        rotation: int = 0,
         save_path: Optional[str] = None,
         dpi: int = 300
     ) -> Axes:
@@ -109,6 +110,8 @@ class PivotTablePlot(BasePlot):
             Order of groups on x-axis. If None, uses natural order.
         fontsize : int, default 12
             Font size for axis labels and tick labels.
+        rotation : int, default 0
+            Rotation angle for x-axis tick labels in degrees.
         save_path : str, optional
             Path to save the figure. Format determined by file extension.
         dpi : int, default 300
@@ -138,7 +141,8 @@ class PivotTablePlot(BasePlot):
         ...     group_col="subtype",
         ...     palette={"LUAD": "orange", "ASC": "green", "LUSC": "blue"},
         ...     order=["LUAD", "ASC", "LUSC"],
-        ...     title="MSI Score by Cancer Subtype"
+        ...     title="MSI Score by Cancer Subtype",
+        ...     rotation=45  # Rotate x-axis labels 45 degrees
         ... )
         """
         # Use sample_metadata if no data provided
@@ -181,9 +185,13 @@ class PivotTablePlot(BasePlot):
 
         # xticklabel with sample size
         sample_counts = gb.size().to_dict()
+        # Use order if provided, otherwise use natural groupby order
+        groups_list = order if order is not None else list(gb.groups.keys())
         xticks_labels = [
-            f"{group} (n={sample_counts[group]})" for group in order]
-        ax.set_xticklabels(xticks_labels, fontsize=fontsize)
+            f"{group} (n={sample_counts[group]})" for group in groups_list]
+        # Set tick positions first, then labels
+        ax.set_xticks(range(len(groups_list)))
+        ax.set_xticklabels(xticks_labels, fontsize=fontsize, rotation=rotation)
 
         ax.set_xlabel(group_col, fontsize=fontsize)
         ax.set_ylabel(test_col, fontsize=fontsize)
@@ -218,34 +226,90 @@ class PivotTablePlot(BasePlot):
         This method leverages the full power of ColorManager for color generation
         and LegendManager for consistent legend appearance across all plot types.
         Provides better integration with the overall plotting architecture.
+        Supports both categorical and numeric color encoding, with optional shape encoding.
 
         Parameters
         ----------
-        Same as plot_pca_samples method.
+        color_col : str, default "subtype"
+            Column name for color encoding. Can be categorical or numeric.
+        shape_col : str, optional
+            Column name for shape encoding. Works with both categorical and numeric color_col.
+        figsize : tuple of int, default (12, 6)
+            Figure size as (width, height).
+        to_binary : bool, default False
+            Whether to convert mutation data to binary before PCA.
+        palette : str or dict, optional
+            Color palette. For categorical: seaborn palette name or color dict.
+            For numeric: matplotlib colormap name (e.g., 'viridis', 'plasma').
+        alpha : float, default 0.8
+            Transparency level for scatter points (0-1).
+        title : str, optional
+            Plot title. If None, no title is displayed.
+        titlesize : int, default 14
+            Font size for the title.
+        is_numeric : bool, default False
+            Whether to treat color_col as numeric data (uses colormap instead of discrete colors).
+        save_path : str, optional
+            Path to save the figure. Format determined by file extension.
+        fontsize : int, default 12
+            Font size for axis labels and legend.
+        width_ratios : tuple of int, default (4, 1)
+            Width ratios for plot and legend subplots.
+        legend_item_spacing : float, default 0.04
+            Spacing between legend items.
+        legend_group_spacing : float, default 0.06
+            Spacing between legend groups.
+        dpi : int, default 300
+            Resolution for saved figure.
+        s : int, default 60
+            Size of scatter points.
 
         Returns
         -------
         tuple
-            Same as plot_pca_samples method.
+            - pca_result_df : pd.DataFrame
+                PCA results with PC1, PC2 columns and metadata
+            - explained_variance : np.ndarray
+                Explained variance ratio for each component
+            - pca : sklearn.decomposition.PCA
+                Fitted PCA object
 
         Notes
         -----
         This method uses ColorManager for automatic color generation and LegendManager 
         for legend rendering, providing the most consistent styling with other plot 
         types in the package.
+        
+        For numeric color encoding (is_numeric=True):
+        - Uses continuous colormap for color representation
+        - Displays colorbar instead of discrete legend
+        - Still supports shape encoding via shape_col parameter
+        
+        For categorical color encoding (is_numeric=False):
+        - Uses discrete colors for each category
+        - Displays standard legend with color patches
+        - Supports shape encoding for additional dimension
 
         Examples
         --------
-        >>> # Basic PCA plot with unified legend style
-        >>> pca_df, variance, pca_obj = pivot_table.plot.plot_pca_samples_with_legend_manager(
+        >>> # Basic PCA plot with categorical colors
+        >>> pca_df, variance, pca_obj = pivot_table.plot.plot_pca_samples(
         ...     color_col="subtype"
         ... )
         
-        >>> # PCA with both color and shape encoding using ColorManager
-        >>> pca_df, variance, pca_obj = pivot_table.plot.plot_pca_samples_with_legend_manager(
-        ...     color_col="case_ID",
+        >>> # PCA with numeric colors and shape encoding
+        >>> pca_df, variance, pca_obj = pivot_table.plot.plot_pca_samples(
+        ...     color_col="TMB",  # numeric column
+        ...     shape_col="subtype",  # categorical shapes
+        ...     is_numeric=True,
+        ...     palette="viridis"
+        ... )
+        
+        >>> # PCA with both categorical color and shape encoding
+        >>> pca_df, variance, pca_obj = pivot_table.plot.plot_pca_samples(
+        ...     color_col="subtype",
         ...     shape_col="sample_type",
-        ...     palette="tab20"  # ColorManager will handle the conversion
+        ...     palette={"LUAD": "red", "ASC": "green", "LUSC": "blue"}
         ... )
         """
         from .LegendManager import LegendManager
@@ -294,27 +358,74 @@ class PivotTablePlot(BasePlot):
             if isinstance(palette, dict):
                 raise ValueError("For numeric data, palette should be a colormap name (str), not a dictionary")
             
-            scatter = ax_pca.scatter(
-                pca_result_df["PC1"],
-                pca_result_df["PC2"], 
-                c=pca_result_df[color_col],
-                cmap=palette,
-                alpha=alpha,
-                s=s
-            )
-            
-            # Use LegendManager but modify it to create custom colorbar
-            legend_manager.add_numeric_colorbar(
-                legend_name=color_col,
-                scatter_obj=scatter,
-                target_ax=ax_pca,
-                label=color_col,
-                orientation='vertical', 
-                fraction=0.08, 
-                pad=0.02
-            )
-            # Hide the legend axis since we're using colorbar on the plot
-            ax_legend.set_visible(False)
+            if shape_col is not None:
+                # Handle shape encoding with numeric colors
+                unique_shapes = pca_result_df[shape_col].unique()
+                shape_markers = ['o', 's', '^', 'D', 'v', '<', '>', 'p', '*', 'h'][:len(unique_shapes)]
+                shape_dict = dict(zip(unique_shapes, shape_markers))
+                
+                # Plot with both numeric color and shape
+                scatter_objects = []
+                for shape_val in unique_shapes:
+                    mask = pca_result_df[shape_col] == shape_val
+                    subset = pca_result_df[mask]
+                    if len(subset) > 0:
+                        scatter_obj = ax_pca.scatter(
+                            subset["PC1"], subset["PC2"],
+                            c=subset[color_col],
+                            cmap=palette,
+                            marker=shape_dict[shape_val],  # type: ignore
+                            alpha=alpha, 
+                            s=s
+                        )
+                        scatter_objects.append(scatter_obj)
+                
+                # Use the first scatter object for colorbar (they all use the same colormap)
+                if scatter_objects:
+                    legend_manager.add_numeric_colorbar(
+                        legend_name=color_col,
+                        scatter_obj=scatter_objects[0],
+                        target_ax=ax_pca,
+                        label=color_col,
+                        orientation='vertical', 
+                        fraction=0.08, 
+                        pad=0.02
+                    )
+                    
+                    # Add shape legend using LegendManager
+                    legend_manager.add_shape_legend(shape_col, {str(k): str(v) for k, v in shape_dict.items()})
+                    legend_manager.plot_pca_legends(
+                        shape_legend=shape_col, 
+                        fontsize=fontsize,
+                        legend_item_spacing=legend_item_spacing,
+                        legend_group_spacing=legend_group_spacing
+                    )
+                else:
+                    # Hide the legend axis since we're using colorbar on the plot
+                    ax_legend.set_visible(False)
+            else:
+                # No shape encoding, just numeric colors
+                scatter = ax_pca.scatter(
+                    pca_result_df["PC1"],
+                    pca_result_df["PC2"], 
+                    c=pca_result_df[color_col],
+                    cmap=palette,
+                    alpha=alpha,
+                    s=s
+                )
+                
+                # Use LegendManager but modify it to create custom colorbar
+                legend_manager.add_numeric_colorbar(
+                    legend_name=color_col,
+                    scatter_obj=scatter,
+                    target_ax=ax_pca,
+                    label=color_col,
+                    orientation='vertical', 
+                    fraction=0.08, 
+                    pad=0.02
+                )
+                # Hide the legend axis since we're using colorbar on the plot
+                ax_legend.set_visible(False)
             
         else:
             # Categorical color encoding using ColorManager
