@@ -29,6 +29,9 @@ class ModelPlot(BasePlot):
                                                test="Mann-Whitney",
                                                alpha=0.8,
                                                fontsize=14,
+                                               title_fontsize=None,
+                                               label_fontsize=None,
+                                               tick_fontsize=None,
                                                figsize=None,
                                                title_prefix=None,
                                                save_path=None,
@@ -44,14 +47,24 @@ class ModelPlot(BasePlot):
             palette: Color palette
             test: Statistical test method
             alpha: Transparency level
-            fontsize: Font size
+            fontsize: Base font size (used as default for other sizes if not specified)
+            title_fontsize: Font size for titles (default: fontsize + 2)
+            label_fontsize: Font size for axis labels (default: fontsize)
+            tick_fontsize: Font size for tick labels (default: fontsize - 2)
             figsize: Figure size
             title_prefix: Title prefix (optional, set to None to disable titles)
             save_path: Path to save figure (optional)
             **save_kwargs: Additional arguments for save method
         """
+        # 設定字體大小層次
+        if title_fontsize is None:
+            title_fontsize = fontsize + 2
+        if label_fontsize is None:
+            label_fontsize = fontsize
+        if tick_fontsize is None:
+            tick_fontsize = fontsize - 2
         if figsize is None:
-            figsize = (5 * len(metrics), 6)
+            figsize = (6 * len(metrics), 6)
 
         self.fig, axes = plt.subplots(1, len(metrics), figsize=figsize)
 
@@ -78,16 +91,33 @@ class ModelPlot(BasePlot):
             # 顯著性標註
             annotator = Annotator(ax=ax, pairs=group_pairs,
                                   data=data, x=group_col, y=test_col, order=order)
-            annotator.configure(test=test, text_format='star',
-                                loc="inside", verbose=0)
-            annotator.apply_and_annotate()
+            
+            # annotator.configure(test=test, text_format='star',
+            #                     loc="outside", verbose=0,     )
+                                #line_offset=0.5,
+                                #line_offset_to_group=0.1,
+                                #use_fixed_offset=True)
+            annotator.configure(
+                test=test,
+                text_format='star',
+                loc="inside",
+                verbose=0,
+            )
+            annotator.apply_test()
+            annotator.annotate(line_offset_to_group=0.1)
+            #annotator.apply_and_annotate()
 
-            ax.set_xlabel('')
-            ax.set_ylabel(metric.upper())
-
+            ax.set_xlabel('', fontsize=fontsize)
+            ax.set_ylabel(metric.upper(), fontsize=fontsize)
+            ax.set_yticks(ax.get_yticks())  # 確保 ticks 不變
+            ax.set_yticklabels([
+                f"{tick:.2f}" if tick <= 1 else "" 
+                for tick in ax.get_yticks()
+            ], fontsize=fontsize)
+            ax.tick_params(axis='x', labelsize=fontsize)  # 設定 x 軸刻度標籤字體大小
             # Set title if title_prefix is provided
             if title_prefix:
-                ax.set_title(f"{title_prefix} {metric.upper()}")
+                ax.set_title(f"{title_prefix} {metric.upper()}", fontsize=fontsize)
 
         plt.tight_layout()
 
@@ -102,10 +132,11 @@ class ModelPlot(BasePlot):
                                             importance_df,
                                             omic,
                                             title=None,
-                                            top_n=20,
+                                            top_n=10,
                                             cmap="viridis",
                                             figsize=(10, 6),
                                             save_path=None,
+                                            xticklabel=False,
                                             **save_kwargs):
         """
         Plot top feature importance heatmap
@@ -125,7 +156,7 @@ class ModelPlot(BasePlot):
         self.fig, ax = plt.subplots(figsize=figsize)
 
         # Plot heatmap
-        sns.heatmap(table.head(top_n), cmap=cmap, ax=ax)
+        sns.heatmap(table.head(top_n), cmap=cmap, ax=ax, xticklabels=xticklabel,)
         if title:
             ax.set_title(title)
 
@@ -146,7 +177,7 @@ class ModelPlot(BasePlot):
                          scoring="accuracy",
                          palette="tab10",
                          title=None,
-                         figsize=(8, 6),
+                         figsize=(15, 5),
                          save_path=None,
                          **save_kwargs):
 
@@ -194,7 +225,8 @@ class ModelPlot(BasePlot):
 
     def plot_feature_importance_distribution(self, importance_df, model_name,
                                              top_n=20, figsize=(10, 8),
-                                             save_path=None, **save_kwargs):
+                                             save_path=None, 
+                                             **save_kwargs):
         """
         Plot feature importance distribution across CV folds
 
@@ -230,7 +262,6 @@ class ModelPlot(BasePlot):
         ax.set_ylabel("Feature")
 
         plt.tight_layout()
-
         # Use inherited save method if save_path is provided
         if save_path:
             self.save(save_path, **save_kwargs)
