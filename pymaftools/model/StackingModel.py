@@ -73,16 +73,6 @@ class OmicsStackingModel:
         rf = base.named_steps["model"]
         return pd.Series(rf.feature_importances_, index=self.omics_dict[omics_key].index)
 
-    def get_final_coefficients(self):
-        if not hasattr(self.model.final_estimator_, 'coef_'):
-            raise ValueError("Final estimator has no coef_ (e.g., not linear)")
-        coef = self.model.final_estimator_.coef_
-        colnames = []
-        for omics_name in self.omics_dict:
-            for c in self.class_order:
-                colnames.append(f"{omics_name.upper()}_{c}")
-        return pd.DataFrame(coef, index=[f"{c}_prob" for c in self.class_order], columns=colnames)
-
     def plot_final_coefficients(self):
         df = self.get_final_coefficients()
         table = PivotTable(df)
@@ -155,6 +145,5 @@ class ASCStackingModel(OmicsStackingModel):
 
     def soft_score(self, X):
         y_pred_proba = self.predict_proba(X)
-        LUAD_prob = y_pred_proba[:, self.class_order.index("LUAD")]
         LUSC_prob = y_pred_proba[:, self.class_order.index("LUSC")]
-        return LUAD_prob * -1 + LUSC_prob
+        return LUSC_prob
