@@ -272,7 +272,7 @@ class OncoPlot(BasePlot):
 
         return fig, ax, legend_info
     
-    def mutation_heatmap(self, cmap_dict=None, linecolor="white", linewidth=1, show_frame=False, n=3, yticklabels=True):
+    def mutation_heatmap(self, cmap_dict=None, linecolor="white", linewidth=1, show_frame=False, n=3, yticklabels=True, ytick_fontsize=None):
         """
         Plot the main mutation heatmap using categorical color coding.
         
@@ -290,6 +290,8 @@ class OncoPlot(BasePlot):
             Number of columns per frame group
         yticklabels : bool, default True
             Whether to show y-axis labels (gene names)
+        ytick_fontsize : int, optional
+            Font size for y-axis tick labels (defaults to self.ytick_fontsize)
             
         Returns:
         --------
@@ -298,6 +300,8 @@ class OncoPlot(BasePlot):
         """
         if cmap_dict is None:
             cmap_dict = self.cmap
+        if ytick_fontsize is None:
+            ytick_fontsize = self.ytick_fontsize
 
         fig, ax, legend_info = self.categorical_heatmap(table=self.pivot_table, 
                                                         category_cmap=cmap_dict, 
@@ -311,8 +315,9 @@ class OncoPlot(BasePlot):
         ax.set_xlabel("")
         if yticklabels:
             ax.set_yticks([i + 0.5 for i in range(len(self.pivot_table.index))])
-            ax.set_yticklabels(self.pivot_table.index, rotation=0, fontsize=self.ytick_fontsize)
-
+            ax.set_yticklabels(self.pivot_table.index, rotation=0, fontsize=ytick_fontsize)
+        else:
+            ax.set_yticks([])
         # Show frame every `n` columns
         if show_frame:
             for i in range(0, len(self.pivot_table.columns), n): 
@@ -374,7 +379,7 @@ class OncoPlot(BasePlot):
         self.ax_bar.set_ylabel(bar_col, fontsize=ylabel_size)
         return self
 
-    def plot_freq(self, freq_columns=["freq"]):
+    def plot_freq(self, freq_columns=["freq"], annot_fontsize=9):
         """
         Plot frequency heatmap showing mutation frequencies for each gene.
         
@@ -382,6 +387,8 @@ class OncoPlot(BasePlot):
         -----------
         freq_columns : list, default ["freq"]
             List of frequency columns to display
+        annot_fontsize : int, default 9
+            Font size for annotations
             
         Returns:
         --------
@@ -399,7 +406,7 @@ class OncoPlot(BasePlot):
                 yticklabels=False,
                 annot=True,
                 fmt=".2f",
-                annot_kws={"size": 9},
+                annot_kws={"size": annot_fontsize},
                 cmap="Blues"
             )
         self.ax_freq.set_ylabel("")
@@ -602,9 +609,38 @@ class OncoPlot(BasePlot):
             target_ax.set_xticklabels(self.sample_metadata.index, rotation=90)
         return self
 
-    def numeric_heatmap(self, cmap="Blues", vmin=None, vmax=None, symmetric=False, yticklabels=True, annot=False, fmt=".2f"): 
+    def numeric_heatmap(self, cmap="Blues", vmin=None, vmax=None, symmetric=False, yticklabels=True, annot=False, fmt=".2f", ytick_fontsize=None): 
+        """
+        Plot numeric heatmap with customizable y-axis tick label font size.
+        
+        Parameters:
+        -----------
+        cmap : str, default "Blues"
+            Colormap for the heatmap
+        vmin : float, optional
+            Minimum value for color scale
+        vmax : float, optional
+            Maximum value for color scale
+        symmetric : bool, default False
+            Whether to use symmetric color scale
+        yticklabels : bool, default True
+            Whether to show y-axis labels (gene names)
+        annot : bool, default False
+            Whether to annotate cells with values
+        fmt : str, default ".2f"
+            Format string for annotations
+        ytick_fontsize : int, optional
+            Font size for y-axis tick labels (defaults to self.ytick_fontsize)
+            
+        Returns:
+        --------
+        self : OncoPlot
+            Returns self for method chaining
+        """
         ax = self.ax_heatmap
         table = self.pivot_table
+        if ytick_fontsize is None:
+            ytick_fontsize = self.ytick_fontsize
         
         # decide color range
         if vmin is None and vmax is None:
@@ -638,7 +674,7 @@ class OncoPlot(BasePlot):
         ax.set_xlabel("")
         if yticklabels:
             ax.set_yticks([i + 0.5 for i in range(len(table.index))])
-            ax.set_yticklabels(table.index, rotation=0, fontsize=self.ytick_fontsize)
+            ax.set_yticklabels(table.index, rotation=0, fontsize=ytick_fontsize)
 
         # Create colorbar
         norm = Normalize(vmin=vmin, vmax=vmax)
