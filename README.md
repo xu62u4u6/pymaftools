@@ -187,7 +187,7 @@ oncoplot = (OncoPlot(CNV_gene_cosmic)
             )
 ```
 
-![image](img/DEMO_metadata.png)
+![image](img/1_subtype_oncoplot_freq_0.1.png)
 
 ### Create Lolipop plot
 
@@ -256,7 +256,7 @@ color_manager.register_cmap("subtype", custom_categorical_colors)
 
 # Use registered colors in plots
 mutation_cmap = color_manager.get_cmap("custom_mutations")
-subtype_cmap = color_manager.get_cmap("subtype")
+subtype_cmap = color_manager.get_cmap("subtype", alpha=0.7) # You can set alpha value here
 
 oncoplot.mutation_heatmap(cmap_dict=mutation_cmap)
 oncoplot.plot_categorical_metadata(cmap_dict={"subtype": subtype_cmap})
