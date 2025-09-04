@@ -165,6 +165,7 @@ oncoplot = (OncoPlot(table)
             .save("mutation_oncoplot.tiff", dpi=300)
             )
 ```
+![image](img/1_subtype_oncoplot_freq_0.1.png)
 
 ### Create Numeric CNV Oncoplot
 
@@ -187,7 +188,7 @@ oncoplot = (OncoPlot(CNV_gene_cosmic)
             )
 ```
 
-![image](img/1_subtype_oncoplot_freq_0.1.png)
+![image](img/1_COSMIC_gene_level.png)
 
 ### Create Lolipop plot
 
