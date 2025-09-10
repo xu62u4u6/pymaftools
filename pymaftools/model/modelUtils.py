@@ -59,7 +59,7 @@ def cross_validate_importance(
     - 每個 fold 的分類表現（metric_df）
     """
     
-    importance_records = []  # 改為 long format 記錄
+    importance_records = []
     metrics_records = []
 
     for seed in tqdm(range(n_seeds), desc="CV seeds", disable=not verbose):
@@ -99,8 +99,6 @@ def cross_validate_importance(
     metric_df = pd.DataFrame(metrics_records) if metrics_records else None
     
     return importance_df, metric_df
-
-
 
 def plot_metric_comparison_with_annotation(data, 
                                            metrics=['acc', 'f1', 'auc'], 
