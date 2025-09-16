@@ -1,30 +1,18 @@
 import numpy as np
 import pandas as pd
 import re
-from typing import Optional, List
+from typing import Optional, List, TYPE_CHECKING
 from .PivotTable import PivotTable
+
+if TYPE_CHECKING:
+    import matplotlib.pyplot as plt
 
 
 class CopyNumberVariationTable(PivotTable):
-    @property
-    def _constructor(self):
-        """Return constructor for pandas operations that preserves CNV type."""
-        def _new_constructor(*args, **kwargs):
-            obj = CopyNumberVariationTable(*args, **kwargs)
-            # attempt to preserve metadata if available
-            if hasattr(self, 'sample_metadata') and not self.sample_metadata.empty:
-                try:
-                    obj.sample_metadata = self.sample_metadata.copy()
-                except:
-                    pass
-            if hasattr(self, 'feature_metadata') and not self.feature_metadata.empty:
-                try:
-                    obj.feature_metadata = self.feature_metadata.copy()
-                except:
-                    pass
-            return obj
-        return _new_constructor
-    
+    """
+    CopyNumberVariationTable class for handling copy number data.
+    """
+
     @classmethod
     def from_pivot_table(cls, table: PivotTable) -> 'CopyNumberVariationTable':
         """
@@ -375,6 +363,139 @@ class CopyNumberVariationTable(PivotTable):
         cluster_table.feature_metadata["features"] = gb.apply(lambda df: list(df.index))
         cluster_table.feature_metadata["features_count"] = cluster_table.feature_metadata["features"].apply(len)
         return cluster_table.rename_index_and_columns()
+
+    def plot_cnv_band_ratio(
+        self,
+        cluster_id: str,
+        mode: str = "gain",
+        threshold: float = 0.1,
+        sample_type: str = "T",
+        subtype_order: Optional[List[str]] = None,
+        ax: Optional["plt.Axes"] = None,
+        cmap: Optional[str] = None,
+        show: bool = True,
+        title: Optional[str] = None,
+    ) -> pd.DataFrame:
+        """
+        Plot gain or loss frequency across cytobands for a specific CNV cluster and sample type.
+
+        Parameters
+        ----------
+        cluster_id : str
+            Cluster ID to extract features (e.g., "C47" or "C6").
+        mode : {"gain", "loss"}
+            Type of alteration to compute.
+        threshold : float
+            Threshold for gain or loss (default: 0.1).
+        sample_type : str
+            Sample type to subset (default: "T").
+        subtype_order : list of str, optional
+            Order of subtypes to show in columns. If None, uses ["LUAD", "ASC", "LUSC"].
+        ax : matplotlib Axes, optional
+            If provided, plot on this Axes object.
+        cmap : str, optional
+            Colormap (default: "Reds" for gain, "Blues" for loss).
+        show : bool
+            Whether to show the plot.
+        title : str, optional
+            Title to display on plot.
+        
+        Returns
+        -------
+        pd.DataFrame
+            Cytoband × Subtype frequency table.
+        """
+        try:
+            import seaborn as sns
+            import matplotlib.pyplot as plt
+        except ImportError as e:
+            raise ImportError(f"Required plotting libraries not available: {e}. "
+                            "Please install matplotlib and seaborn.")
+        
+        # Set default values
+        if subtype_order is None:
+            subtype_order = ["LUAD", "ASC", "LUSC"]
+        
+        # Select default colormap
+        if cmap is None:
+            cmap = "Reds" if mode == "gain" else "Blues"
+        
+        # Validate mode
+        if mode not in ["gain", "loss"]:
+            raise ValueError("mode must be either 'gain' or 'loss'")
+        
+        # Check if required columns exist
+        if "cluster" not in self.feature_metadata.columns:
+            raise ValueError("Column 'cluster' not found in feature_metadata.")
+        if "Band" not in self.feature_metadata.columns:
+            raise ValueError("Column 'Band' not found in feature_metadata. This is typically created by parsing Cytoband information.")
+        if "sample_type" not in self.sample_metadata.columns:
+            raise ValueError("Column 'sample_type' not found in sample_metadata.")
+        if "subtype" not in self.sample_metadata.columns:
+            raise ValueError("Column 'subtype' not found in sample_metadata.")
+        
+        # 1. Subset cluster & sample type
+        cluster_features = self.feature_metadata[self.feature_metadata["cluster"] == cluster_id].index
+        sample_type_samples = self.sample_metadata[self.sample_metadata["sample_type"] == sample_type].index
+        
+        if len(cluster_features) == 0:
+            raise ValueError(f"No features found for cluster '{cluster_id}'")
+        if len(sample_type_samples) == 0:
+            raise ValueError(f"No samples found for sample_type '{sample_type}'")
+        
+        subset = self.subset(features=cluster_features, samples=sample_type_samples)
+        
+        # Order samples by subtype if specified
+        if subtype_order:
+            available_subtypes = [s for s in subtype_order if s in subset.sample_metadata["subtype"].values]
+            if available_subtypes:
+                ordered_samples = []
+                for subtype in available_subtypes:
+                    subtype_samples = subset.sample_metadata[subset.sample_metadata["subtype"] == subtype].index
+                    ordered_samples.extend(subtype_samples.tolist())
+                subset = subset.subset(samples=ordered_samples)
+
+        # 2. Compute cytoband average table
+        tmp = pd.DataFrame(subset.copy())
+        tmp["Band"] = subset.feature_metadata["Band"]
+        band_df = tmp.groupby("Band").mean()
+
+        # 3. Compute binary gain/loss
+        if mode == "gain":
+            binary_df = band_df > threshold
+        elif mode == "loss":
+            binary_df = band_df < -threshold
+
+        # 4. Compute frequency table by subtype
+        freq_df = (
+            binary_df.T
+            .assign(subtype=subset.sample_metadata["subtype"].values)
+            .groupby("subtype")
+            .mean()
+            .T
+        )
+
+        if subtype_order:
+            freq_df = freq_df[[s for s in subtype_order if s in freq_df.columns]]
+
+        # 5. Plot
+        if ax is None:
+            fig, ax = plt.subplots(figsize=(5, 10))
+
+        sns.heatmap(
+            freq_df, ax=ax, cmap=cmap,
+            vmin=0, vmax=1,
+            annot=True, fmt=".0%",
+            cbar_kws={"label": f"{mode.capitalize()} Frequency"}
+        )
+        ax.set_title(title or f"{mode.capitalize()} Ratio - Cluster {cluster_id}")
+        ax.set_xlabel("Subtype")
+        ax.set_ylabel("Cytoband")
+        
+        if show and ax is None:
+            plt.show()
+        
+        return freq_df
 
 def read_sample_cutoff_file(sample_cutoff_file):
     """

@@ -71,7 +71,10 @@ class PivotTable(pd.DataFrame):
         **kwargs: Any
     ) -> None:
         """
-        Initialize PivotTable with data and empty metadata.
+        Initialize PivotTable with data and metadata.
+        
+        If data is a PivotTable with existing metadata, preserve the metadata.
+        Otherwise, initialize empty metadata DataFrames.
         
         Parameters
         ----------
@@ -81,19 +84,47 @@ class PivotTable(pd.DataFrame):
             Additional arguments passed to pandas DataFrame constructor.
         """
         super().__init__(data, *args, **kwargs)
-        # Initialize empty metadata DataFrames with matching indices
-        self.feature_metadata: pd.DataFrame = pd.DataFrame(index=self.index)
-        self.sample_metadata: pd.DataFrame = pd.DataFrame(index=self.columns)
+        
+        # Check if data is a PivotTable with existing metadata
+        if hasattr(data, 'feature_metadata') and hasattr(data, 'sample_metadata'):
+            # Preserve metadata from source PivotTable, but reindex to match new structure
+            self.feature_metadata = data.feature_metadata.reindex(
+                self.index, fill_value=pd.NA
+            ).copy()
+            self.sample_metadata = data.sample_metadata.reindex(
+                self.columns, fill_value=pd.NA  
+            ).copy()
+        else:
+            # Initialize empty metadata DataFrames with matching indices
+            self.feature_metadata: pd.DataFrame = pd.DataFrame(index=self.index)
+            self.sample_metadata: pd.DataFrame = pd.DataFrame(index=self.columns)
 
     @property
-    def _constructor(self) -> Callable[..., "PivotTable"]:
-        """Return constructor for pandas operations that preserves PivotTable type."""
-        def _new_constructor(*args: Any, **kwargs: Any) -> "PivotTable":
-            obj = PivotTable(*args, **kwargs)
+    def _constructor(self):
+        def _new_constructor(*args, **kwargs):
+            obj = self.__class__(*args, **kwargs)  # 支援子類別
+            obj._copy_metadata(self)
             obj._validate_metadata()
             return obj
         return _new_constructor
 
+    def _copy_metadata(self, source):
+        """Safely copy metadata attributes from another object."""
+        for attr in self._metadata:
+            if hasattr(source, attr):
+                source_val = getattr(source, attr)
+                if source_val is not None and not getattr(source_val, "empty", False):
+                    # Reindex metadata to match current object structure
+                    if attr == "feature_metadata":
+                        # Match feature_metadata to current index
+                        setattr(self, attr, source_val.reindex(self.index, fill_value=pd.NA))
+                    elif attr == "sample_metadata":
+                        # Match sample_metadata to current columns
+                        setattr(self, attr, source_val.reindex(self.columns, fill_value=pd.NA))
+                    else:
+                        # For any other metadata attributes, just copy
+                        setattr(self, attr, source_val.copy())
+                        
     @property
     def plot(self) -> "PivotTablePlot":
         """
