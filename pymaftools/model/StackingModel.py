@@ -28,9 +28,9 @@ class OmicsStackingModel:
         self.class_order = class_order  
         self.random_state = random_state
 
-        # process labels
+        # process labels - use the actual class_order instead of hardcoded classes
         self.le = LabelEncoder()
-        self.le.classes_ = np.array(["LUAD", "ASC", "LUSC"]) 
+        self.le.classes_ = np.array(class_order)  # Use the actual class_order
         
         self.build_model()
 
@@ -73,13 +73,63 @@ class OmicsStackingModel:
         rf = base.named_steps["model"]
         return pd.Series(rf.feature_importances_, index=self.omics_dict[omics_key].index)
 
+    def get_omics_weights(self):
+        """
+        Return the weights/coefficients of each omics data type in the final stacking model.
+        
+        Returns:
+            pd.DataFrame: Weights for each omics across different classes
+        """
+        if not hasattr(self.model, 'final_estimator_'):
+            raise ValueError("Model must be fitted before getting omics weights")
+        
+        final_estimator = self.model.final_estimator_
+        
+        # Get coefficients from final estimator (LogisticRegression)
+        if hasattr(final_estimator, 'coef_'):
+            coefficients = final_estimator.coef_
+            
+            # Create DataFrame with omics names and class labels
+            omics_names = list(self.omics_dict.keys())
+            class_names = self.le.classes_
+            
+            # Handle binary vs multiclass classification
+            if coefficients.shape[0] == 1:  # Binary classification
+                # For binary classification, we only get one set of coefficients
+                # The coefficients represent class_names[1] vs class_names[0]
+                weights_df = pd.DataFrame(
+                    coefficients.T,  # Transpose to have omics as rows
+                    index=omics_names,
+                    columns=[f"{class_names[1]}_vs_{class_names[0]}"]
+                )
+            else:  # Multiclass classification
+                # For multiclass logistic regression, coef_ shape is (n_classes, n_features)
+                weights_df = pd.DataFrame(
+                    coefficients.T,  # Transpose to have omics as rows
+                    index=omics_names,
+                    columns=class_names
+                )
+            
+            # Add absolute values for easier interpretation
+            weights_df['abs_mean'] = weights_df.abs().mean(axis=1)
+            weights_df['abs_ratio'] = weights_df['abs_mean'] / weights_df['abs_mean'].sum()
+            return weights_df
+        else:
+            raise ValueError("Final estimator does not have coefficients (not a linear model)")
+
     def plot_final_coefficients(self):
-        df = self.get_final_coefficients()
-        table = PivotTable(df)
-        df_split = table.columns.to_series().str.split("_", expand=True)
-        df_split.columns = ["omic", "class"]
-        table.sample_metadata = df_split
-        table.sample_metadata["abs_mean"] = table.abs().mean()
+        """
+        Plot the final coefficients/weights of each omics in the stacking model.
+        """
+        df = self.get_omics_weights()
+        
+        # Remove abs_mean column for plotting
+        plot_df = df.drop(columns=['abs_mean'])
+        
+        table = PivotTable(plot_df.T)  # Transpose so classes are features
+        table.sample_metadata = pd.DataFrame({'omic': df.index})
+        table.sample_metadata.set_index(table.sample_metadata.index, inplace=True)
+        table.sample_metadata["abs_mean"] = df['abs_mean']
 
         (OncoPlot(table)
             .set_config(numeric_columns=["abs_mean"], figsize=(10, 8))
