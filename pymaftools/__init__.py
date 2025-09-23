@@ -17,7 +17,10 @@ from .plot.LollipopPlot import LollipopPlot
 from .plot.MethodsPlot import MethodsPlot
 from .plot.ColorManager import ColorManager
 from .plot.FontManager import FontManager
+from .plot.ModelPlot import ModelPlot
 
+# model
+from .model.modelManager import ModelManager
 from .model.StackingModel import OmicsStackingModel, ASCStackingModel
 from .model.modelUtils import (
     evaluate_model,
@@ -29,4 +32,7 @@ from .model.modelUtils import (
     run_rfecv_feature_selection,
     run_model_evaluation
 )
+
+# utils
 from .utils.geneset import read_GMT, fetch_msigdb_geneset
+from .utils.reduction import PCA_CCA

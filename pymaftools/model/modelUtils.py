@@ -132,7 +132,7 @@ def plot_metric_comparison_with_annotation(data,
     Returns:
         ModelPlot instance
     """
-    from .ModelPlot import ModelPlot
+    from ..plot.ModelPlot import ModelPlot
     
     plotter = ModelPlot()
     return plotter.plot_metric_comparison_with_annotation(
@@ -189,7 +189,7 @@ def plot_top_feature_importance_heatmap(mean_importance_df, omic, top_n=20,
     Returns:
         ModelPlot instance
     """
-    from .ModelPlot import ModelPlot
+    from ..plot.ModelPlot import ModelPlot
     
     plotter = ModelPlot()
     return plotter.plot_top_feature_importance_heatmap(
@@ -270,8 +270,7 @@ def run_rfecv_feature_selection(pivot: PivotTable,
     selected_features = pivot.index[selector.support_].tolist()
 
     if plot:
-        
-        from .ModelPlot import ModelPlot
+        from ..plot.ModelPlot import ModelPlot
         plotter = ModelPlot()
         plotter.plot_rfecv_curve(
             selector=selector,
@@ -341,3 +340,56 @@ def run_model_evaluation(
     )
 
     return result, all_importance_df, all_metrics_df
+
+
+# example
+
+# model_configs = [
+#     {
+#         "name": "SNV",
+#         "model_func": lambda random_state: RandomForestClassifier(n_estimators=100, random_state=random_state),
+#         "X": snv.T
+#     },
+#     {
+#         "name": "CNV-cluster", 
+#         "model_func": lambda random_state: RandomForestClassifier(n_estimators=100, random_state=random_state),
+#         "X": cluster_table.T
+#     },
+#     {
+#         "name": "CNV-arm", 
+#         "model_func": lambda random_state: RandomForestClassifier(n_estimators=100, random_state=random_state),
+#         "X": cnv_arm_table.T
+#     },
+#     {
+#         "name": "CNV-gene", 
+#         "model_func": lambda random_state: RandomForestClassifier(n_estimators=100, random_state=random_state),
+#         "X": cnv_gene_table.T
+#     },
+#     {
+#         "name": "CNV-cytoband", 
+#         "model_func": lambda random_state: RandomForestClassifier(n_estimators=100, random_state=random_state),
+#         "X": cnv_cytoband_table.T
+#     },
+#     {
+#         "name": "STACK",
+#         "model_func": lambda random_state: ASCStackingModel(
+#                         omics_dict={"snv": snv, "cnv": cluster_table},
+#                         class_order=["LUAD", "LUSC"],
+#                         random_state=random_state
+#                     ),
+#         "X": pd.concat([snv, cluster_table], axis=0).T
+#     }
+# ]
+
+# result, all_importance_df, all_metrics_df = run_model_evaluation(
+#     model_configs=model_configs,
+#     y=cohort_no_ASC.sample_metadata.subtype,
+#     n_seeds=100,
+#     n_splits=5,
+#     evaluate_func=evaluate_model
+# )
+
+# # 儲存成 CSV
+# all_importance_df.to_csv("data/model/all_model_importance_100seed_5fold_add_cytoband.csv", index=False)
+# all_metrics_df.to_csv("data/model/all_model_metrics_100seed_5fold_add_cytoband.csv", index=False)
+	

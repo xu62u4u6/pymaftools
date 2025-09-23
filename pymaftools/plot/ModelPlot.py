@@ -108,7 +108,7 @@ class ModelPlot(BasePlot):
             #annotator.apply_and_annotate()
 
             ax.set_xlabel('', fontsize=fontsize)
-            ax.set_ylabel(metric.upper(), fontsize=fontsize)
+            ax.set_ylabel(metric, fontsize=fontsize)
             ax.set_yticks(ax.get_yticks())  # 確保 ticks 不變
             ax.set_yticklabels([
                 f"{tick:.2f}" if tick <= 1 else "" 
@@ -209,7 +209,7 @@ class ModelPlot(BasePlot):
 
         # 標籤與圖例
         ax.set_xlabel("Number of features selected")
-        ax.set_xlabel(f"CV Score ({scoring})")
+        ax.set_ylabel("CV score (accuracy)")
         ax.grid(alpha=0.3)
         ax.legend()
 

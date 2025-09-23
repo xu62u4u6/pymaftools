@@ -12,6 +12,7 @@ from .LollipopPlot import LollipopPlot
 from .OncoPlot import OncoPlot
 from .PivotTablePlot import PivotTablePlot
 from .MethodsPlot import MethodsPlot
+from .ModelPlot import ModelPlot
 
 __all__ = [
     "BasePlot",
@@ -20,5 +21,7 @@ __all__ = [
     "LegendManager", 
     "LollipopPlot",
     "OncoPlot",
-    "PivotTablePlot"
+    "PivotTablePlot",
+    "MethodsPlot",
+    "ModelPlot"
 ]
