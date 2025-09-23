@@ -15,7 +15,8 @@ class LollipopPlot(BasePlot):
     from BasePlot.
     """
     
-    def __init__(self, protein_name, protein_length, domains, mutations, config=None):
+    def __init__(self, protein_name, protein_length, domains, mutations, config=None, 
+                 domain_label_map=None, mutation_label_map=None):
         """
         Initialize a new LollipopPlot object.
 
@@ -31,6 +32,12 @@ class LollipopPlot(BasePlot):
             Mutation data list
         config : dict, optional
             Configuration for plot
+        domain_label_map : dict, optional
+            Dictionary to map original domain labels to custom display names
+            Example: {"P53": "DNA binding region", "Transactivation": "TAD domain"}
+        mutation_label_map : dict, optional
+            Dictionary to map original mutation types to custom display names  
+            Example: {"Missense_Mutation": "Missense", "Nonsense_Mutation": "Nonsense"}
         """
         # Initialize BasePlot
         super().__init__()
@@ -39,6 +46,10 @@ class LollipopPlot(BasePlot):
         self.protein_length = protein_length
         self.domains = list(domains)
         self.mutations = list(mutations)
+        
+        # Store label mappings for custom legend names
+        self.domain_label_map = domain_label_map or {}
+        self.mutation_label_map = mutation_label_map or {}
 
         # --- Default Configuration ---
         self._default_config = {
@@ -150,7 +161,7 @@ class LollipopPlot(BasePlot):
                      color='black', linewidth=6, solid_capstyle='round', zorder=1)
 
     def _plot_domains(self):
-        """Plot domains and add to legend manager."""
+        """Plot domains and add to legend manager with custom labels."""
         if self.ax_main is None: return
         domain_colors = {}
         
@@ -165,15 +176,16 @@ class LollipopPlot(BasePlot):
                                      linewidth=1, edgecolor='black', facecolor=domain_color, zorder=2)
             self.ax_main.add_patch(rect)
             
-            # Collect domain colors for legend
-            domain_colors[label] = domain_color
+            # Use custom label if available, otherwise use original label
+            display_label = self.domain_label_map.get(label, label)
+            domain_colors[display_label] = domain_color
         
         # Add domain legend to LegendManager
         if domain_colors:
             self.add_legend("Domains", domain_colors)
 
     def _plot_mutations(self):
-        """Plot lollipop sticks and candies and add to legend manager."""
+        """Plot lollipop sticks and candies and add to legend manager with custom labels."""
         if self.ax_main is None: return
         mutation_colors = {}
         
@@ -196,8 +208,9 @@ class LollipopPlot(BasePlot):
             marker_size = 50 + (count / self.max_mutation_count) * 100 # Optional scaling
             self.ax_main.scatter(pos, lollipop_top_y, color=mutation_color, s=marker_size, zorder=3, edgecolors='black', linewidth=0.5)
 
-            # Collect mutation colors for legend
-            mutation_colors[m_type] = mutation_color
+            # Use custom label if available, otherwise use original mutation type
+            display_label = self.mutation_label_map.get(m_type, m_type)
+            mutation_colors[display_label] = mutation_color
         
         # Add mutation legend to LegendManager
         if mutation_colors:
@@ -271,6 +284,8 @@ class LollipopPlot(BasePlot):
                           figsize=(20, 15), 
                         width_ratios=[9, 1], 
                          config=None, 
+                         domain_label_map=None,
+                         mutation_label_map=None,
                          save_path=None, 
                          dpi=300,
                          title=None):
@@ -290,6 +305,10 @@ class LollipopPlot(BasePlot):
             Width ratios for main plots and legend
         config : dict, optional
             Configuration options
+        domain_label_map : dict, optional
+            Dictionary to map original domain labels to custom display names
+        mutation_label_map : dict, optional
+            Dictionary to map original mutation types to custom display names
         save_path : str, optional
             Path to save the figure
         dpi : int, default 300
@@ -329,7 +348,9 @@ class LollipopPlot(BasePlot):
             protein_length=AA_length,
             domains=domains_data,
             mutations=mutations_data,
-            config=config
+            config=config,
+            domain_label_map=domain_label_map,
+            mutation_label_map=mutation_label_map
         )
         
         # Set up main plot with figure
@@ -358,7 +379,9 @@ class LollipopPlot(BasePlot):
                 protein_length=AA_length,
                 domains=domains_data,
                 mutations=mutations_data,
-                config=config
+                config=config,
+                domain_label_map=domain_label_map,
+                mutation_label_map=mutation_label_map
             )
             
             # Plot without legend (will be unified later)
@@ -375,18 +398,22 @@ class LollipopPlot(BasePlot):
                 ax.set_xlabel("")
                 plt.setp(ax.get_xticklabels(), visible=False)
             
-            # Collect colors for unified legend
+            # Collect colors for unified legend with custom labels
             # Merge domain colors
             for domain in domains_data:
                 label = domain.get("Label", "Unknown")
                 if label in cohort_plot.domain_colors:
-                    all_domain_colors[label] = cohort_plot.domain_colors[label]
+                    # Use custom label if available, otherwise use original label
+                    display_label = domain_label_map.get(label, label) if domain_label_map else label
+                    all_domain_colors[display_label] = cohort_plot.domain_colors[label]
             
             # Merge mutation colors
             mutation_types = set(m.get('type', 'Other') for m in mutations_data)
             for m_type in mutation_types:
                 if m_type in cohort_plot.color_manager.get_cmap('lollipop_mutations'):
-                    all_mutation_colors[m_type] = cohort_plot.color_manager.get_cmap('lollipop_mutations')[m_type]
+                    # Use custom label if available, otherwise use original mutation type
+                    display_label = mutation_label_map.get(m_type, m_type) if mutation_label_map else m_type
+                    all_mutation_colors[display_label] = cohort_plot.color_manager.get_cmap('lollipop_mutations')[m_type]
             
             cohort_plots.append(cohort_plot)
         

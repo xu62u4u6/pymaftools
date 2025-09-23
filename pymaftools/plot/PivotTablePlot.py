@@ -69,14 +69,20 @@ class PivotTablePlot(BasePlot):
         test_col: str = "mutations_count",
         palette: Optional[Union[str, Dict]] = None,
         title: Optional[str] = None,
+        xlabel: Optional[str] = None,
+        ylabel: Optional[str] = None,
         ax: Optional[Axes] = None,
         test: str = 'Mann-Whitney',
+        comparisons_correction=None, #"benjamini-hochberg"
         alpha: float = 0.8,
         order: Optional[List[str]] = None,
         fontsize: int = 12,
         rotation: int = 0,
         save_path: Optional[str] = None,
-        dpi: int = 300
+        dpi: int = 300,
+        is_paired: bool = False,
+        pair_col: Optional[str] = None,
+        verbose = False
     ) -> Axes:
         """
         Create boxplot with statistical annotations.
@@ -99,11 +105,15 @@ class PivotTablePlot(BasePlot):
             a dictionary mapping group values to colors.
         title : str, optional
             Plot title. If None, auto-generates title from column names.
+        xlabel : str, optional
+            X-axis label. If None, uses group_col name.
+        ylabel : str, optional
+            Y-axis label. If None, uses test_col name.
         ax : matplotlib.axes.Axes, optional
             Axes object to plot on. If None, creates new figure and axes.
         test : str, default 'Mann-Whitney'
             Statistical test for pairwise comparisons. Options include:
-            'Mann-Whitney', 't-test_ind', 'Welch', etc.
+            'Mann-Whitney', 'Wilcoxon', 't-test_ind', 'Welch', etc.
         alpha : float, default 0.8
             Transparency level for boxplot fill colors (0-1).
         order : list of str, optional
@@ -116,6 +126,12 @@ class PivotTablePlot(BasePlot):
             Path to save the figure. Format determined by file extension.
         dpi : int, default 300
             Resolution for saved figure.
+        is_paired : bool, default False
+            Whether to perform paired statistical tests. When True, requires pair_col.
+        pair_col : str, optional
+            Column name identifying paired samples. Required when is_paired=True.
+        verbose : bool, default False
+            Whether to show detailed statistical test output.
 
         Returns
         -------
@@ -142,7 +158,20 @@ class PivotTablePlot(BasePlot):
         ...     palette={"LUAD": "orange", "ASC": "green", "LUSC": "blue"},
         ...     order=["LUAD", "ASC", "LUSC"],
         ...     title="MSI Score by Cancer Subtype",
+        ...     xlabel="Cancer Subtype",
+        ...     ylabel="MSI Score",
         ...     rotation=45  # Rotate x-axis labels 45 degrees
+        ... )
+
+        >>> # Paired comparison (e.g., before/after treatment)
+        >>> pivot_table.plot.plot_boxplot_with_annot(
+        ...     test_col="expression_level",
+        ...     group_col="treatment_status",  # "before", "after"
+        ...     xlabel="Treatment Status",
+        ...     ylabel="Expression Level",
+        ...     is_paired=True,
+        ...     pair_col="patient_id",  # Column identifying paired samples
+        ...     test='Wilcoxon'  # Wilcoxon signed-rank test for paired data
         ... )
         """
         # Use sample_metadata if no data provided
@@ -156,6 +185,33 @@ class PivotTablePlot(BasePlot):
 
         if title is None:
             title = f"Boxplot of {test_col} by {group_col}"
+
+        # Check paired test requirements
+        if is_paired and pair_col is None:
+            raise ValueError("pair_col must be specified when is_paired=True")
+        
+        # Prepare data for paired tests if needed
+        if is_paired and pair_col is not None:
+            # Validate that pair_col exists
+            if pair_col not in data.columns:
+                raise ValueError(f"Column '{pair_col}' not found in data")
+            
+            # For paired tests, we need to ensure we have complete pairs
+            # Group by pair_col and keep only pairs that have both groups
+            pair_groups = data.groupby(pair_col)
+            valid_pairs = []
+            
+            for pair_id, pair_data in pair_groups:
+                groups_in_pair = pair_data[group_col].unique()
+                # Only keep pairs that have data for multiple groups
+                if len(groups_in_pair) > 1:
+                    valid_pairs.append(pair_data)
+            
+            if valid_pairs:
+                data = pd.concat(valid_pairs, ignore_index=True)
+            else:
+                print("Warning: No valid paired samples found. Switching to unpaired test.")
+                is_paired = False
 
         gb = data.groupby(group_col)
         if order is None:
@@ -177,11 +233,44 @@ class PivotTablePlot(BasePlot):
                                 alpha))
 
         # stat
-        annotator = Annotator(ax=ax, pairs=group_pairs,
-                              data=data, x=group_col, y=test_col, order=order)
-        annotator.configure(test=test, text_format='star',
-                            loc='inside', verbose=False)
-        annotator.apply_and_annotate()
+        if is_paired and pair_col is not None:
+            # For paired tests, we need to configure the annotator differently
+            annotator = Annotator(
+                ax=ax,
+                pairs=group_pairs,
+                data=data,
+                x=group_col,
+                y=test_col,
+                order=order
+            )
+            # Configure for paired test - Wilcoxon is typically used for paired data
+            paired_test = 'Wilcoxon' if test == 'Mann-Whitney' else test
+            annotator.configure(
+                test=paired_test,
+                comparisons_correction=comparisons_correction,
+                text_format='star',
+                loc='inside',
+                verbose=verbose,  
+            )
+            annotator.apply_and_annotate()
+        else:
+            # Unpaired tests (original logic)
+            annotator = Annotator(
+                ax=ax,
+                pairs=group_pairs,
+                data=data,
+                x=group_col,
+                y=test_col,
+                order=order
+            )
+            annotator.configure(
+                test=test,
+                comparisons_correction=comparisons_correction,
+                text_format='star',
+                loc='inside',
+                verbose=verbose,
+            )
+            annotator.apply_and_annotate()
 
         # xticklabel with sample size
         sample_counts = gb.size().to_dict()
@@ -193,8 +282,9 @@ class PivotTablePlot(BasePlot):
         ax.set_xticks(range(len(groups_list)))
         ax.set_xticklabels(xticks_labels, fontsize=fontsize, rotation=rotation)
 
-        ax.set_xlabel(group_col, fontsize=fontsize)
-        ax.set_ylabel(test_col, fontsize=fontsize)
+        # Set axis labels - use custom labels if provided, otherwise use column names
+        ax.set_xlabel(xlabel if xlabel is not None else group_col, fontsize=fontsize)
+        ax.set_ylabel(ylabel if ylabel is not None else test_col, fontsize=fontsize)
 
         # Save figure
         if save_path is not None:

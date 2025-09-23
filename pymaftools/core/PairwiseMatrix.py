@@ -427,14 +427,15 @@ class SimilarityMatrix(PairwiseMatrix):
         plt.show()
 
     def plot_similarity(self,
-                    groups,
-                    figsize=(20, 20), 
-                    group_cmap={"LUAD": "orange", "ASC": "green", "LUSC": "blue"},
-                    title=None,
-                    cmap="coolwarm",
-                    ax=None, 
-                    save_path=None, 
-                    dpi=300):
+                        groups,
+                        figsize=(20, 20), 
+                        group_cmap={"LUAD": "orange", "ASC": "green", "LUSC": "blue"},
+                        title=None,
+                        cmap="coolwarm",
+                        ax=None, 
+                        save_path=None, 
+                        dpi=300,
+                        title_fontsize=20):  # 新增 title_fontsize 參數
     
         if ax is None:
             fig = plt.figure(figsize=figsize)
@@ -484,7 +485,7 @@ class SimilarityMatrix(PairwiseMatrix):
         # 儲存圖片（如果有指定）
         #plt.suptitle(title, fontsize=20, y=0.9)
         if title:
-            ax_heatmap.set_title(title, fontsize=20)
+            ax_heatmap.set_title(title, fontsize=title_fontsize)  #  使用 title_fontsize
 
         if save_path is not None:
             plt.savefig(save_path, bbox_inches="tight", dpi=dpi)
@@ -495,7 +496,8 @@ class SimilarityMatrix(PairwiseMatrix):
     
     @staticmethod
     def plot_heatmap(result_df, title, cmap="Blues", tick_size=14, fontsize=14, annot_size=14, 
-                    mask_lower_triangle=True, ax=None, save_path=None, dpi=300):
+                    mask_lower_triangle=True, ax=None, save_path=None, dpi=300,
+                    show_only_x_ticks=False, annot=True):
         result_df = result_df.astype(float)
         base_mask = result_df.isna()
 
@@ -512,11 +514,22 @@ class SimilarityMatrix(PairwiseMatrix):
         if ax is None:
             fig, ax = plt.subplots(figsize=(8, 6))
 
-        sns.heatmap(result_df, cmap=cmap, mask=combined_mask, annot=True, fmt=".2f", 
+        sns.heatmap(result_df, cmap=cmap, mask=combined_mask, annot=annot, fmt=".2f", 
                     annot_kws={"size": annot_size}, ax=ax)
 
-        ax.set_xticklabels(ax.get_xticklabels(), fontsize=tick_size)
-        ax.set_yticklabels(ax.get_yticklabels(), fontsize=tick_size)
+        if show_only_x_ticks:
+            # 關掉 y 軸的刻度線與標籤
+            ax.set_yticks([])  # 移除刻度本體
+            ax.tick_params(axis='y', which='both', left=False, right=False, labelleft=False)
+
+            # x 軸保留標籤、拿掉上方刻度線
+            ax.tick_params(axis='x', which='both', bottom=True, top=False, labelbottom=True)
+            ax.set_xticklabels(ax.get_xticklabels(), fontsize=tick_size)
+        else:
+            ax.tick_params(axis='both', which='both', top=False, right=False)  # 可選，統一關掉上/右刻度
+            ax.set_xticklabels(ax.get_xticklabels(), fontsize=tick_size)
+            ax.set_yticklabels(ax.get_yticklabels(), fontsize=tick_size)
+        
         ax.set_title(title, fontsize=fontsize)
 
         # 儲存圖片（如果有指定）
@@ -539,18 +552,24 @@ class SimilarityMatrix(PairwiseMatrix):
                         group_pvalues_cmap="Reds_r",
                         save_dir="./figures/Similarity",
                         dpi=300,
-                        file_format="tiff"
-                        ):
+                        file_format="tiff",
+                        heatmap_show_only_x_ticks=False,
+                        heatmap_annot=True,
+                        utest_group_pairs=[("LUAD", "ASC"), ("ASC", "LUSC")],
+                        annot_size=14):
         
         os.makedirs(save_dir, exist_ok=True)
+        # 確保 title 不為 None，避免 replace 方法報錯
+        if title is None:
+            title = "Untitled"
         filename_base = title.replace(" ", "_")
 
         similarity_matrix = table.compute_similarity(method=method)
         true_group_similarity = similarity_matrix.get_mean_group_similarity(groups, 
                                                                         group_order=group_order)
         permutated_group_similarities = similarity_matrix.generate_permutation_list(groups, 
-                                                                                        group_order=group_order, 
-                                                                                        n_permutations=1000)
+                                                                                    group_order=group_order, 
+                                                                                    n_permutations=1000)
         group_pvalues_df = SimilarityMatrix.calculate_group_similarity_pvalues(true_group_similarity, 
                                                                             permutated_group_similarities, 
                                                                             group_order=group_order)
@@ -564,7 +583,8 @@ class SimilarityMatrix(PairwiseMatrix):
                 4, 4,
                 width_ratios=[15, 1, 1, 9],
                 height_ratios=[15, 2, 14, 1],
-                wspace=0.06, hspace=0.04
+                wspace=0.06, 
+                hspace=0.04
             )
             # 左：Similarity + colorbar + groupbar
             ax_similarity = fig.add_subplot(gs[0:3, 0])
@@ -605,36 +625,44 @@ class SimilarityMatrix(PairwiseMatrix):
             cmap=similarity_cmap,
             title=f"{title}",
             ax=(ax_similarity, ax_colorbar, ax_groupbar),
+            title_fontsize=14
             #save_path=os.path.join(save_dir, filename_base + "_matrix.png"),
         )
 
         # ---- Right top: 群體平均相似度
-        
         SimilarityMatrix.plot_heatmap(
             true_group_similarity,
             title="Group Mean Similarity",
             cmap=group_avg_cmap,
             mask_lower_triangle=True,
             ax=ax_group_mean,
+            show_only_x_ticks=heatmap_show_only_x_ticks,  
+            annot=heatmap_annot,                          
+            annot_size=annot_size
             #save_path=os.path.join(save_dir, f"{filename_base}_{'_'.join(title)}.png"),
         )
 
         # ---- Right bottom: permutation P-values
-        
         SimilarityMatrix.plot_heatmap(
             group_pvalues_df,
             title="Group Similarity P-values",
             cmap=group_pvalues_cmap,
             mask_lower_triangle=True,
             ax=ax_group_pval,
+            show_only_x_ticks=heatmap_show_only_x_ticks,
+            annot=heatmap_annot,                          
+            annot_size=annot_size
             #save_path=os.path.join(save_dir, f"{filename_base}_{'_'.join(title)}.png"),
         )
 
         # utest for pairwise group comparisons
-        stat, p = similarity_matrix.paired_similarity_utest(groups=table.sample_metadata.subtype.values, 
-                             pair1=("LUAD", "ASC"), 
-                             pair2=("ASC", "LUSC"))
-        print(f"{title}: (LUAD, ASC) vs (ASC, LUSC) P-value: {p}")
+        if utest_group_pairs is not None:
+            stat, p = similarity_matrix.paired_similarity_utest(groups=table.sample_metadata.subtype.values, 
+                                pair1=utest_group_pairs[0], 
+                                pair2=utest_group_pairs[1])
+            print(f"{title}: {utest_group_pairs[0]} vs {utest_group_pairs[1]} P-value: {p}")
+            pair1_subset, pair2_subset = similarity_matrix.get_pairs_subset(groups, utest_group_pairs[0], utest_group_pairs[1]) 
+            
         # ---- 儲存 / 顯示
         pil_kwargs = {"compression": "tiff_lzw"} if file_format == "tiff" else {}
         if save_dir:
@@ -650,15 +678,22 @@ class SimilarityMatrix(PairwiseMatrix):
         return {
             "similarity_matrix": similarity_matrix,
             "group_similarity": true_group_similarity,
-            "pval_matrix": group_pvalues_df
+            "pval_matrix": group_pvalues_df,
+            "pairwise_utest_p": p,
+            "pair1": pair1_subset,
+            "pair2": pair2_subset
         }
     
-    def paired_similarity_utest(self, groups, pair1, pair2):
+    def get_pairs_subset(self, groups, pair1, pair2):
         pair1_indices1, pair1_indices2 = np.where(groups == pair1[0])[0], np.where(groups == pair1[1])[0]
         pair2_indices1, pair2_indices2 = np.where(groups == pair2[0])[0], np.where(groups == pair2[1])[0]
 
         pair1_subset = self.iloc[pair1_indices1, pair1_indices2]
         pair2_subset = self.iloc[pair2_indices1, pair2_indices2]
+        return pair1_subset, pair2_subset
+
+    def paired_similarity_utest(self, groups, pair1, pair2):
+        pair1_subset, pair2_subset = self.get_pairs_subset(groups, pair1, pair2)
 
         stat, p = mannwhitneyu(pair1_subset.to_numpy().flatten(),
                             pair2_subset.to_numpy().flatten())
