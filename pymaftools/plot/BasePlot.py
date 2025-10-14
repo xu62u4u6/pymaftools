@@ -145,17 +145,26 @@ class BasePlot:
 
         try:
             format = filename.split('.')[-1].lower()
-            pil_kwargs = {"compression": "tiff_lzw"} if format == "tiff" else {}
+            
+            # Prepare save arguments
+            save_kwargs = {
+                'dpi': dpi,
+                'bbox_inches': bbox_inches,
+                'transparent': transparent,
+                'format': format,
+            }
+            
+            # Only add pil_kwargs for formats that support it (not SVG/PDF)
+            if format in ['tiff', 'tif', 'png', 'jpg', 'jpeg']:
+                if format in ['tiff', 'tif']:
+                    save_kwargs['pil_kwargs'] = {"compression": "tiff_lzw"}
+                # For other PIL-supported formats, pil_kwargs can be added if needed
+                # save_kwargs['pil_kwargs'] = kwargs.pop('pil_kwargs', {})
+            
+            # Add any additional kwargs
+            save_kwargs.update(kwargs)
 
-            self.fig.savefig(
-                filename,
-                dpi=dpi,
-                bbox_inches=bbox_inches,
-                transparent=transparent,
-                format=format,
-                pil_kwargs=pil_kwargs,
-                **kwargs
-            )
+            self.fig.savefig(filename, **save_kwargs)
             print(f"[INFO] Figure saved to: {filename}")
         except Exception as e:
             print(f"Error while saving figure: {e}")
