@@ -20,7 +20,6 @@ from .plot.FontManager import FontManager
 from .plot.ModelPlot import ModelPlot
 
 # model
-from .model.modelManager import ModelManager
 from .model.StackingModel import OmicsStackingModel, ASCStackingModel
 from .model.modelUtils import (
     evaluate_model,
