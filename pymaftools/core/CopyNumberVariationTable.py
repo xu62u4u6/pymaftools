@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import os
 import re
 from typing import Optional, List, TYPE_CHECKING
 from .PivotTable import PivotTable
@@ -496,6 +497,35 @@ class CopyNumberVariationTable(PivotTable):
             plt.show()
         
         return freq_df
+    
+
+    def to_cnv_table(all_sample_df):
+        cnv_matrix = all_sample_df.pivot_table(
+            index="gene_id", # ENSG ID to avoid duplication
+            columns="sample_ID",  
+            values="copy_number" 
+        )
+
+        feature_metadata = (
+            all_sample_df
+            .drop_duplicates(subset=["gene_id"])
+            .set_index("gene_id")[["gene_name", "chromosome", "start", "end"]] 
+        )
+
+        # create CopyNumberVariationTable object
+        table = CopyNumberVariationTable(cnv_matrix)
+        table = table.add_feature_metadata(feature_metadata, fill_value=np.nan)
+        table._validate_metadata()
+
+        # make gene_name unique
+        dup_genes = table.feature_metadata.gene_name[table.feature_metadata.gene_name.duplicated()].unique()
+        dup_mask = table.feature_metadata.gene_name.isin(dup_genes) # if gene_name is duplicated
+        table.feature_metadata.loc[dup_mask, "gene_name"] = table.feature_metadata.gene_name[dup_mask] + "|" + table.feature_metadata.index[dup_mask] # add ENSG ID to duplicated gene_name
+
+        # set index to gene_name
+        table.index = table.feature_metadata.gene_name
+        table.feature_metadata.index = table.feature_metadata.gene_name
+        return table
 
 def read_sample_cutoff_file(sample_cutoff_file):
     """
@@ -540,3 +570,46 @@ def read_sample_cutoff_file(sample_cutoff_file):
     ]
     sample_cutoffs_df = sample_cutoffs_df.reindex(columns=column_order)
     return sample_cutoffs_df
+
+def TCGA_sample_type(TCGA_barcode):
+    pattern = r"-([0-2][0-9])[A-Z]$"
+    match = re.search(pattern, TCGA_barcode)
+    if not match:
+        raise ValueError(f"Barcode {TCGA_barcode} does not match expected format.")
+    sample_type = int(match.group(1))
+    if sample_type < 10:
+        return "T"  # Tumor
+    elif sample_type < 20:
+        return "N"  # Normal
+    elif sample_type < 30:
+        return "C"  # Control
+    else:
+        raise ValueError(f"Sample type code {sample_type} is not recognized.")
+
+def get_target_sample_ID(paired_sample_IDs, target_sample_type):
+    paired_sample_IDs_list = paired_sample_IDs.split(",")
+    for sample_ID in paired_sample_IDs_list:
+        sample_ID = sample_ID.strip()
+        sample_type = TCGA_sample_type(sample_ID)
+        if sample_type == target_sample_type:
+            return sample_ID
+    raise ValueError("No matching sample type found.")
+
+def read_TCGA_ASCAT3_CNV_file_sheet(file_path, file_suffix="ascat3.gene_level_copy_number.v36.tsv"):
+    file_sheet = pd.read_csv(file_path, sep="\t", header=0)
+    file_sheet = file_sheet[file_sheet["File Name"].str.contains(file_suffix, regex=True)].copy()
+    file_sheet["tumor_sample_ID"] = file_sheet["Sample ID"].apply(lambda x: get_target_sample_ID(x, "T"))
+    file_sheet["normal_sample_ID"] = file_sheet["Sample ID"].apply(lambda x: get_target_sample_ID(x, "N"))
+    return file_sheet
+
+def read_cnv_files(base_dir, file_sheet):
+	all_samples = []
+	for _, row in file_sheet.iterrows():
+		tumor_sample_ID = row["tumor_sample_ID"]
+		path = os.path.join(base_dir, row["File Name"])
+		cnv_df = pd.read_csv(path, sep="\t")
+		cnv_df["sample_ID"] = tumor_sample_ID
+		cnv_df = cnv_df.dropna()
+		all_samples.append(cnv_df)
+	all_sample_df = pd.concat(all_samples, axis=0)
+	return all_sample_df
