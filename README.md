@@ -13,11 +13,11 @@ pymaftools includes a comprehensive test suite to ensure code quality and functi
 #### Install Test Dependencies
 
 ```bash
-# Install test dependencies
-pip install -r requirements-test.txt
+# Install package with test dependencies
+pip install -e .[test]
 
-# Or using make
-make install-test-deps
+# For development (includes test dependencies + build tools)
+pip install -e .[dev]
 ```
 
 #### Run Tests
@@ -54,7 +54,8 @@ Tests are organized by functionality and marked with pytest markers:
 #### Continuous Integration
 
 Tests run automatically on GitHub Actions for:
-- Python 3.8, 3.9, 3.10, 3.11
+- Python 3.10, 3.11, 3.12 (stable)
+- Python 3.13, 3.14 (experimental, allowed to fail)
 - Fast tests on all pull requests
 - Slow tests on pushes to main branch
 - Plot tests with non-interactive backend

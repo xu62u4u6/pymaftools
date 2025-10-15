@@ -27,7 +27,7 @@ test-quiet:
 
 # Install test dependencies
 install-test-deps:
-	pip install pytest pytest-cov pytest-mock matplotlib seaborn scikit-learn
+	pip install -e .[test]
 
 # Clean test artifacts
 clean-test:
