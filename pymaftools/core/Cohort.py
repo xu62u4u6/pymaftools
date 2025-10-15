@@ -83,12 +83,6 @@ class Cohort:
         cohort.sample_IDs = samples
         return cohort
     
-    def order(self, group_col=None, group_order=None):
-        cohort = self.copy()
-        for table_name, table in cohort.tables.items():
-            cohort.tables[table_name] = table.order(group_col=group_col, group_order=group_order)
-        return cohort
-    
     def copy(self, deep=True):
         new_instance = Cohort(self.name, self.description)
         new_instance.tables = copy.deepcopy(self.tables) if deep else self.tables.copy()
