@@ -4,6 +4,101 @@
 
 ![image](img/pymaftools_overview.svg)
 
+## Development and Testing
+
+### Running Tests
+
+pymaftools includes a comprehensive test suite to ensure code quality and functionality.
+
+#### Install Test Dependencies
+
+```bash
+# Install test dependencies
+pip install -r requirements-test.txt
+
+# Or using make
+make install-test-deps
+```
+
+#### Run Tests
+
+```bash
+# Run all tests
+python run_tests.py
+
+# Or using make
+make test
+
+# Run specific test categories
+make test-core      # Core functionality tests
+make test-plot      # Plotting tests  
+make test-model     # Model tests
+make test-fast      # Fast tests only (excludes slow integration tests)
+make test-slow      # Slow/integration tests only
+
+# Run with coverage report
+make test-coverage
+```
+
+#### Test Categories
+
+Tests are organized by functionality and marked with pytest markers:
+
+- **Core tests** (`tests/core/`): Test PivotTable, MAF, Cohort classes
+- **Plot tests** (`tests/plot/`): Test all plotting functionality
+- **Model tests** (`tests/model/`): Test machine learning components
+- **Integration tests** (`@pytest.mark.integration`): End-to-end workflow tests
+- **Slow tests** (`@pytest.mark.slow`): Performance and large dataset tests
+- **Plot tests** (`@pytest.mark.plot`): Tests that generate visualizations
+
+#### Continuous Integration
+
+Tests run automatically on GitHub Actions for:
+- Python 3.8, 3.9, 3.10, 3.11
+- Fast tests on all pull requests
+- Slow tests on pushes to main branch
+- Plot tests with non-interactive backend
+
+### Contributing
+
+When contributing to pymaftools:
+
+1. **Write tests** for new functionality
+2. **Run the test suite** before submitting PRs
+3. **Follow the existing code structure** for test organization
+4. **Use appropriate test markers** for categorizing tests
+
+Example test structure:
+```python
+import pytest
+from pymaftools.core.PivotTable import PivotTable
+
+class TestNewFeature:
+    def test_basic_functionality(self, sample_pivot_table):
+        # Test basic case
+        result = sample_pivot_table.new_method()
+        assert result is not None
+    
+    @pytest.mark.slow
+    def test_large_dataset(self):
+        # Test with large dataset
+        pass
+    
+    @pytest.mark.plot
+    def test_visualization(self, temp_output_dir):
+        # Test plot generation
+        pass
+```
+
+### Test Fixtures
+
+Common test fixtures are available in `tests/conftest.py`:
+
+- `sample_pivot_table`: Basic PivotTable with mutation data
+- `sample_cohort`: Multi-omics Cohort object
+- `sample_model_metrics`: Model performance data
+- `temp_output_dir`: Temporary directory for test outputs
+
 ## Features
 
 - **MAF Class**: A utility to load, parse, and manipulate MAF files.

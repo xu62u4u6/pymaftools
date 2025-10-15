@@ -8,7 +8,7 @@ version = "0.2.3"
 description = "Python package for handling and analyzing Mutation Annotation Format (MAF) files."
 readme = "README.md"
 requires-python = ">=3.10"
-license = "MIT"
+license = {text = "MIT"}
 
 authors = [
   { name = "xu62u4u6", email = "199928ltyos@gmail.com" }
@@ -27,6 +27,20 @@ dependencies = [
   "requests",
   "beautifulsoup4",
   "tqdm"
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest>=7.0.0",
+  "pytest-cov>=4.0.0",
+  "pytest-mock>=3.10.0"
+]
+dev = [
+  "pytest>=7.0.0",
+  "pytest-cov>=4.0.0", 
+  "pytest-mock>=3.10.0",
+  "build",
+  "twine"
 ]
 
 [project.urls]
