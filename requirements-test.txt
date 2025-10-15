@@ -1,0 +1,7 @@
+# Essential testing dependencies for pymaftools
+pytest>=7.0.0
+pytest-cov>=4.0.0
+pytest-mock>=3.10.0
+
+# Optional: For parallel test execution (useful for large test suites)
+# pytest-xdist>=3.0.0
