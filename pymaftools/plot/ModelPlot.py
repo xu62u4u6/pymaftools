@@ -34,6 +34,7 @@ class ModelPlot(BasePlot):
                                                tick_fontsize=None,
                                                figsize=None,
                                                title_prefix=None,
+                                               rotation=45,
                                                save_path=None,
                                                **save_kwargs):
         """
@@ -53,6 +54,7 @@ class ModelPlot(BasePlot):
             tick_fontsize: Font size for tick labels (default: fontsize - 2)
             figsize: Figure size
             title_prefix: Title prefix (optional, set to None to disable titles)
+            rotation: Rotation angle for x-axis tick labels in degrees (default: 45)
             save_path: Path to save figure (optional)
             **save_kwargs: Additional arguments for save method
         """
@@ -114,7 +116,7 @@ class ModelPlot(BasePlot):
                 f"{tick:.2f}" if tick <= 1 else "" 
                 for tick in ax.get_yticks()
             ], fontsize=fontsize)
-            ax.tick_params(axis='x', labelsize=fontsize)  # 設定 x 軸刻度標籤字體大小
+            ax.tick_params(axis='x', labelsize=fontsize, rotation=rotation)
             # Set title if title_prefix is provided
             if title_prefix:
                 ax.set_title(f"{title_prefix} {metric.upper()}", fontsize=fontsize)
