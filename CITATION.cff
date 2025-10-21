@@ -6,6 +6,12 @@ authors:
     given-names: Ding-Yang
     affiliation: "National Yang Ming Chiao Tung University"
     orcid: https://orcid.org/0009-0003-1978-6330
-date-released: 2025-07-17
-version: 0.2.3
+date-released: 2025-10-15
+version: 0.3.0
 url: https://github.com/xu62u4u6/pymaftools
+keywords:
+  - multiomics
+  - bioinformatics
+  - cancer-genomics
+  - variant-analysis
+  - machine-learning
