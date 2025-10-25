@@ -131,7 +131,7 @@ class OncoPlot(BasePlot):
         self.axs_categorical_columns = {col: self.fig.add_subplot(self.gs[2+i, 0]) for i, col in enumerate(self.categorical_columns)}
         self.axs_numeric_columns = {col: self.fig.add_subplot(self.gs[2+len(self.categorical_columns)+i, 0]) for i, col in enumerate(self.numeric_columns)}
 
-    def plot_numeric_metadata(self, annotate=False, annotation_font_size=10, fmt=".2f", cmap="Blues", cmap_dict=None, alpha=1):
+    def plot_numeric_metadata(self, annotate=False, annotation_font_size=10, fmt=".2f", cmap="Blues", cmap_dict=None, alpha=1, linewidths=1):
         """
         Plot numeric metadata as heatmaps below the main mutation heatmap.
         
@@ -149,7 +149,8 @@ class OncoPlot(BasePlot):
             Dictionary mapping column names to specific colormaps
         alpha : float, default 1
             Transparency level (0-1)
-            
+        linewidths : float, default 1
+            Width of lines between cells
         Returns:
         --------
         self : OncoPlot
@@ -169,7 +170,7 @@ class OncoPlot(BasePlot):
                 data,
                 cmap=cmap,
                 cbar=False,
-                linewidths=1,
+                linewidths=linewidths,
                 linecolor=self.line_color,
                 ax=ax,  
                 xticklabels=False,
@@ -225,7 +226,7 @@ class OncoPlot(BasePlot):
         self.plot_color_heatmap(self.ax_heatmap, 
                         color_matrix,
                         linecolor=line_color,
-                        linewidth=1,
+                        linewidths=1,
                         xticklabels=False,
                         width=width,
                         height=height,
@@ -263,7 +264,7 @@ class OncoPlot(BasePlot):
         cmap = ListedColormap(color_list)
 
         # plot heatmap
-        sns.heatmap(table_mapped, cmap=cmap, cbar=False, ax=ax, linecolor=linecolor, linewidths=0.5, **kwargs)
+        sns.heatmap(table_mapped, cmap=cmap, cbar=False, ax=ax, linecolor=linecolor, **kwargs)
 
         # perpare legend info
         legend_info = list(category_cmap.items())
@@ -271,8 +272,8 @@ class OncoPlot(BasePlot):
             legend_info.append(("Unknown", unknown_color))
 
         return fig, ax, legend_info
-    
-    def mutation_heatmap(self, cmap_dict=None, linecolor="white", linewidth=1, show_frame=False, n=3, yticklabels=True, ytick_fontsize=None):
+
+    def mutation_heatmap(self, cmap_dict=None, linecolor="white", linewidths=1, show_frame=False, n=3, yticklabels=True, ytick_fontsize=None):
         """
         Plot the main mutation heatmap using categorical color coding.
         
@@ -282,7 +283,7 @@ class OncoPlot(BasePlot):
             Color mapping for mutation types
         linecolor : str, default "white"
             Color of lines between cells
-        linewidth : int, default 1
+        linewidths : int, default 1
             Width of lines between cells
         show_frame : bool, default False
             Whether to show frames around groups of columns
@@ -306,7 +307,7 @@ class OncoPlot(BasePlot):
         fig, ax, legend_info = self.categorical_heatmap(table=self.pivot_table, 
                                                         category_cmap=cmap_dict, 
                                                         linecolor=linecolor, 
-                                                        linewidth=linewidth,
+                                                        linewidths=linewidths,
                                                         ax=self.ax_heatmap,
                                                         vmin=0, # Ensure mapping uses full range
                                                         vmax=len(cmap_dict))
@@ -379,7 +380,7 @@ class OncoPlot(BasePlot):
         self.ax_bar.set_ylabel(bar_col, fontsize=ylabel_size)
         return self
 
-    def plot_freq(self, freq_columns=["freq"], annot_fontsize=9):
+    def plot_freq(self, freq_columns=["freq"], annot_fontsize=9, linewidths=1):
         """
         Plot frequency heatmap showing mutation frequencies for each gene.
         
@@ -389,7 +390,9 @@ class OncoPlot(BasePlot):
             List of frequency columns to display
         annot_fontsize : int, default 9
             Font size for annotations
-            
+        linewidths: float, default 1
+            Width of lines between cells
+
         Returns:
         --------
         self : OncoPlot
@@ -399,7 +402,7 @@ class OncoPlot(BasePlot):
         sns.heatmap(
                 freq_data,
                 cbar=False,
-                linewidths=1,
+                linewidths=linewidths,
                 linecolor=self.line_color,
                 ax=self.ax_freq,
                 xticklabels=freq_data.columns,
@@ -413,7 +416,7 @@ class OncoPlot(BasePlot):
         self.ax_freq.set_yticks([])  # hide y-axis
         return self
 
-    def plot_categorical_metadata(self, annotate=False, cmap_dict=None, alpha=1.0, default_cmap="pastel", annotation_font_size=10, annotate_text_color="black"):
+    def plot_categorical_metadata(self, annotate=False, cmap_dict=None, alpha=1.0, default_cmap="pastel", annotation_font_size=10, annotate_text_color="black", linewidths=1):
         """
         Plot categorical metadata as color-coded heatmaps below the main mutation heatmap.
         
@@ -442,6 +445,8 @@ class OncoPlot(BasePlot):
             Font size for annotations
         annotate_text_color : str, default "black"
             Color of annotation text
+        linewidths : float, default 0.1
+            Width of lines between cells
             
         Returns:
         --------
@@ -465,10 +470,10 @@ class OncoPlot(BasePlot):
                 category_cmap=column_cmap,
                 ax=ax,
                 linecolor=self.line_color,
-                linewidth=1,
+                linewidths=linewidths,
                 xticklabels=False,
                 yticklabels=list(data.index),
-                alpha=alpha
+                alpha=alpha,
             )
 
             # Add text annotations (if needed)
@@ -498,7 +503,7 @@ class OncoPlot(BasePlot):
     def plot_color_heatmap(ax, 
                         color_matrix: pd.DataFrame, 
                         linecolor='white', 
-                        linewidth=1, 
+                        linewidths=1, 
                         xticklabels=False, 
                         yticklabels=True,
                         alpha=1.0,
@@ -516,7 +521,7 @@ class OncoPlot(BasePlot):
             DataFrame containing hex color codes for each cell
         linecolor : str, default 'white'
             Color of lines between cells
-        linewidth : int, default 1
+        linewidths : int, default 1
             Width of lines between cells
         xticklabels : bool, default False
             Whether to show x-axis labels
@@ -545,7 +550,7 @@ class OncoPlot(BasePlot):
         sns.heatmap(
             ones_matrix,
             cbar=False,
-            linewidths=linewidth,
+            linewidths=linewidths,
             linecolor=linecolor,
             ax=ax,
             xticklabels=xticklabels,
@@ -566,7 +571,7 @@ class OncoPlot(BasePlot):
                     fill=True,
                     facecolor=face_color,
                     edgecolor=linecolor,
-                    lw=linewidth,
+                    lw=linewidths,
                     alpha=alpha
                 ))
 
@@ -609,7 +614,7 @@ class OncoPlot(BasePlot):
             target_ax.set_xticklabels(self.sample_metadata.index, rotation=90)
         return self
 
-    def numeric_heatmap(self, cmap="Blues", vmin=None, vmax=None, symmetric=False, yticklabels=True, annot=False, fmt=".2f", ytick_fontsize=None): 
+    def numeric_heatmap(self, cmap="Blues", vmin=None, vmax=None, symmetric=False, yticklabels=True, annot=False, fmt=".2f", ytick_fontsize=None, linewidths=1): 
         """
         Plot numeric heatmap with customizable y-axis tick label font size.
         
@@ -631,7 +636,8 @@ class OncoPlot(BasePlot):
             Format string for annotations
         ytick_fontsize : int, optional
             Font size for y-axis tick labels (defaults to self.ytick_fontsize)
-            
+        linewidths : int, default 1
+            Width of lines between cells    
         Returns:
         --------
         self : OncoPlot
@@ -659,16 +665,19 @@ class OncoPlot(BasePlot):
         else:
             center = 0
         # Draw heatmap
-        hm = sns.heatmap(table, 
-                         ax=ax, 
-                         cmap=cmap, 
-                         cbar=False,
-                        vmin=vmin, 
-                        vmax=vmax, 
-                        center=center, 
-                        yticklabels=yticklabels, 
-                        annot=annot,
-                        fmt=fmt,)
+        hm = sns.heatmap(
+            table,
+            ax=ax,
+            cmap=cmap,
+            cbar=False,
+            vmin=vmin,
+            vmax=vmax,
+            center=center,
+            yticklabels=yticklabels,
+            annot=annot,
+            fmt=fmt,
+            linewidths=linewidths,
+        )
 
         ax.set_xticks([])
         ax.set_xlabel("")
