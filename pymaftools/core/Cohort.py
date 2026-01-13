@@ -97,6 +97,31 @@ class Cohort:
             return self.tables[name]
         raise AttributeError(f"'Cohort' object has no attribute '{name}'")
     
+    def info(self) -> str:
+        """Return a summary string of the Cohort structure."""
+        lines = [f"Cohort('{self.name}')"]
+        
+        table_names = list(self.tables.keys())
+        for i, table_name in enumerate(table_names):
+            table = self.tables[table_name]
+            n_samples = len(table.columns)
+            n_features = len(table.index)
+            n_sample_meta = len(table.sample_metadata.columns) if hasattr(table, 'sample_metadata') and table.sample_metadata is not None else 0
+            n_feature_meta = len(table.feature_metadata.columns) if hasattr(table, 'feature_metadata') and table.feature_metadata is not None else 0
+            
+            # Use └── for last item, ├── for others
+            prefix = "└──" if i == len(table_names) - 1 else "├──"
+            lines.append(f"{prefix} {table_name}: {n_samples} samples × {n_features} features (sample_meta: {n_sample_meta}, feature_meta: {n_feature_meta})")
+        
+        if not table_names:
+            lines.append("└── (no tables)")
+        
+        return "\n".join(lines)
+    
+    def __repr__(self) -> str:
+        """Return a string representation of the Cohort."""
+        return self.info()
+    
     def to_sql_registry(self) -> pd.DataFrame:
         """
         Generate a registry DataFrame for SQL table mapping.

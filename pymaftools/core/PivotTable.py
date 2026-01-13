@@ -99,6 +99,48 @@ class PivotTable(pd.DataFrame):
             self.feature_metadata: pd.DataFrame = pd.DataFrame(index=self.index)
             self.sample_metadata: pd.DataFrame = pd.DataFrame(index=self.columns)
 
+    def info(self) -> str:
+        """Return a summary string of the PivotTable structure."""
+        n_samples = len(self.columns)
+        n_features = len(self.index)
+        
+        lines = [f"PivotTable(samples={n_samples}, features={n_features})"]
+        
+        # Sample metadata info
+        if hasattr(self, 'sample_metadata') and self.sample_metadata is not None:
+            sm_cols = self.sample_metadata.columns.tolist()
+            n_sm_cols = len(sm_cols)
+            if n_sm_cols > 5:
+                cols_str = str(sm_cols[:5])[:-1] + ", ...]"
+            else:
+                cols_str = str(sm_cols)
+            lines.append(f"├── sample_metadata: {cols_str}  ({n_sm_cols} columns)")
+        else:
+            lines.append("├── sample_metadata: None")
+        
+        # Feature metadata info
+        if hasattr(self, 'feature_metadata') and self.feature_metadata is not None:
+            fm_cols = self.feature_metadata.columns.tolist()
+            n_fm_cols = len(fm_cols)
+            if n_fm_cols > 5:
+                cols_str = str(fm_cols[:5])[:-1] + ", ...]"
+            else:
+                cols_str = str(fm_cols)
+            lines.append(f"├── feature_metadata: {cols_str}  ({n_fm_cols} columns)")
+        else:
+            lines.append("├── feature_metadata: None")
+        
+        # Data info
+        dtype_str = str(self.values.dtype) if self.size > 0 else "empty"
+        nan_count = self.isna().sum().sum()
+        lines.append(f"└── data: {dtype_str}, NaN count: {nan_count}")
+        
+        return "\n".join(lines)
+
+    def __repr__(self) -> str:
+        """Return DataFrame repr with PivotTable info appended."""
+        df_repr = super().__repr__()
+        return f"{df_repr}\n\n{self.info()}"
     @property
     def _constructor(self):
         def _new_constructor(*args, **kwargs):
