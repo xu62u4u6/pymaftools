@@ -1,6 +1,7 @@
 import pandas as pd
 import pickle
 import copy
+import warnings
 from .PivotTable import PivotTable
 import sqlite3
 from pathlib import Path
@@ -121,7 +122,19 @@ class Cohort:
         return pd.DataFrame(records)
     
     def to_sqlite(self, db_path: str):
-        """ Save Cohort to SQLite database format."""
+        """
+        Save Cohort to SQLite database format.
+        
+        .. deprecated:: 0.4.0
+            `to_sqlite` will be removed in a future version.
+            Use `to_hdf5` instead, which supports larger datasets without column limits.
+        """
+        warnings.warn(
+            "to_sqlite is deprecated and will be removed in a future version. "
+            "Use to_hdf5() instead, which supports larger datasets.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         db_path = Path(db_path)
 
         if db_path.exists():
@@ -149,7 +162,19 @@ class Cohort:
 
     @classmethod
     def read_sqlite(cls, db_path: str):
-        """ Load Cohort from SQLite database format."""
+        """
+        Load Cohort from SQLite database format.
+        
+        .. deprecated:: 0.4.0
+            `read_sqlite` will be removed in a future version.
+            Use `read_hdf5` instead.
+        """
+        warnings.warn(
+            "read_sqlite is deprecated and will be removed in a future version. "
+            "Use read_hdf5() instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         conn = sqlite3.connect(db_path)
         registry_df = pd.read_sql("SELECT * FROM registry", conn)
 
@@ -169,6 +194,87 @@ class Cohort:
 
         conn.close()
         print(f"[Cohort] loaded from {db_path}")
+        return cohort
+    
+    def to_hdf5(self, h5_path: str):
+        """
+        Save Cohort to HDF5 format.
+        
+        HDF5 format is recommended for large datasets as it doesn't have
+        the column limit that SQLite has (~2000 columns).
+        
+        Parameters
+        ----------
+        h5_path : str
+            Path to the output HDF5 file.
+        """
+        h5_path = Path(h5_path)
+        
+        if h5_path.exists():
+            h5_path.unlink()
+        
+        with pd.HDFStore(str(h5_path), mode='w') as store:
+            # Save cohort metadata
+            cohort_meta = pd.DataFrame({
+                'name': [self.name],
+                'description': [self.description]
+            })
+            store.put('cohort_metadata', cohort_meta)
+            
+            # Save table names registry
+            table_names = pd.DataFrame({'table_name': list(self.tables.keys())})
+            store.put('table_registry', table_names)
+            
+            # Save each table
+            for table_name, table in self.tables.items():
+                table_copy = table.copy().rename_index_and_columns()
+                # Transpose data so samples are rows (avoid column limit issues)
+                store.put(f'{table_name}/data', table_copy.T)
+                store.put(f'{table_name}/sample_metadata', table_copy.sample_metadata)
+                store.put(f'{table_name}/feature_metadata', table_copy.feature_metadata)
+        
+        print(f"[Cohort] saved to {h5_path}")
+    
+    @classmethod
+    def read_hdf5(cls, h5_path: str):
+        """
+        Load Cohort from HDF5 format.
+        
+        Parameters
+        ----------
+        h5_path : str
+            Path to the HDF5 file.
+            
+        Returns
+        -------
+        Cohort
+            Loaded Cohort object.
+        """
+        with pd.HDFStore(str(h5_path), mode='r') as store:
+            # Load cohort metadata
+            cohort_meta = store.get('cohort_metadata')
+            cohort = cls(
+                name=cohort_meta['name'].iloc[0],
+                description=cohort_meta['description'].iloc[0]
+            )
+            
+            # Load table names
+            table_registry = store.get('table_registry')
+            
+            # Load each table
+            for table_name in table_registry['table_name']:
+                # Data was stored transposed, so transpose back
+                data = store.get(f'{table_name}/data').T
+                sample_metadata = store.get(f'{table_name}/sample_metadata')
+                feature_metadata = store.get(f'{table_name}/feature_metadata')
+                
+                pivot = PivotTable(data)
+                pivot.sample_metadata = sample_metadata
+                pivot.feature_metadata = feature_metadata
+                
+                cohort.add_table(pivot, table_name)
+        
+        print(f"[Cohort] loaded from {h5_path}")
         return cohort
     
 # cohort = Cohort(name="ASC")

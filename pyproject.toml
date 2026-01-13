@@ -26,7 +26,8 @@ dependencies = [
   "scipy",
   "requests",
   "beautifulsoup4",
-  "tqdm"
+  "tqdm",
+  "tables"
 ]
 
 [project.optional-dependencies]
