@@ -22,7 +22,7 @@ import seaborn as sns
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.patches import Patch, Rectangle
-from scipy.stats import chi2_contingency, fisher_exact
+from scipy.stats import chi2_contingency, f_oneway, fisher_exact, kruskal, mannwhitneyu, ttest_ind
 from sklearn.decomposition import PCA
 from sklearn.metrics import pairwise_distances
 from sklearn.metrics.pairwise import cosine_similarity
@@ -1242,6 +1242,129 @@ class PivotTable(pd.DataFrame):
         pivot_table = self.copy()
         return pivot_table.subset(features=pivot_table.feature_metadata.freq >= threshold)
 
+    def filter_by_variance(
+        self,
+        threshold: float = None,
+        method: Literal["var", "mad"] = "var",
+        quantile: float = None,
+    ) -> "PivotTable":
+        """
+        Filter features by variance or median absolute deviation.
+
+        Parameters
+        ----------
+        threshold : float, optional
+            Minimum variance/MAD threshold. Features with scores >= threshold
+            are kept. If None, ``quantile`` must be specified.
+        method : {"var", "mad"}, default "var"
+            Dispersion metric:
+            - "var": variance
+            - "mad": median absolute deviation
+        quantile : float, optional
+            Quantile cutoff (0–1). E.g. ``quantile=0.75`` keeps the top 25%
+            most variable features. Overrides ``threshold`` when both given.
+
+        Returns
+        -------
+        PivotTable
+            Filtered PivotTable with dispersion scores in ``feature_metadata``.
+
+        Raises
+        ------
+        ValueError
+            If neither ``threshold`` nor ``quantile`` is specified, or if
+            ``method`` is not supported.
+        """
+        if threshold is None and quantile is None:
+            raise ValueError("Either threshold or quantile must be specified.")
+        if method not in ("var", "mad"):
+            raise ValueError(f"Unsupported method '{method}'. Use 'var' or 'mad'.")
+
+        pt = self.copy()
+        numeric = pt.astype(float)
+        if method == "var":
+            scores = numeric.var(axis=1)
+        else:  # mad
+            scores = numeric.apply(lambda x: (x - x.median()).abs().median(), axis=1)
+
+        pt.feature_metadata[method] = scores
+        if quantile is not None:
+            threshold = scores.quantile(quantile)
+        return pt.subset(features=scores >= threshold)
+
+    def filter_by_statistical_test(
+        self,
+        group_col: str,
+        method: Literal["ttest", "mann_whitney", "kruskal", "anova"] = "kruskal",
+        alpha: float = 0.05,
+    ) -> "PivotTable":
+        """
+        Filter features by a statistical test across sample groups.
+
+        For each feature, performs the chosen test on groups defined by
+        ``group_col`` in ``sample_metadata``, applies FDR correction, and
+        returns only features with adjusted p-value < ``alpha``.
+
+        Parameters
+        ----------
+        group_col : str
+            Column in ``sample_metadata`` defining sample groups.
+        method : {"ttest", "mann_whitney", "kruskal", "anova"}, default "kruskal"
+            Statistical test. ``ttest`` and ``mann_whitney`` require exactly
+            two groups; ``kruskal`` and ``anova`` support two or more.
+        alpha : float, default 0.05
+            Significance threshold applied after FDR correction.
+
+        Returns
+        -------
+        PivotTable
+            Filtered PivotTable with ``p_value`` and ``adjusted_p_value``
+            columns added to ``feature_metadata``.
+
+        Raises
+        ------
+        ValueError
+            If ``method`` is unsupported or group count doesn't match the test.
+        """
+        test_funcs = {
+            "ttest": lambda groups: ttest_ind(*groups),
+            "mann_whitney": lambda groups: mannwhitneyu(*groups, alternative="two-sided"),
+            "kruskal": lambda groups: kruskal(*groups),
+            "anova": lambda groups: f_oneway(*groups),
+        }
+        if method not in test_funcs:
+            raise ValueError(f"Unsupported method '{method}'. Choose from {list(test_funcs)}.")
+
+        two_group_only = {"ttest", "mann_whitney"}
+        pt = self.copy()
+        numeric = pt.astype(float)
+        groups_series = pt.sample_metadata[group_col]
+        unique_groups = groups_series.dropna().unique()
+
+        if method in two_group_only and len(unique_groups) != 2:
+            raise ValueError(f"'{method}' requires exactly 2 groups, got {len(unique_groups)}.")
+
+        p_values = []
+        for feature in numeric.index:
+            row = numeric.loc[feature]
+            group_data = [row[groups_series == g].dropna().values for g in unique_groups]
+            # Skip features with insufficient data in any group
+            if any(len(g) < 2 for g in group_data):
+                p_values.append(np.nan)
+                continue
+            _, pval = test_funcs[method](group_data)
+            p_values.append(pval)
+
+        p_values = np.array(p_values)
+        valid = ~np.isnan(p_values)
+        adjusted = np.full_like(p_values, np.nan)
+        if valid.any():
+            adjusted[valid] = multipletests(p_values[valid], method="fdr_bh")[1]
+
+        pt.feature_metadata["p_value"] = p_values
+        pt.feature_metadata["adjusted_p_value"] = adjusted
+        return pt.subset(features=adjusted < alpha)
+
     def to_cooccur_matrix(self, freq: bool = True) -> 'CooccurrenceMatrix':
         """
         Convert to co-occurrence matrix format.
@@ -1672,6 +1795,37 @@ class PivotTable(pd.DataFrame):
         ).fillna(fill_value)
         
         return pivot_table
+
+    def filter_by_variance(self, threshold: float = 0.9, method: str = "quantile") -> "PivotTable":
+        """
+        篩選高變異特徵。
+        
+        Parameters
+        ----------
+        threshold : float
+            篩選閾值。
+            - 如果 method='quantile'，threshold=0.9 表示保留變異數在前 10% 的特徵。
+            - 如果 method='n'，threshold=2000 表示保留變異數最大的 2000 個特徵。
+        method : {'quantile', 'n'}, default 'quantile'
+            篩選方法。
+            
+        Returns
+        -------
+        PivotTable
+            篩選後的 PivotTable。
+        """
+        variances = self.var(axis=1)
+        
+        if method == "quantile":
+            q_value = variances.quantile(threshold)
+            top_features = variances[variances >= q_value].index
+        elif method == "n":
+            top_features = variances.sort_values(ascending=False).head(int(threshold)).index
+        else:
+            raise ValueError("method must be 'quantile' or 'n'")
+            
+        return self.subset(features=top_features)
+
     
 def capture_size(bed_path: str) -> float:
     """
