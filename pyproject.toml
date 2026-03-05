@@ -36,9 +36,14 @@ test = [
   "pytest-cov>=4.0.0",
   "pytest-mock>=3.10.0"
 ]
+docs = [
+  "sphinx>=7.0",
+  "sphinx-rtd-theme>=2.0",
+  "sphinx-autodoc-typehints>=2.0",
+]
 dev = [
   "pytest>=7.0.0",
-  "pytest-cov>=4.0.0", 
+  "pytest-cov>=4.0.0",
   "pytest-mock>=3.10.0",
   "build",
   "twine"
@@ -46,6 +51,7 @@ dev = [
 
 [project.urls]
 Homepage = "https://github.com/xu62u4u6/pymaftools"
+Documentation = "https://dionic.xyz/pymaftools/"
 
 [tool.setuptools.packages.find]
 where = ["."] 
