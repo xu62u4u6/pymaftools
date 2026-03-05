@@ -63,26 +63,28 @@ Python 3.10+ with the following dependencies:
 - **networkx**, **scikit-learn**, **statsmodels**, **statannotations**
 - **requests**, **beautifulsoup4**, **tqdm**, **tables** (HDF5)
 
-All dependencies are automatically installed via pip.
+All dependencies are automatically installed.
 
 ## Installation
 
-### Create a Conda Environment
+### Using uv (recommended)
 
 ```bash
-conda create -n pymaftools python=3.10
+uv pip install pymaftools
 ```
 
-### Using GitHub (latest version) — Recommended
-
-```bash
-pip install git+https://github.com/xu62u4u6/pymaftools.git
-```
-
-### Using pip (from PyPI)
+### Using pip
 
 ```bash
 pip install pymaftools
+```
+
+### From GitHub (latest development version)
+
+```bash
+uv pip install git+https://github.com/xu62u4u6/pymaftools.git
+# or
+pip install git+https://github.com/xu62u4u6/pymaftools.git
 ```
 
 ## Usage
