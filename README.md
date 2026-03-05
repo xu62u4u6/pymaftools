@@ -2,7 +2,21 @@
 
 `pymaftools` is a Python package for handling and analyzing MAF (Mutation Annotation Format) files and multi-omics cancer genomics data. It provides classes for data manipulation, statistical analysis, machine learning, and visualization.
 
-![image](img/pymaftools_overview.svg)
+<p align="center">
+  <img src="img/pymaftools_overview.svg" alt="pymaftools overview" />
+</p>
+<p align="center">
+  <em>pymaftools provides a unified workflow for multi-omics cancer genomics — from data loading and filtering,<br>
+  through statistical analysis and machine learning, to publication-ready visualization.</em>
+</p>
+
+<p align="center">
+  <img src="img/methodsplot_cohort_demo.png" alt="Multi-omics cohort structure" width="420" />
+</p>
+<p align="center">
+  <em>Multiple omics layers (SNV, CNV, expression, etc.) are integrated into a unified Cohort structure.<br>
+  Each layer shares the same samples but may have different numbers of features.</em>
+</p>
 
 ## Features
 
