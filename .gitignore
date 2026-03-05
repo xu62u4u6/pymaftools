@@ -7,3 +7,6 @@ dist/
 docs/
 fonts/
 __pycache__/
+.coverage
+uv.lock
+.venv/
