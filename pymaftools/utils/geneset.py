@@ -50,7 +50,7 @@ def fetch_msigdb_geneset(geneset_name: str, species: str = "human") -> pd.DataFr
     """
     url = f"https://www.gsea-msigdb.org/gsea/msigdb/{species}/geneset/{geneset_name}.html"
 
-    res = requests.get(url)
+    res = requests.get(url, timeout=30)
     soup = BeautifulSoup(res.content, "html.parser")
 
     table = soup.select_one("#geneListing > table")

@@ -244,7 +244,6 @@ class PivotTable(pd.DataFrame):
 
         conn = sqlite3.connect(str(db_path))
         table = self.copy().rename_index_and_columns()
-        # TODO: replace False with "WT" in all files
         table = table.replace(False, "WT")
         table.to_sql("data", conn, index=True)
         table.sample_metadata.to_sql("sample_metadata", conn, index=True)
@@ -281,7 +280,6 @@ class PivotTable(pd.DataFrame):
 
         # Create PivotTable instance
         table = cls(data)
-        # TODO: replace False with "WT" in all files
         table = table.replace("WT", False)
         table.sample_metadata = sample_metadata
         table.feature_metadata = feature_metadata

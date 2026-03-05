@@ -403,7 +403,7 @@ class MAF(pd.DataFrame):
                 return int(pos.split('-')[0])
             try:
                 return int(pos)
-            except:
+            except (ValueError, TypeError):
                 return None
 
         maf = self.filter_maf(self.nonsynonymous_types)
@@ -418,7 +418,7 @@ class MAF(pd.DataFrame):
         # get total AA length（858/1210 → 1210）
         try:
             AA_length = int(sub_df["Protein_position"].dropna().values[0].split('/')[-1])
-        except:
+        except (ValueError, TypeError, IndexError):
             AA_length = None
 
         # count mutations and to dict

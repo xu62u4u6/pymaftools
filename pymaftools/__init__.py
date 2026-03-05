@@ -9,7 +9,22 @@ from .core.ExpressionTable import ExpressionTable
 from .core.SignatureTable import SignatureTable
 from .core.CancerCellFractionTable import CancerCellFractionTable
 from .core.Cohort import Cohort
-from .core.Clustering import *
+from .core.Clustering import (
+    table_to_distance,
+    k_fold_clustering_evaluation,
+    align_clusters,
+    align_cluster_label_dict,
+    convert_ndarray_to_list,
+    calculate_ari_matrix,
+    plot_ari_matrix,
+    run_random_forest_cv,
+    run_random_forest_multiple_seeds,
+    plot_cluster_feature_importance_boxplot,
+    plot_cluster_feature_importance,
+    run_feature_clustering,
+    plot_clustering_metrics_and_find_best_k,
+    gpt_known_genes_summary,
+)
 
 # plot
 from .plot.OncoPlot import OncoPlot
