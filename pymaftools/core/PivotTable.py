@@ -1845,6 +1845,7 @@ class PivotTable(pd.DataFrame):
 
         return pivot_table
 
+
 def capture_size(bed_path: str) -> float:
     """
     Calculate the total capture size (in megabases) from a BED file.
