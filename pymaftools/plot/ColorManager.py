@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import pandas as pd
 import numpy as np
 import seaborn as sns
@@ -5,7 +7,7 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 from matplotlib.colors import ListedColormap
 from matplotlib.cm import get_cmap
-from typing import Dict, Union, Optional, List, Any
+from typing import Any
 from matplotlib.colors import to_rgb, to_hex
 import colorsys
 
@@ -57,36 +59,36 @@ class ColorManager:
         """Initialize ColorManager with empty custom colormap registry."""
         self.custom_cmaps = {}
 
-    def add_cmap(self, name: str, cmap: Dict[str, str]) -> None:
+    def add_cmap(self, name: str, cmap: dict[str, str]) -> None:
         """
         Register a custom colormap for later use.
 
         Parameters
         ----------
         name : str
-            Name identifier for the colormap
-        cmap : dict
-            Dictionary mapping categories to color values
+            Name identifier for the colormap.
+        cmap : dict[str, str]
+            Dictionary mapping categories to color values.
         """
         self.custom_cmaps[name] = cmap
 
-    def get_cmap(self, name: str, factor: Optional[float] = None, alpha: Optional[float] = None) -> Dict[str, str]:
+    def get_cmap(self, name: str, factor: float | None = None, alpha: float | None = None) -> dict[str, str]:
         """
         Retrieve a colormap by name, optionally adjusting brightness and simulated alpha.
 
         Parameters
         ----------
         name : str
-            Name of the colormap to retrieve
+            Name of the colormap to retrieve.
         factor : float, optional
-            Brightness factor (>1 = brighter, <1 = darker)
+            Brightness factor (>1 = brighter, <1 = darker).
         alpha : float, optional
-            Simulated alpha blending with white background (0–1)
+            Simulated alpha blending with white background (0–1).
 
         Returns
         -------
-        dict
-            Adjusted color mapping
+        dict[str, str]
+            Adjusted color mapping.
         """
         if name in self.custom_cmaps:
             cmap = self.custom_cmaps[name]
@@ -109,18 +111,35 @@ class ColorManager:
 
     def simulate_alpha_blend(self, color: str, alpha: float, background: str = "#FFFFFF") -> str:
         """
-        模擬 alpha 效果，將 color 與背景色混合，實現 alpha 混色後的結果（返回 hex）。
+        Simulate alpha blending of a foreground color over a background color.
+
+        Blends the foreground and background colors using the given alpha value
+        and returns the resulting opaque color in hex format.
+
+        Parameters
+        ----------
+        color : str
+            Foreground color (any valid matplotlib color string).
+        alpha : float
+            Opacity of the foreground color (0 = fully transparent, 1 = fully opaque).
+        background : str, default "#FFFFFF"
+            Background color to blend against.
+
+        Returns
+        -------
+        str
+            Blended color in hex format.
         """
-        fg_rgb = to_rgb(color)  # 會自動處理 hex or name
+        fg_rgb = to_rgb(color)  # handles both hex and color name
         bg_rgb = to_rgb(background)
         blended_rgb = [(alpha * f + (1 - alpha) * b)
                        for f, b in zip(fg_rgb, bg_rgb)]
         return to_hex(tuple(blended_rgb))
 
     def generate_categorical_cmap(self,
-                                  data: Union[pd.DataFrame, pd.Series],
-                                  custom_cmap: Optional[Dict[str, str]] = None,
-                                  default_palette: str = "Set1") -> Dict[str, str]:
+                                  data: pd.DataFrame | pd.Series,
+                                  custom_cmap: dict[str, str] | None = None,
+                                  default_palette: str = "Set1") -> dict[str, str]:
         """
         Generate color mapping for categorical data.
 
@@ -129,28 +148,28 @@ class ColorManager:
 
         Parameters
         ----------
-        data : DataFrame or Series
-            Data containing categorical values
-        custom_cmap : dict, optional
-            Custom color mapping to override defaults
+        data : pandas.DataFrame or pandas.Series
+            Data containing categorical values.
+        custom_cmap : dict[str, str], optional
+            Custom color mapping to override defaults.
         default_palette : str, default "Set1"
-            Name of seaborn palette for default colors
+            Name of seaborn palette for default colors.
 
         Returns
         -------
-        dict
-            Mapping from categories to color values
+        dict[str, str]
+            Mapping from categories to color values.
         """
-        # 獲取唯一類別
+        # Get unique categories
         if isinstance(data, pd.DataFrame):
             unique_categories = pd.unique(data.values.ravel())
         else:
             unique_categories = data.unique()
 
-        # 移除 NaN 值
+        # Remove NaN values
         unique_categories = [cat for cat in unique_categories if pd.notna(cat)]
 
-        # 生成默認顏色
+        # Generate default colors
         palette = sns.color_palette(default_palette, len(unique_categories))
         default_color_dict = {}
         for i, cat in enumerate(unique_categories):
@@ -158,7 +177,7 @@ class ColorManager:
             rgb_color = palette[i]
             default_color_dict[cat] = to_hex(rgb_color)
 
-        # 如果有自定義映射，則覆蓋默認顏色
+        # Override with custom mapping if provided
         if custom_cmap:
             for category, color in custom_cmap.items():
                 if category in default_color_dict:
@@ -167,51 +186,51 @@ class ColorManager:
         return default_color_dict
 
     def apply_cmap_to_data(self,
-                           data: Union[pd.DataFrame, pd.Series],
-                           cmap: Dict[str, str],
-                           missing_color: str = "#FFFFFF") -> Union[pd.DataFrame, pd.Series]:
+                           data: pd.DataFrame | pd.Series,
+                           cmap: dict[str, str],
+                           missing_color: str = "#FFFFFF") -> pd.DataFrame | pd.Series:
         """
         Apply color mapping to data values.
 
         Parameters
         ----------
-        data : DataFrame or Series
-            Data to apply color mapping to
-        cmap : dict
-            Color mapping dictionary
+        data : pandas.DataFrame or pandas.Series
+            Data to apply color mapping to.
+        cmap : dict[str, str]
+            Color mapping dictionary.
         missing_color : str, default "#FFFFFF"
-            Color for missing or unmapped values
+            Color for missing or unmapped values.
 
         Returns
         -------
-        DataFrame or Series
-            Data with values replaced by corresponding colors
+        pandas.DataFrame or pandas.Series
+            Data with values replaced by corresponding colors.
         """
         return data.map(lambda x: cmap.get(x, missing_color))
 
     def create_matplotlib_cmap(self,
-                               categories: List[str],
-                               colors: List[str],
+                               categories: list[str],
+                               colors: list[str],
                                unknown_color: str = "white") -> ListedColormap:
         """
         Create matplotlib ListedColormap from categories and colors.
 
         Parameters
         ----------
-        categories : list
-            List of category names
-        colors : list
-            Corresponding list of color values
+        categories : list[str]
+            List of category names.
+        colors : list[str]
+            Corresponding list of color values.
         unknown_color : str, default "white"
-            Color for unknown/unmapped categories
+            Color for unknown/unmapped categories.
 
         Returns
         -------
-        ListedColormap
-            Matplotlib colormap object
+        matplotlib.colors.ListedColormap
+            Matplotlib colormap object.
         """
         color_list = list(colors)
-        color_list.append(unknown_color)  # 為未知類別添加顏色
+        color_list.append(unknown_color)  # add color for unknown categories
         return ListedColormap(color_list)
 
     def adjust_color_brightness(self, color: str, factor: float) -> str:
@@ -237,19 +256,19 @@ class ColorManager:
         r, g, b = to_rgb(color)
         h, l, s = colorsys.rgb_to_hls(r, g, b)
 
-        # 調整亮度
+        # Adjust brightness
         l = max(0, min(1, l * factor))
 
-        # 轉回 RGB
+        # Convert back to RGB
         r_new, g_new, b_new = colorsys.hls_to_rgb(h, l, s)
 
-        # 轉成 hex 並回傳
+        # Return as hex
         return to_hex((r_new, g_new, b_new))
 
     def generate_cmap_from_list(self, 
-                               categories: List[Any], 
+                               categories: list[Any], 
                                cmap_name: str = "tab20",
-                               as_hex: bool = True) -> Dict[str, str]:
+                               as_hex: bool = True) -> dict[str, str]:
         """
         Generate a color mapping dictionary from a list of categories using a matplotlib colormap.
 

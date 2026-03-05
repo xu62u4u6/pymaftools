@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import numpy as np
@@ -20,24 +22,24 @@ class LollipopPlot(BasePlot):
         """
         Initialize a new LollipopPlot object.
 
-        Parameters:
-        -----------
+        Parameters
+        ----------
         protein_name : str
-            Protein name
+            Protein name.
         protein_length : int
-            Protein amino acid length
+            Protein amino acid length.
         domains : list
-            Domains data list
+            Domains data list.
         mutations : list
-            Mutation data list
+            Mutation data list.
         config : dict, optional
-            Configuration for plot
+            Configuration for plot.
         domain_label_map : dict, optional
-            Dictionary to map original domain labels to custom display names
-            Example: {"P53": "DNA binding region", "Transactivation": "TAD domain"}
+            Dictionary to map original domain labels to custom display names.
+            Example: ``{"P53": "DNA binding region", "Transactivation": "TAD domain"}``.
         mutation_label_map : dict, optional
-            Dictionary to map original mutation types to custom display names  
-            Example: {"Missense_Mutation": "Missense", "Nonsense_Mutation": "Nonsense"}
+            Dictionary to map original mutation types to custom display names.
+            Example: ``{"Missense_Mutation": "Missense", "Nonsense_Mutation": "Nonsense"}``.
         """
         # Initialize BasePlot
         super().__init__()
@@ -220,17 +222,17 @@ class LollipopPlot(BasePlot):
         """
         Plot lollipop plot with protein domains and mutations.
         
-        Parameters:
-        -----------
+        Parameters
+        ----------
         ax : matplotlib.axes.Axes, optional
-            Axes to plot on
+            Axes to plot on.
         fig : matplotlib.figure.Figure, optional
-            Figure to use
-            
-        Returns:
-        --------
+            Figure to use.
+
+        Returns
+        -------
         self : LollipopPlot
-            Returns self for method chaining
+            Returns self for method chaining.
         """
         self._setup_plot(ax=ax, fig=fig)
         if self.ax_main is None:
@@ -266,10 +268,10 @@ class LollipopPlot(BasePlot):
         """
         Show the plot.
         
-        Returns:
-        --------
+        Returns
+        -------
         self : LollipopPlot
-            Returns self for method chaining
+            Returns self for method chaining.
         """
         if self.fig is not None:
             plt.show()
@@ -292,40 +294,43 @@ class LollipopPlot(BasePlot):
         """
         Create lollipop plots for multiple cohorts with unified legend.
         
-        Parameters:
-        -----------
+        Parameters
+        ----------
         gene : str
-            Gene name
+            Gene name.
         cohorts_data : dict
             Dictionary with cohort names as keys and values as tuples:
-            (AA_length, mutations_data, domains_data, refseq_ID)
+            ``(AA_length, mutations_data, domains_data, refseq_ID)``.
         figsize : tuple, default (20, 15)
-            Figure size
+            Figure size.
         width_ratios : list, default [9, 1]
-            Width ratios for main plots and legend
+            Width ratios for main plots and legend.
         config : dict, optional
-            Configuration options
+            Configuration options.
         domain_label_map : dict, optional
-            Dictionary to map original domain labels to custom display names
+            Dictionary to map original domain labels to custom display names.
         mutation_label_map : dict, optional
-            Dictionary to map original mutation types to custom display names
+            Dictionary to map original mutation types to custom display names.
         save_path : str, optional
-            Path to save the figure
+            Path to save the figure.
         dpi : int, default 300
-            DPI for saving
-            
-        Returns:
+            DPI for saving.
+        title : str, optional
+            Title for the figure.
+
+        Returns
+        -------
+        LollipopPlot
+            The main plot instance with unified legends.
+
+        Examples
         --------
-        LollipopPlot : The main plot instance with unified legends
-        
-        Example:
-        --------
-        cohorts_data = {
-            'LUAD': (AA_length, mutations_data, domains_data, refseq_ID),
-            'ASC': (AA_length, mutations_data, domains_data, refseq_ID),
-            'LUSC': (AA_length, mutations_data, domains_data, refseq_ID)
-        }
-        plot = LollipopPlot.plot_multi_cohort('TP53', cohorts_data)
+        >>> cohorts_data = {
+        ...     'LUAD': (AA_length, mutations_data, domains_data, refseq_ID),
+        ...     'ASC': (AA_length, mutations_data, domains_data, refseq_ID),
+        ...     'LUSC': (AA_length, mutations_data, domains_data, refseq_ID),
+        ... }
+        >>> plot = LollipopPlot.plot_multi_cohort('TP53', cohorts_data)
         """
         from matplotlib.gridspec import GridSpec
         

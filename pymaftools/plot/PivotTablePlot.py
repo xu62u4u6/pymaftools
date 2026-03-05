@@ -10,7 +10,7 @@ from __future__ import annotations
 
 # Standard library imports
 from itertools import combinations
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any
 
 # Third-party imports
 import matplotlib.pyplot as plt
@@ -64,25 +64,25 @@ class PivotTablePlot(BasePlot):
     
     def plot_boxplot_with_annot(
         self,
-        data: Optional[pd.DataFrame] = None,
+        data: pd.DataFrame | None = None,
         group_col: str = "subtype",
         test_col: str = "mutations_count",
-        palette: Optional[Union[str, Dict]] = None,
-        title: Optional[str] = None,
-        xlabel: Optional[str] = None,
-        ylabel: Optional[str] = None,
-        ax: Optional[Axes] = None,
+        palette: str | dict | None = None,
+        title: str | None = None,
+        xlabel: str | None = None,
+        ylabel: str | None = None,
+        ax: Axes | None = None,
         test: str = 'Mann-Whitney',
-        comparisons_correction=None, #"benjamini-hochberg"
+        comparisons_correction: str | None = None,
         alpha: float = 0.8,
-        order: Optional[List[str]] = None,
+        order: list[str] | None = None,
         fontsize: int = 12,
         rotation: int = 0,
-        save_path: Optional[str] = None,
+        save_path: str | None = None,
         dpi: int = 300,
         is_paired: bool = False,
-        pair_col: Optional[str] = None,
-        verbose = False
+        pair_col: str | None = None,
+        verbose: bool = False
     ) -> Axes:
         """
         Create boxplot with statistical annotations.
@@ -114,6 +114,9 @@ class PivotTablePlot(BasePlot):
         test : str, default 'Mann-Whitney'
             Statistical test for pairwise comparisons. Options include:
             'Mann-Whitney', 'Wilcoxon', 't-test_ind', 'Welch', etc.
+        comparisons_correction : str, optional
+            Method for multiple comparisons correction (e.g., "benjamini-hochberg").
+            If None, no correction is applied.
         alpha : float, default 0.8
             Transparency level for boxplot fill colors (0-1).
         order : list of str, optional
@@ -294,22 +297,22 @@ class PivotTablePlot(BasePlot):
     def plot_pca_samples(
         self,
         color_col: str = "subtype",
-        shape_col: Optional[str] = None,
-        figsize: Tuple[int, int] = (12, 6),
+        shape_col: str | None = None,
+        figsize: tuple[int, int] = (12, 6),
         to_binary: bool = False,
-        palette: Optional[Union[str, Dict[str, str]]] = None,
+        palette: str | dict[str, str] | None = None,
         alpha: float = 0.8,
-        title: Optional[str] = None,
+        title: str | None = None,
         titlesize: int = 14,
         is_numeric: bool = False,
-        save_path: Optional[str] = None,
+        save_path: str | None = None,
         fontsize: int = 12,
-        width_ratios: Tuple[int, int] = (4, 1),
+        width_ratios: tuple[int, int] = (4, 1),
         legend_item_spacing: float = 0.04,
         legend_group_spacing: float = 0.06,
         dpi: int = 300,
         s: int = 60
-    ) -> Tuple[pd.DataFrame, np.ndarray, PCA]:
+    ) -> tuple[pd.DataFrame, np.ndarray, PCA]:
         """
         Plot PCA scatter plot using ColorManager and LegendManager for unified styling.
 

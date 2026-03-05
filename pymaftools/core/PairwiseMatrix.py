@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import networkx as nx
 import pandas as pd
 import numpy as np
@@ -5,27 +7,72 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from matplotlib.patches import Rectangle
 from scipy.stats import mannwhitneyu
-from typing import Optional, Union, Tuple, List, Dict, Any
+from typing import Any
 import matplotlib.gridspec as gridspec
 import os
 
 
 class PairwiseMatrix(pd.DataFrame):
+    """
+    Base class for pairwise matrices.
+
+    A ``pd.DataFrame`` subclass that represents a symmetric pairwise matrix
+    (e.g., co-occurrence or similarity) between samples or features.
+    """
+
     @property
-    def _constructor(self):
+    def _constructor(self) -> type[PairwiseMatrix]:
         return PairwiseMatrix
     
 class CooccurrenceMatrix(PairwiseMatrix):
+    """
+    Matrix of pairwise co-occurrence counts between features.
+
+    A ``PairwiseMatrix`` subclass where each cell ``(i, j)`` stores the
+    co-occurrence frequency or count between feature *i* and feature *j*.
+    """
+
     @property
-    def _constructor(self):
+    def _constructor(self) -> type[CooccurrenceMatrix]:
         return CooccurrenceMatrix
     
 class SimilarityMatrix(PairwiseMatrix):
+    """
+    Matrix of pairwise similarity scores between samples.
+
+    A ``PairwiseMatrix`` subclass where each cell ``(i, j)`` stores the
+    similarity score (e.g., cosine similarity) between sample *i* and
+    sample *j*. Provides methods for group-level similarity analysis,
+    permutation testing, statistical comparison of group pairs, and
+    visualization including heatmaps and network conversion.
+    """
+
     @property
-    def _constructor(self):
+    def _constructor(self) -> type[SimilarityMatrix]:
         return SimilarityMatrix
     
-    def get_mean_group_similarity(self, groups, group_order=None):
+    def get_mean_group_similarity(
+        self,
+        groups: pd.Series | np.ndarray,
+        group_order: np.ndarray | list[str] | None = None,
+    ) -> pd.DataFrame:
+        """
+        Compute mean similarity between every pair of groups.
+
+        Parameters
+        ----------
+        groups : pd.Series or np.ndarray
+            Group label for each sample, aligned with the matrix indices.
+        group_order : array-like of str, optional
+            Ordered list of unique group labels. If ``None``, derived from
+            ``groups.unique()``.
+
+        Returns
+        -------
+        pd.DataFrame
+            Square DataFrame of shape ``(n_groups, n_groups)`` containing the
+            mean pairwise similarity between each pair of groups.
+        """
         if group_order is None:
             group_order = groups.unique()
 
@@ -39,9 +86,29 @@ class SimilarityMatrix(PairwiseMatrix):
                 result_df.loc[cohort1, cohort2] = pairwise_subset.mean().mean()
         return result_df
 
-    def generate_permutation_list(self, groups, group_order, n_permutations=1000):
+    def generate_permutation_list(
+        self,
+        groups: pd.Series,
+        group_order: np.ndarray | list[str],
+        n_permutations: int = 1000,
+    ) -> list[pd.DataFrame]:
         """
-        Generate a list of group similarity matrices under label permutations.
+        Generate group similarity matrices under random label permutations.
+
+        Parameters
+        ----------
+        groups : pd.Series
+            Group label for each sample.
+        group_order : array-like of str
+            Ordered list of unique group labels.
+        n_permutations : int, default=1000
+            Number of permutations to perform.
+
+        Returns
+        -------
+        list of pd.DataFrame
+            Each element is a group-mean similarity matrix computed from a
+            random permutation of the group labels.
         """
         permutation_list = []
         for _ in range(n_permutations):
@@ -51,9 +118,37 @@ class SimilarityMatrix(PairwiseMatrix):
         return permutation_list
 
     @staticmethod
-    def calculate_group_similarity_pvalues(true_group_similarity, permutation_list, group_order, tail="right"):
+    def calculate_group_similarity_pvalues(
+        true_group_similarity: pd.DataFrame,
+        permutation_list: list[pd.DataFrame],
+        group_order: np.ndarray | list[str],
+        tail: str = "right",
+    ) -> pd.DataFrame:
         """
         Calculate permutation p-values for each pairwise group similarity.
+
+        Parameters
+        ----------
+        true_group_similarity : pd.DataFrame
+            Observed group-mean similarity matrix.
+        permutation_list : list of pd.DataFrame
+            Permuted group-mean similarity matrices from
+            :meth:`generate_permutation_list`.
+        group_order : array-like of str
+            Ordered list of unique group labels.
+        tail : {'right', 'left', 'two'}, default='right'
+            Direction of the test. ``'right'`` tests whether the observed
+            value is greater than expected by chance.
+
+        Returns
+        -------
+        pd.DataFrame
+            Matrix of p-values with the same shape as *true_group_similarity*.
+
+        Raises
+        ------
+        ValueError
+            If *tail* is not one of ``'right'``, ``'left'``, or ``'two'``.
         """
         pvalues_df = pd.DataFrame(index=group_order, columns=group_order, dtype=float)
         
@@ -85,8 +180,8 @@ class SimilarityMatrix(PairwiseMatrix):
         fontsize: int = 14, 
         annot_size: int = 14, 
         mask_lower_triangle: bool = True, 
-        ax: Optional[Any] = None, 
-        save_path: Optional[str] = None, 
+        ax: Any | None = None, 
+        save_path: str | None = None, 
         dpi: int = 300
     ) -> None:
         """
@@ -122,7 +217,7 @@ class SimilarityMatrix(PairwiseMatrix):
         result_df = result_df.astype(float)
         base_mask = result_df.isna()
 
-        # 建立下三角遮罩
+        # Build lower triangular mask
         if mask_lower_triangle:
             lower_triangle_mask = np.tril(np.ones(result_df.shape), -1).astype(bool)
             combined_mask = base_mask | pd.DataFrame(lower_triangle_mask, 
@@ -131,7 +226,7 @@ class SimilarityMatrix(PairwiseMatrix):
         else:
             combined_mask = base_mask
 
-        # 建立圖表
+        # Draw the heatmap
         if ax is None:
             fig, ax = plt.subplots(figsize=(8, 6))
 
@@ -142,7 +237,7 @@ class SimilarityMatrix(PairwiseMatrix):
         ax.set_yticklabels(ax.get_yticklabels(), fontsize=tick_size)
         ax.set_title(title, fontsize=fontsize)
 
-        # 儲存圖片（如果有指定）
+        # Save figure if save_path is specified
         if save_path is not None:
             plt.savefig(save_path, bbox_inches="tight", dpi=dpi)
 
@@ -152,12 +247,12 @@ class SimilarityMatrix(PairwiseMatrix):
     def plot_similarity_matrix(
         self,
         groups: pd.Series,
-        figsize: Tuple[int, int] = (20, 20), 
-        group_cmap: Dict[str, str] = {"LUAD": "orange", "ASC": "green", "LUSC": "blue"},
+        figsize: tuple[int, int] = (20, 20), 
+        group_cmap: dict[str, str] = {"LUAD": "orange", "ASC": "green", "LUSC": "blue"},
         title: str = "Cosine Similarity",
         cmap: str = "coolwarm",
-        ax: Optional[Any] = None, 
-        save_path: Optional[str] = None, 
+        ax: Any | None = None, 
+        save_path: str | None = None, 
         dpi: int = 300
     ) -> None:
         """
@@ -238,9 +333,9 @@ class SimilarityMatrix(PairwiseMatrix):
     def compare_group_pairs(
         self, 
         groups: pd.Series, 
-        pair1: Tuple[str, str], 
-        pair2: Tuple[str, str]
-    ) -> Tuple[float, float]:
+        pair1: tuple[str, str], 
+        pair2: tuple[str, str]
+    ) -> tuple[float, float]:
         """
         Perform statistical test comparing affinity between two group pairs.
 
@@ -302,7 +397,7 @@ class SimilarityMatrix(PairwiseMatrix):
         >>> edges_df = affinity_matrix.to_edges_dataframe('similarity', 0.2)
         """
         edges_dataframe = self.melt(
-            ignore_index=False,  # 保留索引
+            ignore_index=False,  # preserve index
             var_name='target', 
             value_name='frequency'
         ).reset_index().rename(columns={'Hugo_Symbol': 'source'})
@@ -355,12 +450,12 @@ class SimilarityMatrix(PairwiseMatrix):
     
     @staticmethod
     def plot_permutation_distribution(
-        permutation_list: List[pd.DataFrame], 
+        permutation_list: list[pd.DataFrame], 
         true_result_df: pd.DataFrame, 
         group1: str, 
         group2: str,
-        figsize: Tuple[int, int] = (6, 4),
-        save_path: Optional[str] = None,
+        figsize: tuple[int, int] = (6, 4),
+        save_path: str | None = None,
         dpi: int = 300
     ) -> None:
         """
@@ -389,7 +484,7 @@ class SimilarityMatrix(PairwiseMatrix):
         ...     perm_list, true_matrix, 'A', 'B'
         ... )
         """
-        # 取出所有 permutation 的相似度  
+        # Extract similarity values from all permutations
         permuted_values = []
         for p in permutation_list:
             val = p.loc[group1, group2]
@@ -426,17 +521,42 @@ class SimilarityMatrix(PairwiseMatrix):
         
         plt.show()
 
-    def plot_similarity(self,
-                        groups,
-                        figsize=(20, 20), 
-                        group_cmap={"LUAD": "orange", "ASC": "green", "LUSC": "blue"},
-                        title=None,
-                        cmap="coolwarm",
-                        ax=None, 
-                        save_path=None, 
-                        dpi=300,
-                        title_fontsize=20):  # 新增 title_fontsize 參數
-    
+    def plot_similarity(
+        self,
+        groups: pd.Series,
+        figsize: tuple[int, int] = (20, 20),
+        group_cmap: dict[str, str] = {"LUAD": "orange", "ASC": "green", "LUSC": "blue"},
+        title: str | None = None,
+        cmap: str = "coolwarm",
+        ax: tuple[Any, Any, Any] | None = None,
+        save_path: str | None = None,
+        dpi: int = 300,
+        title_fontsize: int = 20,
+    ) -> None:
+        """
+        Plot the similarity matrix with a group-color annotation bar.
+
+        Parameters
+        ----------
+        groups : pd.Series
+            Group label for each sample.
+        figsize : tuple of int, default=(20, 20)
+            Figure size as ``(width, height)``.
+        group_cmap : dict of str to str
+            Mapping from group name to color.
+        title : str, optional
+            Title displayed above the heatmap.
+        cmap : str, default='coolwarm'
+            Colormap for the similarity heatmap.
+        ax : tuple of matplotlib.axes.Axes, optional
+            Pre-existing axes as ``(ax_heatmap, ax_colorbar, ax_groupbar)``.
+        save_path : str, optional
+            Path to save the figure.
+        dpi : int, default=300
+            Resolution for the saved figure.
+        title_fontsize : int, default=20
+            Font size for the title.
+        """
         if ax is None:
             fig = plt.figure(figsize=figsize)
             gs = fig.add_gridspec(2, 3, 
@@ -482,10 +602,9 @@ class SimilarityMatrix(PairwiseMatrix):
 
         ax_groupbar.set_xticks([])
         ax_groupbar.set_yticks([])
-        # 儲存圖片（如果有指定）
-        #plt.suptitle(title, fontsize=20, y=0.9)
+        # Save figure if save_path is specified
         if title:
-            ax_heatmap.set_title(title, fontsize=title_fontsize)  #  使用 title_fontsize
+            ax_heatmap.set_title(title, fontsize=title_fontsize)
 
         if save_path is not None:
             plt.savefig(save_path, bbox_inches="tight", dpi=dpi)
@@ -495,13 +614,54 @@ class SimilarityMatrix(PairwiseMatrix):
 
     
     @staticmethod
-    def plot_heatmap(result_df, title, cmap="Blues", tick_size=14, fontsize=14, annot_size=14, 
-                    mask_lower_triangle=True, ax=None, save_path=None, dpi=300,
-                    show_only_x_ticks=False, annot=True):
+    def plot_heatmap(
+        result_df: pd.DataFrame,
+        title: str,
+        cmap: str = "Blues",
+        tick_size: int = 14,
+        fontsize: int = 14,
+        annot_size: int = 14,
+        mask_lower_triangle: bool = True,
+        ax: Any | None = None,
+        save_path: str | None = None,
+        dpi: int = 300,
+        show_only_x_ticks: bool = False,
+        annot: bool = True,
+    ) -> None:
+        """
+        Plot a heatmap of a group similarity or p-value matrix.
+
+        Parameters
+        ----------
+        result_df : pd.DataFrame
+            Square matrix to visualize.
+        title : str
+            Title for the heatmap.
+        cmap : str, default='Blues'
+            Colormap for the heatmap.
+        tick_size : int, default=14
+            Font size for tick labels.
+        fontsize : int, default=14
+            Font size for the title.
+        annot_size : int, default=14
+            Font size for cell annotations.
+        mask_lower_triangle : bool, default=True
+            Whether to mask the lower triangle.
+        ax : matplotlib.axes.Axes, optional
+            Existing axes to plot on.
+        save_path : str, optional
+            Path to save the figure.
+        dpi : int, default=300
+            Resolution for the saved figure.
+        show_only_x_ticks : bool, default=False
+            If ``True``, hide y-axis tick labels.
+        annot : bool, default=True
+            Whether to annotate cells with numeric values.
+        """
         result_df = result_df.astype(float)
         base_mask = result_df.isna()
 
-        # 建立下三角遮罩
+        # Build lower triangular mask
         if mask_lower_triangle:
             lower_triangle_mask = np.tril(np.ones(result_df.shape), -1).astype(bool)
             combined_mask = base_mask | pd.DataFrame(lower_triangle_mask, 
@@ -510,7 +670,7 @@ class SimilarityMatrix(PairwiseMatrix):
         else:
             combined_mask = base_mask
 
-        # 建立圖表
+        # Draw the heatmap
         if ax is None:
             fig, ax = plt.subplots(figsize=(8, 6))
 
@@ -518,21 +678,21 @@ class SimilarityMatrix(PairwiseMatrix):
                     annot_kws={"size": annot_size}, ax=ax)
 
         if show_only_x_ticks:
-            # 關掉 y 軸的刻度線與標籤
-            ax.set_yticks([])  # 移除刻度本體
+            # Disable y-axis tick marks and labels
+            ax.set_yticks([])  # remove tick marks
             ax.tick_params(axis='y', which='both', left=False, right=False, labelleft=False)
 
-            # x 軸保留標籤、拿掉上方刻度線
+            # Keep x-axis labels, remove top tick marks
             ax.tick_params(axis='x', which='both', bottom=True, top=False, labelbottom=True)
             ax.set_xticklabels(ax.get_xticklabels(), fontsize=tick_size)
         else:
-            ax.tick_params(axis='both', which='both', top=False, right=False)  # 可選，統一關掉上/右刻度
+            ax.tick_params(axis='both', which='both', top=False, right=False)  # disable top/right ticks
             ax.set_xticklabels(ax.get_xticklabels(), fontsize=tick_size)
             ax.set_yticklabels(ax.get_yticklabels(), fontsize=tick_size)
         
         ax.set_title(title, fontsize=fontsize)
 
-        # 儲存圖片（如果有指定）
+        # Save figure if save_path is specified
         if save_path is not None:
             plt.savefig(save_path, bbox_inches="tight", dpi=dpi)
 
@@ -540,26 +700,79 @@ class SimilarityMatrix(PairwiseMatrix):
             plt.show()
 
     @staticmethod
-    def analyze_similarity(table, 
-                        groups,
-                        group_order,
-                        method,
-                        title=None,
-                        layout="grid",
-                        similarity_cmap="coolwarm",
-                        group_cmap={"LUAD": "orange", "ASC": "green", "LUSC": "blue"},
-                        group_avg_cmap="Blues",
-                        group_pvalues_cmap="Reds_r",
-                        save_dir="./figures/Similarity",
-                        dpi=300,
-                        file_format="tiff",
-                        heatmap_show_only_x_ticks=False,
-                        heatmap_annot=True,
-                        utest_group_pairs=[("LUAD", "ASC"), ("ASC", "LUSC")],
-                        annot_size=14):
-        
+    def analyze_similarity(
+        table: Any,
+        groups: pd.Series | np.ndarray,
+        group_order: np.ndarray | list[str],
+        method: str,
+        title: str | None = None,
+        layout: str = "grid",
+        similarity_cmap: str = "coolwarm",
+        group_cmap: dict[str, str] = {"LUAD": "orange", "ASC": "green", "LUSC": "blue"},
+        group_avg_cmap: str = "Blues",
+        group_pvalues_cmap: str = "Reds_r",
+        save_dir: str = "./figures/Similarity",
+        dpi: int = 300,
+        file_format: str = "tiff",
+        heatmap_show_only_x_ticks: bool = False,
+        heatmap_annot: bool = True,
+        utest_group_pairs: list[tuple[str, str]] | None = [("LUAD", "ASC"), ("ASC", "LUSC")],
+        annot_size: int = 14,
+    ) -> dict[str, Any]:
+        """
+        Run a full similarity analysis pipeline and produce a composite figure.
+
+        Computes the similarity matrix from *table*, calculates group-level
+        means and permutation p-values, performs optional Mann-Whitney U tests
+        between specified group pairs, and saves a multi-panel figure.
+
+        Parameters
+        ----------
+        table : object
+            Data table with a ``compute_similarity(method=...)`` method and a
+            ``sample_metadata`` attribute.
+        groups : pd.Series or np.ndarray
+            Group label for each sample.
+        group_order : array-like of str
+            Ordered list of unique group labels.
+        method : str
+            Similarity method passed to ``table.compute_similarity``.
+        title : str, optional
+            Title for the figure; also used to derive the output filename.
+        layout : {'grid', 'horizontal'}, default='grid'
+            Panel arrangement of the composite figure.
+        similarity_cmap : str, default='coolwarm'
+            Colormap for the full similarity matrix.
+        group_cmap : dict of str to str
+            Mapping from group name to color for the annotation bar.
+        group_avg_cmap : str, default='Blues'
+            Colormap for the group-mean similarity heatmap.
+        group_pvalues_cmap : str, default='Reds_r'
+            Colormap for the permutation p-value heatmap.
+        save_dir : str, default='./figures/Similarity'
+            Directory to save the figure.
+        dpi : int, default=300
+            Resolution for the saved figure.
+        file_format : str, default='tiff'
+            Output image format (e.g., ``'tiff'``, ``'png'``).
+        heatmap_show_only_x_ticks : bool, default=False
+            If ``True``, hide y-axis tick labels on group heatmaps.
+        heatmap_annot : bool, default=True
+            Whether to annotate group heatmap cells.
+        utest_group_pairs : list of tuple of str, optional
+            Two group pairs for a Mann-Whitney U test comparison.
+        annot_size : int, default=14
+            Font size for heatmap annotations.
+
+        Returns
+        -------
+        dict
+            Dictionary with keys ``'similarity_matrix'``,
+            ``'group_similarity'``, ``'pval_matrix'``,
+            ``'pairwise_utest_p'``, ``'pair1'``, and ``'pair2'``.
+        """
         os.makedirs(save_dir, exist_ok=True)
-        # 確保 title 不為 None，避免 replace 方法報錯
+        # Ensure title is not None to avoid errors when calling replace()
         if title is None:
             title = "Untitled"
         filename_base = title.replace(" ", "_")
@@ -575,9 +788,9 @@ class SimilarityMatrix(PairwiseMatrix):
                                                                             group_order=group_order)
         
 
-        # ---- 建立 Figure 與 Layout
+        # ---- Build Figure and Layout
         if layout == "grid":
-            # 原本 4x4 grid
+            # 4x4 grid layout
             fig = plt.figure(figsize=(20, 12))
             gs = gridspec.GridSpec(
                 4, 4,
@@ -586,17 +799,17 @@ class SimilarityMatrix(PairwiseMatrix):
                 wspace=0.06, 
                 hspace=0.04
             )
-            # 左：Similarity + colorbar + groupbar
+            # Left: Similarity + colorbar + groupbar
             ax_similarity = fig.add_subplot(gs[0:3, 0])
             ax_colorbar   = fig.add_subplot(gs[0:3, 1])
             ax_groupbar   = fig.add_subplot(gs[3, 0])
-            # 右上：Group Mean
+            # Top-right: Group Mean
             ax_group_mean = fig.add_subplot(gs[0, 3])
-            # 右下：P-values
+            # Bottom-right: P-values
             ax_group_pval = fig.add_subplot(gs[2:4, 3])
 
         elif layout == "horizontal":
-            # 由左至右
+            # Left-to-right layout
             fig = plt.figure(figsize=(20, 6))
             outer = gridspec.GridSpec(
                 1, 3, width_ratios=[1.1, 1, 1], wspace=0.18, hspace=0.0
@@ -604,8 +817,8 @@ class SimilarityMatrix(PairwiseMatrix):
 
             left_gs = outer[0].subgridspec(
                 2, 2,
-                width_ratios=[19, 1],  # 主圖 + 垂直 colorbar
-                height_ratios=[19, 1],  # matrix, (保留行距), groupbar
+                width_ratios=[19, 1],  # main plot + vertical colorbar
+                height_ratios=[19, 1],  # matrix row + groupbar row
                 hspace=0.04, wspace=0.04
             )
             ax_similarity = fig.add_subplot(left_gs[0, 0])
@@ -618,7 +831,7 @@ class SimilarityMatrix(PairwiseMatrix):
         else:
             raise ValueError("layout must be 'grid' or 'horizontal'")
 
-        # ---- 相似度矩陣
+        # ---- Similarity matrix plot
         similarity_matrix.plot_similarity(
             groups,
             group_cmap=group_cmap,
@@ -629,7 +842,7 @@ class SimilarityMatrix(PairwiseMatrix):
             #save_path=os.path.join(save_dir, filename_base + "_matrix.png"),
         )
 
-        # ---- Right top: 群體平均相似度
+        # ---- Right top: group mean similarity
         SimilarityMatrix.plot_heatmap(
             true_group_similarity,
             title="Group Mean Similarity",
@@ -663,7 +876,7 @@ class SimilarityMatrix(PairwiseMatrix):
             print(f"{title}: {utest_group_pairs[0]} vs {utest_group_pairs[1]} P-value: {p}")
             pair1_subset, pair2_subset = similarity_matrix.get_pairs_subset(groups, utest_group_pairs[0], utest_group_pairs[1]) 
             
-        # ---- 儲存 / 顯示
+        # ---- Save / display
         pil_kwargs = {"compression": "tiff_lzw"} if file_format == "tiff" else {}
         if save_dir:
             plt.savefig(os.path.join(save_dir, filename_base + "." + file_format), 
@@ -684,7 +897,31 @@ class SimilarityMatrix(PairwiseMatrix):
             "pair2": pair2_subset
         }
     
-    def get_pairs_subset(self, groups, pair1, pair2):
+    def get_pairs_subset(
+        self,
+        groups: pd.Series | np.ndarray,
+        pair1: tuple[str, str],
+        pair2: tuple[str, str],
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
+        """
+        Extract similarity sub-matrices for two group pairs.
+
+        Parameters
+        ----------
+        groups : pd.Series or np.ndarray
+            Group label for each sample.
+        pair1 : tuple of str
+            First group pair ``(group_a, group_b)``.
+        pair2 : tuple of str
+            Second group pair ``(group_a, group_b)``.
+
+        Returns
+        -------
+        pair1_subset : pd.DataFrame
+            Sub-matrix of similarities between the groups in *pair1*.
+        pair2_subset : pd.DataFrame
+            Sub-matrix of similarities between the groups in *pair2*.
+        """
         pair1_indices1, pair1_indices2 = np.where(groups == pair1[0])[0], np.where(groups == pair1[1])[0]
         pair2_indices1, pair2_indices2 = np.where(groups == pair2[0])[0], np.where(groups == pair2[1])[0]
 
@@ -692,7 +929,34 @@ class SimilarityMatrix(PairwiseMatrix):
         pair2_subset = self.iloc[pair2_indices1, pair2_indices2]
         return pair1_subset, pair2_subset
 
-    def paired_similarity_utest(self, groups, pair1, pair2):
+    def paired_similarity_utest(
+        self,
+        groups: pd.Series | np.ndarray,
+        pair1: tuple[str, str],
+        pair2: tuple[str, str],
+    ) -> tuple[float, float]:
+        """
+        Compare similarity distributions of two group pairs with a U test.
+
+        Performs a two-sample Mann-Whitney U test on the flattened similarity
+        values of *pair1* versus *pair2*.
+
+        Parameters
+        ----------
+        groups : pd.Series or np.ndarray
+            Group label for each sample.
+        pair1 : tuple of str
+            First group pair ``(group_a, group_b)``.
+        pair2 : tuple of str
+            Second group pair ``(group_a, group_b)``.
+
+        Returns
+        -------
+        stat : float
+            Mann-Whitney U test statistic.
+        p : float
+            Two-sided p-value.
+        """
         pair1_subset, pair2_subset = self.get_pairs_subset(groups, pair1, pair2)
 
         stat, p = mannwhitneyu(pair1_subset.to_numpy().flatten(),

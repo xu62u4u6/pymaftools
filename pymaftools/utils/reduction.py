@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from sklearn.decomposition import PCA
 from sklearn.cross_decomposition import CCA
 import pandas as pd
