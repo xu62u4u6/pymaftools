@@ -48,7 +48,9 @@ def fetch_msigdb_geneset(geneset_name: str, species: str = "human") -> pd.DataFr
         DataFrame with columns ``source_id``, ``entrez_id``,
         ``gene_symbol``, and ``description``.
     """
-    url = f"https://www.gsea-msigdb.org/gsea/msigdb/{species}/geneset/{geneset_name}.html"
+    url = (
+        f"https://www.gsea-msigdb.org/gsea/msigdb/{species}/geneset/{geneset_name}.html"
+    )
 
     res = requests.get(url, timeout=30)
     soup = BeautifulSoup(res.content, "html.parser")
@@ -64,12 +66,14 @@ def fetch_msigdb_geneset(geneset_name: str, species: str = "human") -> pd.DataFr
             entrez_id = cols[1].text.strip()
             gene_symbol = cols[2].text.strip()
             description = cols[3].text.strip()
-            data.append({
-                "source_id": source_id,
-                "entrez_id": entrez_id,
-                "gene_symbol": gene_symbol,
-                "description": description
-            })
+            data.append(
+                {
+                    "source_id": source_id,
+                    "entrez_id": entrez_id,
+                    "gene_symbol": gene_symbol,
+                    "description": description,
+                }
+            )
 
     df = pd.DataFrame(data)
     return df

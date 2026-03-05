@@ -73,14 +73,20 @@ class FontManager:
         """
         if isinstance(weight, int):
             if weight not in FontManager.WEIGHT_MAP.values():
-                raise ValueError(f"Invalid weight value: {weight}. Must be one of {list(FontManager.WEIGHT_MAP.values())}.")
+                raise ValueError(
+                    f"Invalid weight value: {weight}. Must be one of {list(FontManager.WEIGHT_MAP.values())}."
+                )
             return weight
         if isinstance(weight, str):
             if weight.lower() not in FontManager.WEIGHT_MAP:
-                raise ValueError(f"Invalid weight string: {weight}. Must be one of {list(FontManager.WEIGHT_MAP.keys())}.")
+                raise ValueError(
+                    f"Invalid weight string: {weight}. Must be one of {list(FontManager.WEIGHT_MAP.keys())}."
+                )
             return FontManager.WEIGHT_MAP[weight.lower()]
 
-    def entry_equal_properties(self, entry: fm.FontEntry, font_prop: fm.FontProperties) -> bool:
+    def entry_equal_properties(
+        self, entry: fm.FontEntry, font_prop: fm.FontProperties
+    ) -> bool:
         """
         Check whether a font entry matches the given font properties.
 
@@ -100,9 +106,12 @@ class FontManager:
         target_weight = font_prop.get_weight()
         target_style = font_prop.get_style()
 
-        return (entry.name == target_name and
-                FontManager.normalize_weight(entry.weight) == FontManager.normalize_weight(target_weight) and
-                entry.style == target_style)
+        return (
+            entry.name == target_name
+            and FontManager.normalize_weight(entry.weight)
+            == FontManager.normalize_weight(target_weight)
+            and entry.style == target_style
+        )
 
     def register_local_font(self, font_path: str) -> str:
         """
@@ -129,7 +138,9 @@ class FontManager:
         # Check for existing font with same name, weight, and style
         for entry in fm.fontManager.ttflist:
             if self.entry_equal_properties(entry, font_prop):
-                print(f"Font already registered: {target_name} (weight: {target_weight}, style: {target_style})")
+                print(
+                    f"Font already registered: {target_name} (weight: {target_weight}, style: {target_style})"
+                )
                 return target_name
 
         # If not registered, add it
@@ -158,7 +169,7 @@ class FontManager:
 
         for root, _, files in os.walk(directory):
             for filename in files:
-                if filename.lower().endswith('.ttf'):
+                if filename.lower().endswith(".ttf"):
                     font_path = os.path.join(root, filename)
                     self.register_local_font(font_path)
 
@@ -208,25 +219,31 @@ class FontManager:
                         break
                 else:
                     print("No fallback fonts available. Using default.")
-                    font_family = 'DejaVu Sans'
+                    font_family = "DejaVu Sans"
             else:
-                raise ValueError(f"Font '{font_family}' not found. Please register it or provide fallback_fonts.")
+                raise ValueError(
+                    f"Font '{font_family}' not found. Please register it or provide fallback_fonts."
+                )
 
         # Apply font settings to matplotlib
-        plt.rcParams.update({
-            'font.family': [font_family],
-            'font.weight': font_weight,
-            'font.size': base_size,
-            'axes.titlesize': base_size + 2,
-            'axes.labelsize': base_size,
-            'xtick.labelsize': base_size - 1,
-            'ytick.labelsize': base_size - 1,
-            'legend.fontsize': base_size - 1,
-            'pdf.fonttype': 42,
-            'ps.fonttype': 42,
-            'text.antialiased': True,
-            'axes.unicode_minus': False,
-        })
+        plt.rcParams.update(
+            {
+                "font.family": [font_family],
+                "font.weight": font_weight,
+                "font.size": base_size,
+                "axes.titlesize": base_size + 2,
+                "axes.labelsize": base_size,
+                "xtick.labelsize": base_size - 1,
+                "ytick.labelsize": base_size - 1,
+                "legend.fontsize": base_size - 1,
+                "pdf.fonttype": 42,
+                "ps.fonttype": 42,
+                "text.antialiased": True,
+                "axes.unicode_minus": False,
+            }
+        )
 
-        print(f"Matplotlib font configuration set to: {font_family} (weight: {font_weight})")
+        print(
+            f"Matplotlib font configuration set to: {font_family} (weight: {font_weight})"
+        )
         return font_family

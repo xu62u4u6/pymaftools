@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import pandas as pd
-import pickle
 import copy
 import warnings
-from typing import Any, Self
 
 from .PivotTable import PivotTable
 import sqlite3
 from pathlib import Path
+
 
 class Cohort:
     def __init__(self, name: str, description: str = "") -> None:
@@ -68,7 +67,9 @@ class Cohort:
             return
 
         if not new_metadata.index.equals(self.sample_metadata.index):
-            raise ValueError(f"Sample metadata index from '{source}' does not match existing cohort index.")
+            raise ValueError(
+                f"Sample metadata index from '{source}' does not match existing cohort index."
+            )
 
         shared_cols = set(self.sample_metadata.columns) & set(new_metadata.columns)
         new_cols = set(new_metadata.columns) - set(self.sample_metadata.columns)
@@ -77,14 +78,17 @@ class Cohort:
             cohort_shared = self.sample_metadata[list(shared_cols)]
             incoming_shared = new_metadata[list(shared_cols)]
 
-            equal_mask = (cohort_shared == incoming_shared) | (cohort_shared.isna() & incoming_shared.isna())
+            equal_mask = (cohort_shared == incoming_shared) | (
+                cohort_shared.isna() & incoming_shared.isna()
+            )
             non_equal = equal_mask.columns[~equal_mask.all()]
             if not non_equal.empty:
-                raise ValueError(f"Shared metadata columns have conflicting values from '{source}': {', '.join(non_equal)}")
+                raise ValueError(
+                    f"Shared metadata columns have conflicting values from '{source}': {', '.join(non_equal)}"
+                )
 
         self.sample_metadata = pd.concat(
-            [self.sample_metadata, new_metadata[list(new_cols)]],
-            axis=1
+            [self.sample_metadata, new_metadata[list(new_cols)]], axis=1
         )
 
         for key, table in self.tables.items():
@@ -107,7 +111,9 @@ class Cohort:
             If ``table`` is not an instance of PivotTable.
         """
         if not isinstance(table, PivotTable):
-            raise TypeError(f"Assay data for '{table_name}' must be an instance of PivotTable.")
+            raise TypeError(
+                f"Assay data for '{table_name}' must be an instance of PivotTable."
+            )
 
         if self.sample_IDs is None:
             self.sample_IDs = table.sample_metadata.index
@@ -147,9 +153,7 @@ class Cohort:
         if table_name in self.tables:
             del self.tables[table_name]
 
-    def subset(self,
-        samples: list[str] = []
-        ) -> Cohort:
+    def subset(self, samples: list[str] = []) -> Cohort:
         """
         Create a new Cohort containing only the specified samples.
 
@@ -190,9 +194,13 @@ class Cohort:
         new_instance = Cohort(self.name, self.description)
         new_instance.tables = copy.deepcopy(self.tables) if deep else self.tables.copy()
         new_instance.sample_metadata = (
-            self.sample_metadata.copy(deep=True) if deep and self.sample_metadata is not None else self.sample_metadata
+            self.sample_metadata.copy(deep=True)
+            if deep and self.sample_metadata is not None
+            else self.sample_metadata
         )
-        new_instance.sample_IDs = self.sample_IDs.copy() if self.sample_IDs is not None else None
+        new_instance.sample_IDs = (
+            self.sample_IDs.copy() if self.sample_IDs is not None else None
+        )
         return new_instance
 
     def __getattr__(self, name: str) -> PivotTable:
@@ -217,11 +225,23 @@ class Cohort:
             table = self.tables[table_name]
             n_samples = len(table.columns)
             n_features = len(table.index)
-            n_sample_meta = len(table.sample_metadata.columns) if hasattr(table, 'sample_metadata') and table.sample_metadata is not None else 0
-            n_feature_meta = len(table.feature_metadata.columns) if hasattr(table, 'feature_metadata') and table.feature_metadata is not None else 0
+            n_sample_meta = (
+                len(table.sample_metadata.columns)
+                if hasattr(table, "sample_metadata")
+                and table.sample_metadata is not None
+                else 0
+            )
+            n_feature_meta = (
+                len(table.feature_metadata.columns)
+                if hasattr(table, "feature_metadata")
+                and table.feature_metadata is not None
+                else 0
+            )
 
             prefix = "└──" if i == len(table_names) - 1 else "├──"
-            lines.append(f"{prefix} {table_name}: {n_samples} samples × {n_features} features (sample_meta: {n_sample_meta}, feature_meta: {n_feature_meta})")
+            lines.append(
+                f"{prefix} {table_name}: {n_samples} samples × {n_features} features (sample_meta: {n_sample_meta}, feature_meta: {n_feature_meta})"
+            )
 
         if not table_names:
             lines.append("└── (no tables)")
@@ -249,10 +269,14 @@ class Cohort:
                 "sql_table_name": f"{table_name}{suffix}",
                 "cohort_name": self.name,
                 "table_name": table_name,
-                "type": type_name
+                "type": type_name,
             }
             for table_name in self.tables.keys()
-            for suffix, type_name in [("", "data"), ("__sample_metadata", "sample_metadata"), ("__feature_metadata", "feature_metadata")]
+            for suffix, type_name in [
+                ("", "data"),
+                ("__sample_metadata", "sample_metadata"),
+                ("__feature_metadata", "feature_metadata"),
+            ]
         ]
         return pd.DataFrame(records)
 
@@ -274,7 +298,7 @@ class Cohort:
             "to_sqlite is deprecated and will be removed in a future version. "
             "Use to_hdf5() instead, which supports larger datasets.",
             DeprecationWarning,
-            stacklevel=2
+            stacklevel=2,
         )
         db_path = Path(db_path)
 
@@ -293,9 +317,13 @@ class Cohort:
             if kind == "data":
                 table.to_sql(sql_table_name, conn, if_exists="replace", index=True)
             elif kind == "sample_metadata":
-                table.sample_metadata.to_sql(sql_table_name, conn, if_exists="replace", index=True)
+                table.sample_metadata.to_sql(
+                    sql_table_name, conn, if_exists="replace", index=True
+                )
             elif kind == "feature_metadata":
-                table.feature_metadata.to_sql(sql_table_name, conn, if_exists="replace", index=True)
+                table.feature_metadata.to_sql(
+                    sql_table_name, conn, if_exists="replace", index=True
+                )
 
         registry.to_sql("registry", conn, if_exists="replace", index=False)
         conn.close()
@@ -324,7 +352,7 @@ class Cohort:
             "read_sqlite is deprecated and will be removed in a future version. "
             "Use read_hdf5() instead.",
             DeprecationWarning,
-            stacklevel=2
+            stacklevel=2,
         )
         conn = sqlite3.connect(db_path)
         registry_df = pd.read_sql("SELECT * FROM registry", conn)
@@ -333,9 +361,19 @@ class Cohort:
         cohort = cls(cohort_name)
 
         for table_name in registry_df["table_name"].unique():
-            data = pd.read_sql(f"SELECT * FROM '{table_name}'", conn, index_col="feature")
-            sample_metadata = pd.read_sql(f"SELECT * FROM '{table_name}__sample_metadata'", conn, index_col="sample")
-            feature_metadata = pd.read_sql(f"SELECT * FROM '{table_name}__feature_metadata'", conn, index_col="feature")
+            data = pd.read_sql(
+                f"SELECT * FROM '{table_name}'", conn, index_col="feature"
+            )
+            sample_metadata = pd.read_sql(
+                f"SELECT * FROM '{table_name}__sample_metadata'",
+                conn,
+                index_col="sample",
+            )
+            feature_metadata = pd.read_sql(
+                f"SELECT * FROM '{table_name}__feature_metadata'",
+                conn,
+                index_col="feature",
+            )
 
             pivot = PivotTable(data)
             pivot.sample_metadata = sample_metadata
@@ -364,21 +402,20 @@ class Cohort:
         if h5_path.exists():
             h5_path.unlink()
 
-        with pd.HDFStore(str(h5_path), mode='w') as store:
-            cohort_meta = pd.DataFrame({
-                'name': [self.name],
-                'description': [self.description]
-            })
-            store.put('cohort_metadata', cohort_meta)
+        with pd.HDFStore(str(h5_path), mode="w") as store:
+            cohort_meta = pd.DataFrame(
+                {"name": [self.name], "description": [self.description]}
+            )
+            store.put("cohort_metadata", cohort_meta)
 
-            table_names = pd.DataFrame({'table_name': list(self.tables.keys())})
-            store.put('table_registry', table_names)
+            table_names = pd.DataFrame({"table_name": list(self.tables.keys())})
+            store.put("table_registry", table_names)
 
             for table_name, table in self.tables.items():
                 table_copy = table.copy().rename_index_and_columns()
-                store.put(f'{table_name}/data', table_copy.T)
-                store.put(f'{table_name}/sample_metadata', table_copy.sample_metadata)
-                store.put(f'{table_name}/feature_metadata', table_copy.feature_metadata)
+                store.put(f"{table_name}/data", table_copy.T)
+                store.put(f"{table_name}/sample_metadata", table_copy.sample_metadata)
+                store.put(f"{table_name}/feature_metadata", table_copy.feature_metadata)
 
         print(f"[Cohort] saved to {h5_path}")
 
@@ -397,19 +434,19 @@ class Cohort:
         Cohort
             Loaded Cohort object.
         """
-        with pd.HDFStore(str(h5_path), mode='r') as store:
-            cohort_meta = store.get('cohort_metadata')
+        with pd.HDFStore(str(h5_path), mode="r") as store:
+            cohort_meta = store.get("cohort_metadata")
             cohort = cls(
-                name=cohort_meta['name'].iloc[0],
-                description=cohort_meta['description'].iloc[0]
+                name=cohort_meta["name"].iloc[0],
+                description=cohort_meta["description"].iloc[0],
             )
 
-            table_registry = store.get('table_registry')
+            table_registry = store.get("table_registry")
 
-            for table_name in table_registry['table_name']:
-                data = store.get(f'{table_name}/data').T
-                sample_metadata = store.get(f'{table_name}/sample_metadata')
-                feature_metadata = store.get(f'{table_name}/feature_metadata')
+            for table_name in table_registry["table_name"]:
+                data = store.get(f"{table_name}/data").T
+                sample_metadata = store.get(f"{table_name}/sample_metadata")
+                feature_metadata = store.get(f"{table_name}/feature_metadata")
 
                 pivot = PivotTable(data)
                 pivot.sample_metadata = sample_metadata
@@ -419,6 +456,7 @@ class Cohort:
 
         print(f"[Cohort] loaded from {h5_path}")
         return cohort
+
 
 # cohort = Cohort(name="ASC")
 # cohort.add_table(cnv_table, "CNV")

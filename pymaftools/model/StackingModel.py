@@ -5,14 +5,17 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 from sklearn.metrics import (
-    accuracy_score, precision_score, recall_score, f1_score,
-    roc_auc_score, confusion_matrix,
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score,
+    roc_auc_score,
+    confusion_matrix,
 )
 from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import RandomForestClassifier, StackingClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 
 from ..core.PivotTable import PivotTable
@@ -152,7 +155,9 @@ class OmicsStackingModel:
         """
         base = self.model.named_estimators_[omics_key]
         rf = base.named_steps["model"]
-        return pd.Series(rf.feature_importances_, index=self.omics_dict[omics_key].index)
+        return pd.Series(
+            rf.feature_importances_, index=self.omics_dict[omics_key].index
+        )
 
     def get_omics_weights(self) -> pd.DataFrame:
         """

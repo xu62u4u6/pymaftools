@@ -53,6 +53,16 @@ dev = [
 Homepage = "https://github.com/xu62u4u6/pymaftools"
 Documentation = "https://dionic.xyz/pymaftools/"
 
+[tool.ruff]
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+ignore = ["E501"]  # line length handled by formatter
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]  # re-exports
+
 [tool.setuptools.packages.find]
 where = ["."] 
 include = ["pymaftools*"]

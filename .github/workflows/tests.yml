@@ -7,6 +7,17 @@ on:
     branches: [ main, develop ]
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install ruff
+      run: pip install ruff
+    - name: Ruff check
+      run: ruff check pymaftools/
+    - name: Ruff format check
+      run: ruff format --check pymaftools/
+
   test:
     runs-on: ubuntu-latest
     strategy:

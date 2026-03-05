@@ -44,7 +44,7 @@ from .model.modelUtils import (
     to_importance_table,
     plot_top_feature_importance_heatmap,
     run_rfecv_feature_selection,
-    run_model_evaluation
+    run_model_evaluation,
 )
 
 # utils

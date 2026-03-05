@@ -26,7 +26,7 @@ class MethodsPlot(BasePlot):
         width: float,
         depth: float,
         height: float,
-        color: str = 'skyblue',
+        color: str = "skyblue",
         alpha: float = 0.8,
     ) -> None:
         """
@@ -50,19 +50,27 @@ class MethodsPlot(BasePlot):
             Transparency level. Default is ``0.8``.
         """
         x, y, z = origin
-        vertices = np.array([
-            [x, y, z], [x+width, y, z], [x+width, y+depth, z], [x, y+depth, z],
-            [x, y, z+height], [x+width, y, z+height], [x+width, y+depth, z+height], [x, y+depth, z+height]
-        ])
+        vertices = np.array(
+            [
+                [x, y, z],
+                [x + width, y, z],
+                [x + width, y + depth, z],
+                [x, y + depth, z],
+                [x, y, z + height],
+                [x + width, y, z + height],
+                [x + width, y + depth, z + height],
+                [x, y + depth, z + height],
+            ]
+        )
         faces = [
-            [vertices[i] for i in [0,1,2,3]],  # bottom
-            [vertices[i] for i in [4,5,6,7]],  # top
-            [vertices[i] for i in [0,1,5,4]],  # front
-            [vertices[i] for i in [2,3,7,6]],  # back
-            [vertices[i] for i in [1,2,6,5]],  # right
-            [vertices[i] for i in [0,3,7,4]],  # left
+            [vertices[i] for i in [0, 1, 2, 3]],  # bottom
+            [vertices[i] for i in [4, 5, 6, 7]],  # top
+            [vertices[i] for i in [0, 1, 5, 4]],  # front
+            [vertices[i] for i in [2, 3, 7, 6]],  # back
+            [vertices[i] for i in [1, 2, 6, 5]],  # right
+            [vertices[i] for i in [0, 3, 7, 4]],  # left
         ]
-        cube = Poly3DCollection(faces, alpha=alpha, facecolor=color, edgecolor='black')
+        cube = Poly3DCollection(faces, alpha=alpha, facecolor=color, edgecolor="black")
         ax.add_collection3d(cube)
 
     def plot_cohort_demo(
@@ -85,7 +93,7 @@ class MethodsPlot(BasePlot):
         """
         # Set up the 3D plot
         self.fig = plt.figure(figsize=(12, 8))
-        self.ax = self.fig.add_subplot(111, projection='3d')
+        self.ax = self.fig.add_subplot(111, projection="3d")
 
         # Parameters
         width = 1
@@ -98,9 +106,25 @@ class MethodsPlot(BasePlot):
         for i, (h, c) in enumerate(zip(heights, colors)):
             x0 = i * (width + 0.5)
             # primary cube
-            MethodsPlot.draw_cube(self.ax, origin=(x0, 0, 0), width=width, depth=depth, height=h, color=c, alpha=0.7)
+            MethodsPlot.draw_cube(
+                self.ax,
+                origin=(x0, 0, 0),
+                width=width,
+                depth=depth,
+                height=h,
+                color=c,
+                alpha=0.7,
+            )
             # side cube: offset along y-axis
-            MethodsPlot.draw_cube(self.ax, origin=(x0, offset_y, 0), width=width, depth=depth/3, height=h, color=c, alpha=0.7)
+            MethodsPlot.draw_cube(
+                self.ax,
+                origin=(x0, offset_y, 0),
+                width=width,
+                depth=depth / 3,
+                height=h,
+                color=c,
+                alpha=0.7,
+            )
 
         self.ax.set_xticks([])
         self.ax.set_yticks([])
@@ -122,6 +146,6 @@ class MethodsPlot(BasePlot):
 
         self.fig.subplots_adjust(left=0.1, right=0.95, top=0.95, bottom=0.05)
         if save_path:
-            self.save(save_path, dpi=dpi, bbox_inches='tight')
+            self.save(save_path, dpi=dpi, bbox_inches="tight")
 
         plt.show()

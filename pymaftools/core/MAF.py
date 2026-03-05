@@ -4,8 +4,6 @@ import os
 import warnings
 from typing import Any
 
-import numpy as np
-import networkx as nx
 import pandas as pd
 
 from .PivotTable import PivotTable
@@ -34,37 +32,43 @@ class MAF(pd.DataFrame):
         "End_Position",
         "Reference_Allele",
         "Tumor_Seq_Allele1",
-        "Tumor_Seq_Allele2"
+        "Tumor_Seq_Allele2",
     ]
 
     # GDC MAF file fields:
     # https://docs.gdc.cancer.gov/Encyclopedia/pages/Mutation_Annotation_Format_TCGAv2/
 
     vaild_variant_classfication = [
-            "Frame_Shift_Del",
-            "Frame_Shift_Ins",
-            "In_Frame_Del",
-            "In_Frame_Ins",
-            "Missense_Mutation",
-            "Nonsense_Mutation",
-            "Silent",
-            "Splice_Site",
-            "Translation_Start_Site",
-            "Nonstop_Mutation",
-            "3'UTR",
-            "3'Flank",
-            "5'UTR",
-            "5'Flank",
-            "IGR",
-            "Intron",
-            "RNA",
-            "Targeted_Region"
-        ]
+        "Frame_Shift_Del",
+        "Frame_Shift_Ins",
+        "In_Frame_Del",
+        "In_Frame_Ins",
+        "Missense_Mutation",
+        "Nonsense_Mutation",
+        "Silent",
+        "Splice_Site",
+        "Translation_Start_Site",
+        "Nonstop_Mutation",
+        "3'UTR",
+        "3'Flank",
+        "5'UTR",
+        "5'Flank",
+        "IGR",
+        "Intron",
+        "RNA",
+        "Targeted_Region",
+    ]
 
     nonsynonymous_types = [
-        "Frame_Shift_Del", "Frame_Shift_Ins", "In_Frame_Del", "In_Frame_Ins",
-        "Missense_Mutation", "Nonsense_Mutation", "Splice_Site",
-        "Translation_Start_Site", "Nonstop_Mutation"
+        "Frame_Shift_Del",
+        "Frame_Shift_Ins",
+        "In_Frame_Del",
+        "In_Frame_Ins",
+        "Missense_Mutation",
+        "Nonsense_Mutation",
+        "Splice_Site",
+        "Translation_Start_Site",
+        "Nonstop_Mutation",
     ]
 
     @classmethod
@@ -96,7 +100,9 @@ class MAF(pd.DataFrame):
         """
         maf = cls(pd.read_csv(maf_path, skiprows=1, sep="\t"))
         maf["sample_ID"] = f"{preffix}{sample_ID}{suffix}"
-        maf.index = maf.loc[:, cls.index_col].apply(lambda row: "|".join(row.astype(str)), axis=1) # concat column
+        maf.index = maf.loc[:, cls.index_col].apply(
+            lambda row: "|".join(row.astype(str)), axis=1
+        )  # concat column
         # maf = maf.filter_maf(cls.vaild_variant_classfication)
         return cls(maf)
 
@@ -163,11 +169,11 @@ class MAF(pd.DataFrame):
             ``False`` if no mutation, a single classification string, or
             ``"Multi_Hit"`` when multiple mutations are present.
         """
-        if (column == False).all() :
+        if (column == False).all():  # noqa: E712
             return False
         # If a gene has ≥2 mutations in a sample, mark as 'Multi_Hit' (even if types are the same).
         # Behavior aligned with maftools fix for issue #347: https://github.com/PoisonAlien/maftools/issues/347
-        non_false_mutations = column[column != False]
+        non_false_mutations = column[column != False]  # noqa: E712
         if len(non_false_mutations) > 1:
             return "Multi_Hit"
         elif len(non_false_mutations) == 1:
@@ -183,15 +189,15 @@ class MAF(pd.DataFrame):
             Pivot table with genes as rows, samples as columns, and variant
             classifications (or ``"Multi_Hit"`` / ``False``) as values.
         """
-        pivot_table =  self.pivot_table(
-                            values="Variant_Classification",
-                            index="Hugo_Symbol",
-                            columns="sample_ID",
-                            aggfunc=MAF.merge_mutations
-                            ).fillna(False)
+        pivot_table = self.pivot_table(
+            values="Variant_Classification",
+            index="Hugo_Symbol",
+            columns="sample_ID",
+            aggfunc=MAF.merge_mutations,
+        ).fillna(False)
         pivot_table = PivotTable(pivot_table)
         pivot_table.sample_metadata["mutations_count"] = self.mutations_count
-        #pivot_table.sample_metadata["TMB"] = self.mutations_count / 40
+        # pivot_table.sample_metadata["TMB"] = self.mutations_count / 40
         return pivot_table
 
     def to_mutation_table(self) -> PivotTable:
@@ -206,10 +212,12 @@ class MAF(pd.DataFrame):
         PivotTable
             Pivot table indexed by individual mutations.
         """
-        mutation_table = self.pivot_table(index=self.index,
-                                columns="sample_ID",
-                                values="Variant_Classification",
-                                aggfunc="first").fillna(False)
+        mutation_table = self.pivot_table(
+            index=self.index,
+            columns="sample_ID",
+            values="Variant_Classification",
+            aggfunc="first",
+        ).fillna(False)
         mutation_table = PivotTable(mutation_table)
         mutation_table.sample_metadata["mutations_count"] = self.mutations_count
         return mutation_table
@@ -232,7 +240,9 @@ class MAF(pd.DataFrame):
         maf = self.copy()
         if index_col is None:
             index_col = self.index_col
-        new_index_col = maf.loc[:, index_col].apply(lambda row: "|".join(row.astype(str)), axis=1)
+        new_index_col = maf.loc[:, index_col].apply(
+            lambda row: "|".join(row.astype(str)), axis=1
+        )
         maf.index = new_index_col
         return maf
 
@@ -257,7 +267,7 @@ class MAF(pd.DataFrame):
         MAF
             MAF sorted by Chromosome, Start_Position, and End_Position.
         """
-        return self.sort_values(by=['Chromosome', 'Start_Position', 'End_Position'])
+        return self.sort_values(by=["Chromosome", "Start_Position", "End_Position"])
 
     @staticmethod
     def merge_mafs(mafs: list[MAF]) -> MAF:
@@ -324,7 +334,7 @@ class MAF(pd.DataFrame):
         """
         # Set default arguments
         kwargs.setdefault("index", True)  # Ensure index is saved by default
-        kwargs.setdefault("sep", "\t")   # Default to tab-separated values
+        kwargs.setdefault("sep", "\t")  # Default to tab-separated values
 
         # Call the parent class's to_csv method
         super().to_csv(csv_path, **kwargs)
@@ -343,7 +353,7 @@ class MAF(pd.DataFrame):
         """
         # Set default arguments
         kwargs.setdefault("index", False)  # Ensure index is saved by default
-        kwargs.setdefault("sep", "\t")   # Default to tab-separated values
+        kwargs.setdefault("sep", "\t")  # Default to tab-separated values
 
         # Call the parent class's to_csv method
         super().to_csv(maf_path, **kwargs)
@@ -362,19 +372,30 @@ class MAF(pd.DataFrame):
             Pivot table of base-change counts with ti/tv metadata.
         """
         maf = self.copy()
-        base_change = maf.loc[maf.Variant_Type == "SNP", ["Reference_Allele", "Tumor_Seq_Allele2", "sample_ID"]]
-        base_change["Base_Change"] = base_change["Reference_Allele"] + "→" + base_change["Tumor_Seq_Allele2"]
+        base_change = maf.loc[
+            maf.Variant_Type == "SNP",
+            ["Reference_Allele", "Tumor_Seq_Allele2", "sample_ID"],
+        ]
+        base_change["Base_Change"] = (
+            base_change["Reference_Allele"] + "→" + base_change["Tumor_Seq_Allele2"]
+        )
         pivot_table = base_change.pivot_table(
             values="Reference_Allele",
             index="sample_ID",
             columns="Base_Change",
             aggfunc="count",
-            fill_value=0
+            fill_value=0,
         )
         pivot_table = PivotTable(pivot_table.T)
-        pivot_table.sample_metadata["ti"] = pivot_table.loc[['A→G', 'C→T', 'G→A', 'T→C']].sum()
-        pivot_table.sample_metadata["tv"] = pivot_table.loc[['A→C', 'A→T', 'C→A', 'C→G', 'G→C', 'G→T', 'T→A', 'T→G']].sum()
-        pivot_table.sample_metadata["ti/tv"] = pivot_table.sample_metadata.ti / pivot_table.sample_metadata.tv
+        pivot_table.sample_metadata["ti"] = pivot_table.loc[
+            ["A→G", "C→T", "G→A", "T→C"]
+        ].sum()
+        pivot_table.sample_metadata["tv"] = pivot_table.loc[
+            ["A→C", "A→T", "C→A", "C→G", "G→C", "G→T", "T→A", "T→G"]
+        ].sum()
+        pivot_table.sample_metadata["ti/tv"] = (
+            pivot_table.sample_metadata.ti / pivot_table.sample_metadata.tv
+        )
         return pivot_table
 
     def get_protein_info(self, gene: str) -> tuple[int | None, list[dict]]:
@@ -395,12 +416,13 @@ class MAF(pd.DataFrame):
             List of dicts with keys ``"position"``, ``"type"``, and
             ``"count"`` describing nonsynonymous mutations.
         """
+
         def extract_protein_start(pos):
             if pd.isna(pos):
                 return None
-            pos = str(pos).split('/')[0]
-            if '-' in pos:
-                return int(pos.split('-')[0])
+            pos = str(pos).split("/")[0]
+            if "-" in pos:
+                return int(pos.split("-")[0])
             try:
                 return int(pos)
             except (ValueError, TypeError):
@@ -409,27 +431,30 @@ class MAF(pd.DataFrame):
         maf = self.filter_maf(self.nonsynonymous_types)
         sub_df = maf.loc[
             maf["Hugo_Symbol"] == gene,
-            ['Protein_position', 'Variant_Classification', 'Variant_Type']
+            ["Protein_position", "Variant_Classification", "Variant_Type"],
         ].copy()
 
         # add amino acid position
-        sub_df['AA_Position'] = sub_df['Protein_position'].apply(extract_protein_start)
+        sub_df["AA_Position"] = sub_df["Protein_position"].apply(extract_protein_start)
 
         # get total AA length（858/1210 → 1210）
         try:
-            AA_length = int(sub_df["Protein_position"].dropna().values[0].split('/')[-1])
+            AA_length = int(
+                sub_df["Protein_position"].dropna().values[0].split("/")[-1]
+            )
         except (ValueError, TypeError, IndexError):
             AA_length = None
 
         # count mutations and to dict
         mutations_data = (
-            sub_df
-            .dropna(subset=['AA_Position', 'Variant_Classification'])
-            .groupby(['AA_Position', 'Variant_Classification'])
+            sub_df.dropna(subset=["AA_Position", "Variant_Classification"])
+            .groupby(["AA_Position", "Variant_Classification"])
             .size()
-            .reset_index(name='count')
-            .rename(columns={'AA_Position': 'position', 'Variant_Classification': 'type'})
-            .to_dict(orient='records')
+            .reset_index(name="count")
+            .rename(
+                columns={"AA_Position": "position", "Variant_Classification": "type"}
+            )
+            .to_dict(orient="records")
         )
 
         return AA_length, mutations_data
@@ -468,15 +493,21 @@ class MAF(pd.DataFrame):
         if protein_domains_path is None:
             script_dir = os.path.dirname(os.path.abspath(__file__))
             # get domain info from https://github.com/PoisonAlien/maftools/blob/master/inst/extdata/protein_domains.RDs
-            protein_domains_path = os.path.join(script_dir, "../data/protein_domains.csv")
+            protein_domains_path = os.path.join(
+                script_dir, "../data/protein_domains.csv"
+            )
 
-        protein_domains =  pd.read_csv(protein_domains_path, index_col=0, low_memory=False)
+        protein_domains = pd.read_csv(
+            protein_domains_path, index_col=0, low_memory=False
+        )
         subset = protein_domains.loc[
-            (protein_domains.HGNC == gene_name) &
-            (protein_domains["aa.length"] == AA_length)
+            (protein_domains.HGNC == gene_name)
+            & (protein_domains["aa.length"] == AA_length)
         ]
         if subset.empty:
-            raise ValueError(f"No domain info found for {gene_name} with length {AA_length}")
+            raise ValueError(
+                f"No domain info found for {gene_name} with length {AA_length}"
+            )
 
         refseq_ids = subset["refseq.ID"].unique()
         if len(refseq_ids) != 1:
@@ -485,8 +516,9 @@ class MAF(pd.DataFrame):
                 f"Selecting the first one: {refseq_ids[0]}"
             )
             subset = subset[subset["refseq.ID"] == refseq_ids[0]]
-        return subset[['Start', 'End', 'Label']].to_dict(orient='records'), refseq_ids[0]
-
+        return subset[["Start", "End", "Label"]].to_dict(orient="records"), refseq_ids[
+            0
+        ]
 
     def write_maf(self, file_path: str | os.PathLike) -> None:
         """
@@ -499,7 +531,9 @@ class MAF(pd.DataFrame):
         """
         self.to_csv(file_path, sep="\t", index=False)
 
-    def write_SigProfilerMatrixGenerator_format(self, output_path: str | os.PathLike) -> None:
+    def write_SigProfilerMatrixGenerator_format(
+        self, output_path: str | os.PathLike
+    ) -> None:
         """
         Convert and write the MAF in SigProfilerMatrixGenerator format.
 
@@ -518,7 +552,7 @@ class MAF(pd.DataFrame):
             "pos_end": "End_Position",
             "ref": "Reference_Allele",
             "alt": "Tumor_Seq_Allele2",
-            "mut_type": "Variant_Type"
+            "mut_type": "Variant_Type",
         }
         maf = self.copy().rename(columns=rename_dict)
 

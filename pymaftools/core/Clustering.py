@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import json
-import os
 import pandas as pd
 import numpy as np
 import seaborn as sns
@@ -9,7 +7,12 @@ import matplotlib.pyplot as plt
 from sklearn.model_selection import KFold, StratifiedKFold
 from sklearn.cluster import AgglomerativeClustering
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import silhouette_score, confusion_matrix, adjusted_rand_score, classification_report
+from sklearn.metrics import (
+    silhouette_score,
+    confusion_matrix,
+    adjusted_rand_score,
+    classification_report,
+)
 from scipy.optimize import linear_sum_assignment
 from tqdm import tqdm
 from typing import Literal
@@ -35,12 +38,15 @@ def table_to_distance(table: PivotTable) -> np.ndarray:
     distance = 1 - similarity.values
     return distance
 
-def k_fold_clustering_evaluation(table: PivotTable,
-                                 min_clusters: int = 2,
-                                 max_clusters: int = 50,
-                                 metric: Literal['cosine', 'hamming', 'jaccard'] = "cosine",
-                                 random_state: int = 42,
-                                 group_col: str = "subtype") -> tuple[pd.DataFrame, dict[int, dict[int, np.ndarray]]]:
+
+def k_fold_clustering_evaluation(
+    table: PivotTable,
+    min_clusters: int = 2,
+    max_clusters: int = 50,
+    metric: Literal["cosine", "hamming", "jaccard"] = "cosine",
+    random_state: int = 42,
+    group_col: str = "subtype",
+) -> tuple[pd.DataFrame, dict[int, dict[int, np.ndarray]]]:
     """
     Evaluate the optimal number of clusters using K-fold cross-validation.
 
@@ -72,7 +78,8 @@ def k_fold_clustering_evaluation(table: PivotTable,
         raise ValueError("Input table must be a PivotTable instance.")
     if min_clusters < 2 or max_clusters < min_clusters:
         raise ValueError(
-            "min_clusters must be at least 2 and max_clusters must be greater than or equal to min_clusters.")
+            "min_clusters must be at least 2 and max_clusters must be greater than or equal to min_clusters."
+        )
     all_results = []
     cluster_label_dict = {}
     # only use (k-1)/k train part for clustering
@@ -82,7 +89,7 @@ def k_fold_clustering_evaluation(table: PivotTable,
         sample_train = table.sample_metadata.iloc[train_idx].index
         table_train = table.subset(samples=sample_train)
         similarity_matrix = table_train.T.compute_similarity(method=metric)
-        distance_matrix_train = 1 - similarity_matrix # dist = 1 - similarity
+        distance_matrix_train = 1 - similarity_matrix  # dist = 1 - similarity
         # fill diagonal to 0
         for i in range(len(distance_matrix_train)):
             distance_matrix_train.iloc[i, i] = 0.0
@@ -90,26 +97,25 @@ def k_fold_clustering_evaluation(table: PivotTable,
         # test different number of clusters
         for k in tqdm(range(min_clusters, max_clusters + 1), desc=f"Fold {fold + 1}"):
             model = AgglomerativeClustering(
-                n_clusters=k,
-                metric='precomputed',
-                linkage='average'
+                n_clusters=k, metric="precomputed", linkage="average"
             )
             labels = model.fit_predict(distance_matrix_train)
             if k not in cluster_label_dict:
                 cluster_label_dict[k] = {}
-            cluster_label_dict[k][fold+1] = labels
+            cluster_label_dict[k][fold + 1] = labels
 
             score = silhouette_score(table_train, labels, metric=metric)
 
-            all_results.append({
-                'fold': fold + 1,
-                'n_clusters': k,
-                'silhouette_score': score
-            })
+            all_results.append(
+                {"fold": fold + 1, "n_clusters": k, "silhouette_score": score}
+            )
 
     return pd.DataFrame(all_results), cluster_label_dict
 
-def align_clusters(ref_labels: np.ndarray, target_labels: np.ndarray, n_clusters: int) -> np.ndarray:
+
+def align_clusters(
+    ref_labels: np.ndarray, target_labels: np.ndarray, n_clusters: int
+) -> np.ndarray:
     """
     Align target cluster labels to reference labels using the Hungarian algorithm.
 
@@ -135,7 +141,9 @@ def align_clusters(ref_labels: np.ndarray, target_labels: np.ndarray, n_clusters
     return aligned
 
 
-def align_cluster_label_dict(cluster_label_dict: dict[int, dict[int, np.ndarray]]) -> dict[int, pd.DataFrame]:
+def align_cluster_label_dict(
+    cluster_label_dict: dict[int, dict[int, np.ndarray]],
+) -> dict[int, pd.DataFrame]:
     """
     Align cluster labels across folds using fold 1 as the reference.
 
@@ -162,7 +170,8 @@ def align_cluster_label_dict(cluster_label_dict: dict[int, dict[int, np.ndarray]
                 aligned_df[col] = fold_df[col]
             else:
                 aligned_df[col] = align_clusters(
-                    ref_labels, fold_df[col].values, n_clusters=int(k))
+                    ref_labels, fold_df[col].values, n_clusters=int(k)
+                )
 
         aligned_fold_df_dict[k] = aligned_df
 
@@ -193,7 +202,9 @@ def convert_ndarray_to_list(obj: object) -> object:
         return obj
 
 
-def calculate_ari_matrix(aligned_cluster_label_dict: dict[int, pd.DataFrame], k: int) -> pd.DataFrame:
+def calculate_ari_matrix(
+    aligned_cluster_label_dict: dict[int, pd.DataFrame], k: int
+) -> pd.DataFrame:
     """
     Compute the pairwise Adjusted Rand Index (ARI) matrix across folds.
 
@@ -216,13 +227,14 @@ def calculate_ari_matrix(aligned_cluster_label_dict: dict[int, pd.DataFrame], k:
 
     for i in range(n):
         for j in range(n):
-            ari_matrix.iloc[i, j] = adjusted_rand_score(
-                df.iloc[:, i], df.iloc[:, j])
+            ari_matrix.iloc[i, j] = adjusted_rand_score(df.iloc[:, i], df.iloc[:, j])
 
     return ari_matrix
 
 
-def plot_ari_matrix(aligned_cluster_label_dict: dict[int, pd.DataFrame], k: int) -> None:
+def plot_ari_matrix(
+    aligned_cluster_label_dict: dict[int, pd.DataFrame], k: int
+) -> None:
     """
     Plot the upper-triangle ARI heatmap for a given cluster count k.
 
@@ -246,7 +258,8 @@ def plot_ari_matrix(aligned_cluster_label_dict: dict[int, pd.DataFrame], k: int)
     plt.figure(figsize=(6, 5))
     sns.heatmap(ari_matrix, mask=mask, annot=True, fmt=".2f", cmap="coolwarm")
     plt.title(
-        f"Cluster {k} ARI between {n} folds, mean={mean_off_diagonal_ari(ari_matrix):.2f}")
+        f"Cluster {k} ARI between {n} folds, mean={mean_off_diagonal_ari(ari_matrix):.2f}"
+    )
     plt.show()
 
 
@@ -291,9 +304,9 @@ def run_random_forest_cv(
     all_importances = []
 
     for i, (train_idx, test_idx) in enumerate(cv.split(X, y)):
-        model = RandomForestClassifier(random_state=random_state,
-
-                                       n_estimators=n_estimators)
+        model = RandomForestClassifier(
+            random_state=random_state, n_estimators=n_estimators
+        )
         model.fit(X[train_idx], y[train_idx])
         y_pred = model.predict(X[test_idx])
         y_true = y[test_idx]
@@ -302,14 +315,17 @@ def run_random_forest_cv(
         cv_scores.append(acc)
         all_importances.append(model.feature_importances_)
 
-        print(f"\n[Fold {i+1}] Overall Accuracy: {acc:.4f}")
+        print(f"\n[Fold {i + 1}] Overall Accuracy: {acc:.4f}")
         print(classification_report(y_true, y_pred, digits=4))
 
-    importance_df = pd.DataFrame(all_importances,
-                                 columns=feature_names,
-                                 index=[f"importance_{i+1}" for i in range(n_splits)]).T
+    importance_df = pd.DataFrame(
+        all_importances,
+        columns=feature_names,
+        index=[f"importance_{i + 1}" for i in range(n_splits)],
+    ).T
     importance_df["mean_importance"] = importance_df.mean(axis=1)
     return model, cv_scores, importance_df
+
 
 def run_random_forest_multiple_seeds(
     X: np.ndarray,
@@ -351,9 +367,9 @@ def run_random_forest_multiple_seeds(
         all_importances.append(model.feature_importances_)
         print(f"[Seed {seed}] Training done.")
 
-    importance_df = pd.DataFrame(all_importances,
-                                 columns=feature_names,
-                                 index=[f"importance_{s}" for s in seeds]).T
+    importance_df = pd.DataFrame(
+        all_importances, columns=feature_names, index=[f"importance_{s}" for s in seeds]
+    ).T
     importance_df["mean_importance"] = importance_df.mean(axis=1)
 
     return models, importance_df
@@ -378,10 +394,14 @@ def plot_cluster_feature_importance_boxplot(
     top_n : int, optional
         Number of top clusters to display, by default 20.
     """
-    top_data = table.sort_values(by="mean_importance", ascending=False).head(top_n).copy()
+    top_data = (
+        table.sort_values(by="mean_importance", ascending=False).head(top_n).copy()
+    )
     positions = np.arange(top_n)
 
-    box_values = [top_data.iloc[i][importance_cols].values.tolist() for i in range(top_n)]
+    box_values = [
+        top_data.iloc[i][importance_cols].values.tolist() for i in range(top_n)
+    ]
     bar_values = top_data["mean_importance"].values.tolist()
 
     plt.figure(figsize=(14, 7))
@@ -391,26 +411,29 @@ def plot_cluster_feature_importance_boxplot(
         positions=positions,
         widths=0.6,
         patch_artist=True,
-        boxprops=dict(facecolor='none', color='gray'),
-        medianprops=dict(color='red'),
-        whiskerprops=dict(color='gray'),
-        capprops=dict(color='gray'),
-        flierprops=dict(marker='o', color='gray', alpha=0.3)
+        boxprops=dict(facecolor="none", color="gray"),
+        medianprops=dict(color="red"),
+        whiskerprops=dict(color="gray"),
+        capprops=dict(color="gray"),
+        flierprops=dict(marker="o", color="gray", alpha=0.3),
     )
 
-    plt.bar(positions, bar_values, width=0.6, color='skyblue', label='Mean Importance')
+    plt.bar(positions, bar_values, width=0.6, color="skyblue", label="Mean Importance")
 
     xlabels = [
         f"\n\nC{i}\n arm: {top_data.loc[i, 'unique_chr_arm']}\n n={top_data.loc[i, 'gene_count']}"
         for i in top_data.index
     ]
-    plt.xticks(positions, xlabels, rotation=45, ha='right')
+    plt.xticks(positions, xlabels, rotation=45, ha="right")
 
     plt.ylabel("Feature Importance")
-    plt.title("Top Cluster Feature Importances\n(Bar = Mean, Box = 5-Fold Distribution)")
+    plt.title(
+        "Top Cluster Feature Importances\n(Bar = Mean, Box = 5-Fold Distribution)"
+    )
     plt.legend()
     plt.tight_layout()
     plt.show()
+
 
 def plot_cluster_feature_importance(
     table: pd.DataFrame,
@@ -434,28 +457,41 @@ def plot_cluster_feature_importance(
     top_data = table.nlargest(top_n, "mean_importance").copy()
     top_data["Cluster"] = [f"C{i}" for i in top_data.index]
 
-    long_df = top_data[["Cluster", "unique_chr_arm", "gene_count"] + importance_cols].melt(
+    long_df = top_data[
+        ["Cluster", "unique_chr_arm", "gene_count"] + importance_cols
+    ].melt(
         id_vars=["Cluster", "unique_chr_arm", "gene_count"],
         value_vars=importance_cols,
         var_name="Fold",
-        value_name="Importance"
+        value_name="Importance",
     )
 
     plt.figure(figsize=(14, 7))
 
-    sns.barplot(data=top_data, x="Cluster", y="mean_importance", color="skyblue", zorder=0)
-    sns.stripplot(data=long_df, x="Cluster", y="Importance", color="gray", alpha=0.6, jitter=0.1, zorder=1)
+    sns.barplot(
+        data=top_data, x="Cluster", y="mean_importance", color="skyblue", zorder=0
+    )
+    sns.stripplot(
+        data=long_df,
+        x="Cluster",
+        y="Importance",
+        color="gray",
+        alpha=0.6,
+        jitter=0.1,
+        zorder=1,
+    )
 
     new_labels = [
         f"\n\n{row['Cluster']}\narm: {row['unique_chr_arm']}\nn={row['gene_count']}"
         for _, row in top_data.iterrows()
     ]
-    plt.xticks(ticks=np.arange(top_n), labels=new_labels, rotation=45, ha='right')
+    plt.xticks(ticks=np.arange(top_n), labels=new_labels, rotation=45, ha="right")
 
     plt.ylabel("Feature Importance")
     plt.title("Top Cluster Feature Importances\n(Dots = 5-Fold, Bar = Mean)")
     plt.tight_layout()
     plt.show()
+
 
 def run_feature_clustering(
     table: PivotTable,
@@ -479,37 +515,39 @@ def run_feature_clustering(
     pd.DataFrame
         DataFrame with columns ``n_clusters`` and ``silhouette`` for each k.
     """
-    metric = 'cosine'
+    metric = "cosine"
     similarity = table.T.compute_similarity(method=metric)
     distance = 1 - similarity
     distance_matrix = distance.values
     X = table.values
 
     results = []
-    for k in tqdm(range(2, max_clusters+1)):
+    for k in tqdm(range(2, max_clusters + 1)):
         print(f"Clustering with {k} clusters")
-        model = AgglomerativeClustering(n_clusters=k,
-                                        metric='precomputed',
-                                        linkage='average')
+        model = AgglomerativeClustering(
+            n_clusters=k, metric="precomputed", linkage="average"
+        )
         labels = model.fit_predict(distance_matrix)
         score = silhouette_score(X, labels, metric=metric)
-        results.append({'n_clusters': k, 'silhouette': score})
+        results.append({"n_clusters": k, "silhouette": score})
         print(f"score: {score}")
 
     results_df = pd.DataFrame(results)
     results_df.to_csv(result_path, index=False)
     return results_df
 
+
 def plot_clustering_metrics_and_find_best_k(
-        metric_df: pd.DataFrame,
-        filename: str,
-        title: str | None = None,
-        target_col: str = "mean_silhouette",
-        dpi: int = 300,
-        bbox_inches: str = 'tight',
-        transparent: bool = True,
-        format: str | None = None,
-        **kwargs) -> int:
+    metric_df: pd.DataFrame,
+    filename: str,
+    title: str | None = None,
+    target_col: str = "mean_silhouette",
+    dpi: int = 300,
+    bbox_inches: str = "tight",
+    transparent: bool = True,
+    format: str | None = None,
+    **kwargs,
+) -> int:
     """
     Plot silhouette and ARI metrics across cluster counts and find the best k.
 
@@ -549,13 +587,35 @@ def plot_clustering_metrics_and_find_best_k(
     metric_df["mean_silhouette"] = fold_means
     fold_stds = fold_df.std(axis=1)
 
-    ax.plot(metric_df.index, fold_means, label="Mean silhouette (5-fold)", color="#1f77b4", linestyle='-')
-    ax.errorbar(metric_df.index, fold_means, yerr=fold_stds, fmt='none', capsize=2, capthick=1, color='#bbbbbb', alpha=0.6, label="5-fold mean ± std")
+    ax.plot(
+        metric_df.index,
+        fold_means,
+        label="Mean silhouette (5-fold)",
+        color="#1f77b4",
+        linestyle="-",
+    )
+    ax.errorbar(
+        metric_df.index,
+        fold_means,
+        yerr=fold_stds,
+        fmt="none",
+        capsize=2,
+        capthick=1,
+        color="#bbbbbb",
+        alpha=0.6,
+        label="5-fold mean ± std",
+    )
 
-    ax.plot(metric_df.index, metric_df["mean_ari_5_fold"], label="Mean ARI (5-fold)", color="#2ca02c", linestyle='-.')
+    ax.plot(
+        metric_df.index,
+        metric_df["mean_ari_5_fold"],
+        label="Mean ARI (5-fold)",
+        color="#2ca02c",
+        linestyle="-.",
+    )
 
     best_k = metric_df[target_col].idxmax()
-    ax.axvline(best_k, color='red', linestyle=':', alpha=0.6, label=f'Best k={best_k}')
+    ax.axvline(best_k, color="red", linestyle=":", alpha=0.6, label=f"Best k={best_k}")
 
     ax.set_xlabel("Number of Clusters (k)")
     ax.set_ylabel("Score")
@@ -566,7 +626,7 @@ def plot_clustering_metrics_and_find_best_k(
     fig.tight_layout()
 
     # save figure
-    format = filename.split('.')[-1].lower()
+    format = filename.split(".")[-1].lower()
     pil_kwargs = {"compression": "tiff_lzw"} if format == "tiff" else {}
     fig.savefig(
         filename,
@@ -575,7 +635,7 @@ def plot_clustering_metrics_and_find_best_k(
         transparent=transparent,
         format=format,
         pil_kwargs=pil_kwargs,
-        **kwargs
+        **kwargs,
     )
     plt.close(fig)
 
@@ -609,24 +669,24 @@ def gpt_known_genes_summary(
     str
         The prompt that was sent to the model.
     """
-    prompt = "\n".join([
-        f"The following is a list of human CNV genes located on {arm}:",
-        ", ".join(genes),
-        "",
-        f"Based on cancer literature, known functions, and biomedical research value, identify the well-known and frequently studied genes among these in {cancer_type}, and briefly explain why.",
-        "Use the following format:",
-        "```",
-        "Gene: gene_name, Reason: brief explanation",
-        "```",
-        "Do not add numbers or dashes. Do not use multiple lines or paragraphs for explanation. Output one gene per line."
-    ])
+    prompt = "\n".join(
+        [
+            f"The following is a list of human CNV genes located on {arm}:",
+            ", ".join(genes),
+            "",
+            f"Based on cancer literature, known functions, and biomedical research value, identify the well-known and frequently studied genes among these in {cancer_type}, and briefly explain why.",
+            "Use the following format:",
+            "```",
+            "Gene: gene_name, Reason: brief explanation",
+            "```",
+            "Do not add numbers or dashes. Do not use multiple lines or paragraphs for explanation. Output one gene per line.",
+        ]
+    )
 
     result = ""
     try:
         response = client.chat.completions.create(
-            model="gpt-4",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0
+            model="gpt-4", messages=[{"role": "user", "content": prompt}], temperature=0
         )
         result = response.choices[0].message.content
     except Exception as e:

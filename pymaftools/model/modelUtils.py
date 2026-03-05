@@ -2,11 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-import seaborn as sns
-import matplotlib.pyplot as plt
 from tqdm import tqdm
-from statannotations.Annotator import Annotator
-from itertools import combinations
 from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
 from sklearn.ensemble import RandomForestClassifier
@@ -43,7 +39,9 @@ def get_importance(model: object) -> pd.Series:
         except AttributeError:
             return pd.Series(model.feature_importances_)
 
-    elif hasattr(model, "get_omics_feature_importance") and hasattr(model, "omics_dict"):
+    elif hasattr(model, "get_omics_feature_importance") and hasattr(
+        model, "omics_dict"
+    ):
         importances = []
         for omics_name in model.omics_dict.keys():
             imp = model.get_omics_feature_importance(omics_name)
@@ -159,13 +157,15 @@ def cross_validate_importance(
 
             imp = get_importance(model)
             for feature, importance in imp.items():
-                importance_records.append({
-                    "model": model_name,
-                    "seed": seed,
-                    "fold": fold_id,
-                    "feature": feature,
-                    "importance": importance,
-                })
+                importance_records.append(
+                    {
+                        "model": model_name,
+                        "seed": seed,
+                        "fold": fold_id,
+                        "feature": feature,
+                        "importance": importance,
+                    }
+                )
 
     importance_df = pd.DataFrame(importance_records)
     metric_df = pd.DataFrame(metrics_records) if metrics_records else None
@@ -264,8 +264,7 @@ def to_importance_table(all_importance_df: pd.DataFrame, omic: str) -> PivotTabl
         Feature x seed matrix sorted by mean importance (descending).
     """
     pivot_df = (
-        all_importance_df
-        .query(f"model == '{omic}'")
+        all_importance_df.query(f"model == '{omic}'")
         .groupby(["seed", "feature"])["importance"]
         .mean()
         .unstack("seed")
@@ -378,9 +377,7 @@ def run_rfecv_feature_selection(
         Fitted RFECV object.
     """
     if estimator is None:
-        estimator = RandomForestClassifier(
-            n_estimators=100, random_state=random_state
-        )
+        estimator = RandomForestClassifier(n_estimators=100, random_state=random_state)
 
     X = pivot.T.values
     y = np.array(pivot.sample_metadata[label_col].values)

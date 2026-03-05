@@ -48,5 +48,7 @@ class ExpressionTable(PivotTable):
 
         gb = table.feature_metadata.groupby(cluster_col)
         cluster_table.feature_metadata["features"] = gb.apply(lambda df: list(df.index))
-        cluster_table.feature_metadata["features_count"] = cluster_table.feature_metadata["features"].apply(len)
+        cluster_table.feature_metadata["features_count"] = (
+            cluster_table.feature_metadata["features"].apply(len)
+        )
         return cluster_table.rename_index_and_columns()

@@ -18,11 +18,11 @@ def get_ncbi_gene_ID(gene_symbol: str) -> str | None:
     str or None
         The first matching Gene ID, or ``None`` if no result is found.
     """
-    url = f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
+    url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
     params = {
         "db": "gene",
         "term": f"{gene_symbol}[gene] AND human[orgn]",
-        "retmode": "json"
+        "retmode": "json",
     }
     try:
         response = requests.get(url, params=params)
@@ -82,7 +82,7 @@ def get_gene_info_json(gene_ids: dict[str, str | None]) -> dict[str, dict]:
     # Join all Gene IDs with a comma
     joined_ids = ",".join(valid_gene_ids)
 
-    url = f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
+    url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi"
     params = {"db": "gene", "id": joined_ids, "retmode": "json"}
 
     try:
@@ -148,9 +148,9 @@ def get_gene_description_df(gene_symbols: list[str]) -> pd.DataFrame:
     IDs = get_ncbi_gene_IDs(gene_symbols)
     gene_info = get_gene_info_json(IDs)
     parsed_info = parse_gene_info(gene_info)
-    gene_description_df = pd.DataFrame.from_dict(parsed_info,
-                                                 orient='index',
-                                                 columns=['Description'])
+    gene_description_df = pd.DataFrame.from_dict(
+        parsed_info, orient="index", columns=["Description"]
+    )
     gene_description_df.reset_index(inplace=True)
     gene_description_df.rename(columns={"index": "Gene"}, inplace=True)
 

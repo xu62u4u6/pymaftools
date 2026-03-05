@@ -2,6 +2,7 @@
 ModelPlot class for machine learning model visualization
 Inherits from BasePlot to use common plotting functionality
 """
+
 from __future__ import annotations
 
 import matplotlib.pyplot as plt
@@ -29,7 +30,7 @@ class ModelPlot(BasePlot):
         self,
         data: pd.DataFrame,
         metrics: list[str] | None = None,
-        group_col: str = 'model',
+        group_col: str = "model",
         order: list[str] | None = None,
         palette: str = "Set2",
         test: str = "Mann-Whitney",
@@ -90,7 +91,7 @@ class ModelPlot(BasePlot):
             Self, for method chaining.
         """
         if metrics is None:
-            metrics = ['acc', 'f1', 'auc']
+            metrics = ["acc", "f1", "auc"]
         if order is None:
             order = ["SNV", "CNV-gene", "CNV-cluster", "STACK"]
 
@@ -115,11 +116,17 @@ class ModelPlot(BasePlot):
         for i, metric in enumerate(metrics):
             ax = axes[i]
             test_col = metric
-            gb = data.groupby(group_col)
             group_pairs = list(combinations(order, 2))
 
-            sns.boxplot(data=data, x=group_col, y=test_col,
-                        ax=ax, hue=group_col, palette=palette, order=order)
+            sns.boxplot(
+                data=data,
+                x=group_col,
+                y=test_col,
+                ax=ax,
+                hue=group_col,
+                palette=palette,
+                order=order,
+            )
 
             # 設定 alpha 半透明
             for patch in ax.patches:
@@ -127,26 +134,32 @@ class ModelPlot(BasePlot):
                 patch.set_facecolor((r, g, b, alpha))
 
             # 顯著性標註
-            annotator = Annotator(ax=ax, pairs=group_pairs,
-                                  data=data, x=group_col, y=test_col, order=order)
+            annotator = Annotator(
+                ax=ax,
+                pairs=group_pairs,
+                data=data,
+                x=group_col,
+                y=test_col,
+                order=order,
+            )
 
             annotator.configure(
                 test=test,
-                text_format='star',
+                text_format="star",
                 loc="inside",
                 verbose=0,
             )
             annotator.apply_test()
             annotator.annotate(line_offset_to_group=0.1)
 
-            ax.set_xlabel('', fontsize=fontsize)
+            ax.set_xlabel("", fontsize=fontsize)
             ax.set_ylabel(metric, fontsize=fontsize)
             ax.set_yticks(ax.get_yticks())  # 確保 ticks 不變
-            ax.set_yticklabels([
-                f"{tick:.2f}" if tick <= 1 else ""
-                for tick in ax.get_yticks()
-            ], fontsize=fontsize)
-            ax.tick_params(axis='x', labelsize=fontsize, rotation=rotation)
+            ax.set_yticklabels(
+                [f"{tick:.2f}" if tick <= 1 else "" for tick in ax.get_yticks()],
+                fontsize=fontsize,
+            )
+            ax.tick_params(axis="x", labelsize=fontsize, rotation=rotation)
             # Set title if title_prefix is provided
             if title_prefix:
                 ax.set_title(f"{title_prefix} {metric.upper()}", fontsize=fontsize)
@@ -207,7 +220,12 @@ class ModelPlot(BasePlot):
         self.fig, ax = plt.subplots(figsize=figsize)
 
         # Plot heatmap
-        sns.heatmap(table.head(top_n), cmap=cmap, ax=ax, xticklabels=xticklabel,)
+        sns.heatmap(
+            table.head(top_n),
+            cmap=cmap,
+            ax=ax,
+            xticklabels=xticklabel,
+        )
         if title:
             ax.set_title(title)
 
@@ -263,26 +281,29 @@ class ModelPlot(BasePlot):
         # 找出最佳分數點
         best_idx = df["mean_test_score"].idxmax()
         best_n = df.loc[best_idx, "n_features"]
-        best_score = df.loc[best_idx, "mean_test_score"]
-
         # 繪圖
         self.fig, ax = plt.subplots(figsize=figsize)
-        sns.lineplot(x="n_features",
-                     y="mean_test_score",
-                     data=df,
-                     label="CV Score",
-                     color=sns.color_palette(palette)[0],
-                     ax=ax)
-        ax.fill_between(df["n_features"],
-                        df["mean_test_score"] - df["std_test_score"],
-                        df["mean_test_score"] + df["std_test_score"],
-                        alpha=0.2,
-                        color=sns.color_palette(palette)[0],
-                        label="±1 Std")
+        sns.lineplot(
+            x="n_features",
+            y="mean_test_score",
+            data=df,
+            label="CV Score",
+            color=sns.color_palette(palette)[0],
+            ax=ax,
+        )
+        ax.fill_between(
+            df["n_features"],
+            df["mean_test_score"] - df["std_test_score"],
+            df["mean_test_score"] + df["std_test_score"],
+            alpha=0.2,
+            color=sns.color_palette(palette)[0],
+            label="±1 Std",
+        )
 
         # 最佳線
-        ax.axvline(best_n, color="red", linestyle="--",
-                   label=f"Best ({best_n} features)")
+        ax.axvline(
+            best_n, color="red", linestyle="--", label=f"Best ({best_n} features)"
+        )
 
         # 標籤與圖例
         ax.set_xlabel("Number of features selected")
@@ -333,24 +354,27 @@ class ModelPlot(BasePlot):
             Self, for method chaining.
         """
         # Filter data for specific model
-        model_data = importance_df[importance_df['model'] == model_name]
+        model_data = importance_df[importance_df["model"] == model_name]
 
         # Get top features by mean importance
-        top_features = (model_data.groupby('feature')['importance']
-                        .mean()
-                        .sort_values(ascending=False)
-                        .head(top_n)
-                        .index.tolist())
+        top_features = (
+            model_data.groupby("feature")["importance"]
+            .mean()
+            .sort_values(ascending=False)
+            .head(top_n)
+            .index.tolist()
+        )
 
         # Filter for top features
-        plot_data = model_data[model_data['feature'].isin(top_features)]
+        plot_data = model_data[model_data["feature"].isin(top_features)]
 
         # Create figure
         self.fig, ax = plt.subplots(figsize=figsize)
 
         # Plot boxplot
-        sns.boxplot(data=plot_data, x='importance', y='feature',
-                    order=top_features, ax=ax)
+        sns.boxplot(
+            data=plot_data, x="importance", y="feature", order=top_features, ax=ax
+        )
         ax.set_title(f"Feature Importance Distribution - {model_name}")
         ax.set_xlabel("Importance")
         ax.set_ylabel("Feature")
@@ -385,8 +409,7 @@ class ModelPlot(BasePlot):
         """
         # 選定 omic 資料並 pivot 成 feature × seed matrix
         pivot_df = (
-            all_importance_df
-            .query(f"model == '{omic}'")
+            all_importance_df.query(f"model == '{omic}'")
             .groupby(["seed", "feature"])["importance"]
             .mean()
             .unstack("seed")
