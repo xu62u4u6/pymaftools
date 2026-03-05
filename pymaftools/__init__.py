@@ -1,4 +1,8 @@
 # pyMAF/__init__.py
+from importlib.metadata import version
+
+__version__ = version("pymaftools")
+
 # core
 from .core.PivotTable import PivotTable
 from .core.MAF import MAF

@@ -11,7 +11,7 @@ requires-python = ">=3.10"
 license = {text = "MIT"}
 
 authors = [
-  { name = "xu62u4u6", email = "199928ltyos@gmail.com" }
+  { name = "Ding-Yang Liu", email = "199928ltyos@gmail.com" }
 ]
 
 dependencies = [
