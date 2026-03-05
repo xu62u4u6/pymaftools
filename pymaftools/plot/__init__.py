@@ -18,10 +18,10 @@ __all__ = [
     "BasePlot",
     "ColorManager",
     "FontManager",
-    "LegendManager", 
+    "LegendManager",
     "LollipopPlot",
     "OncoPlot",
     "PivotTablePlot",
     "MethodsPlot",
-    "ModelPlot"
+    "ModelPlot",
 ]

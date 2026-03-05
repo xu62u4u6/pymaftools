@@ -1,210 +1,138 @@
 # pymaftools
 
-`pymaftools` is a Python package designed to handle and analyze MAF (Mutation Annotation Format) files. It provides utilities for working with mutation data, including the `MAF` and `PivotTable` classes for data manipulation, and functions for visualizing mutation data with oncoplots.
+`pymaftools` is a Python package for handling and analyzing MAF (Mutation Annotation Format) files and multi-omics cancer genomics data. It provides classes for data manipulation, statistical analysis, machine learning, and visualization.
 
-![image](img/pymaftools_overview.svg)
+<p align="center">
+  <img src="img/pymaftools_overview.svg" alt="pymaftools overview" />
+</p>
+<p align="center">
+  <em>pymaftools provides a unified workflow for multi-omics cancer genomics — from data loading and filtering,<br>
+  through statistical analysis and machine learning, to publication-ready visualization.</em>
+</p>
 
-## Development and Testing
-
-### Running Tests
-
-pymaftools includes a comprehensive test suite to ensure code quality and functionality.
-
-#### Install Test Dependencies
-
-```bash
-# Install package with test dependencies
-pip install -e .[test]
-
-# For development (includes test dependencies + build tools)
-pip install -e .[dev]
-```
-
-#### Run Tests
-
-```bash
-# Run all tests
-python run_tests.py
-
-# Or using make
-make test
-
-# Run specific test categories
-make test-core      # Core functionality tests
-make test-plot      # Plotting tests  
-make test-model     # Model tests
-make test-fast      # Fast tests only (excludes slow integration tests)
-make test-slow      # Slow/integration tests only
-
-# Run with coverage report
-make test-coverage
-```
-
-#### Test Categories
-
-Tests are organized by functionality and marked with pytest markers:
-
-- **Core tests** (`tests/core/`): Test PivotTable, MAF, Cohort classes
-- **Plot tests** (`tests/plot/`): Test all plotting functionality
-- **Model tests** (`tests/model/`): Test machine learning components
-- **Integration tests** (`@pytest.mark.integration`): End-to-end workflow tests
-- **Slow tests** (`@pytest.mark.slow`): Performance and large dataset tests
-- **Plot tests** (`@pytest.mark.plot`): Tests that generate visualizations
-
-#### Continuous Integration
-
-Tests run automatically on GitHub Actions for:
-- Python 3.10, 3.11, 3.12 (stable)
-- Python 3.13, 3.14 (experimental, allowed to fail)
-- Fast tests on all pull requests
-- Slow tests on pushes to main branch
-- Plot tests with non-interactive backend
-
-### Contributing
-
-When contributing to pymaftools:
-
-1. **Write tests** for new functionality
-2. **Run the test suite** before submitting PRs
-3. **Follow the existing code structure** for test organization
-4. **Use appropriate test markers** for categorizing tests
-
-Example test structure:
-```python
-import pytest
-from pymaftools.core.PivotTable import PivotTable
-
-class TestNewFeature:
-    def test_basic_functionality(self, sample_pivot_table):
-        # Test basic case
-        result = sample_pivot_table.new_method()
-        assert result is not None
-    
-    @pytest.mark.slow
-    def test_large_dataset(self):
-        # Test with large dataset
-        pass
-    
-    @pytest.mark.plot
-    def test_visualization(self, temp_output_dir):
-        # Test plot generation
-        pass
-```
-
-### Test Fixtures
-
-Common test fixtures are available in `tests/conftest.py`:
-
-- `sample_pivot_table`: Basic PivotTable with mutation data
-- `sample_cohort`: Multi-omics Cohort object
-- `sample_model_metrics`: Model performance data
-- `temp_output_dir`: Temporary directory for test outputs
+<p align="center">
+  <img src="img/methodsplot_cohort_demo.png" alt="Multi-omics cohort structure" width="420" />
+</p>
+<p align="center">
+  <em>Multiple omics layers (SNV, CNV, expression, etc.) are integrated into a unified Cohort structure.<br>
+  Each layer shares the same samples but may have different numbers of features.</em>
+</p>
 
 ## Features
 
-- **MAF Class**: A utility to load, parse, and manipulate MAF files.
-- **PivotTable Class**: A custom pivot table implementation for summarizing mutation frequencies and sorting genes and samples.
-- **Oncoplot**: Generate oncoplot visualizations with mutation data and frequencies.
-- **LollipopPlot**: Visualize mutation positions along protein sequences with optional domain annotation.
-- **Boxplot with Statistical Testing**: Generate comparative boxplots with integrated statistical tests (e.g., Wilcoxon, t-test) for group-wise mutation metrics.
-- **Similarity Metrics**: Compute similarity between samples or cohorts based on mutation profiles (e.g., Jaccard index, cosine similarity).
+### Core Data Structures
+- **MAF** — Load, parse, filter, and merge MAF files
+- **PivotTable** — Gene/feature x sample matrix with synchronized metadata, frequency calculation, statistical testing, and filtering
+- **Cohort** — Multi-omics container linking multiple PivotTables with shared sample metadata
+- **CopyNumberVariationTable** — Read GISTIC arm-level and gene-level results
+- **ExpressionTable** — Gene expression data with clustering support
+- **SignatureTable** — COSMIC mutational signature data
+- **CancerCellFractionTable** — Cancer cell fraction (CCF) data from PyClone
+- **SmallVariationTable** — Specialized PivotTable for SNV/INDEL data
+- **SimilarityMatrix** — Pairwise similarity analysis (Jaccard, cosine, etc.)
+
+### Filtering & Statistical Analysis
+- **filter_by_freq** — Filter features by mutation frequency
+- **filter_by_variance** — Filter by variance or median absolute deviation (MAD)
+- **filter_by_statistical_test** — Filter by statistical test (t-test, Mann-Whitney, Kruskal-Wallis, ANOVA) with FDR correction
+- **Chi-squared / Fisher's exact test** — Association testing between features and groups
+- **TMB calculation** — Tumor mutation burden per sample
+
+### Visualization
+- **OncoPlot** — Mutation landscape heatmaps with frequency bars, sample metadata, and legends
+- **LollipopPlot** — Protein mutation positions with domain annotation
+- **PivotTablePlot** — PCA, boxplots with statistical annotations, heatmaps (via `pt.plot`)
+- **ModelPlot** — Model performance visualizations
+- **MethodsPlot** — 3D methodology demonstration plots
+- **ColorManager / FontManager** — Customizable color and font management
+
+### Machine Learning
+- **OmicsStackingModel** — Multi-omics stacking classifier with feature importance
+- **Model utilities** — Evaluation, cross-validation, RFECV feature selection, importance heatmaps
+
+### Utilities
+- **PCA_CCA** — Dimensionality reduction utilities
+- **Gene set tools** — Read GMT files, fetch MSigDB gene sets
+- **Gene info** — NCBI gene ID lookup
 
 ## Requirements
 
-`pymaftools` requires Python 3.10 or higher and the following dependencies:
+Python 3.10+ with the following dependencies:
 
-### Core Dependencies
+- **pandas** (>2.0), **numpy**, **matplotlib**, **seaborn**, **scipy**
+- **networkx**, **scikit-learn**, **statsmodels**, **statannotations**
+- **requests**, **beautifulsoup4**, **tqdm**, **tables** (HDF5)
 
-- **pandas** (>2.0) - Data manipulation and analysis
-- **numpy** - Numerical computing
-- **matplotlib** - Basic plotting and visualization
-- **seaborn** - Statistical data visualization
-- **scipy** - Scientific computing and statistics
-- **networkx** - Graph algorithms and network analysis
-- **scikit-learn** - Machine learning algorithms
-- **statsmodels** - Statistical modeling and hypothesis testing
-- **statannotations** - Statistical annotations for plots
-- **requests** - HTTP library for API calls
-- **beautifulsoup4** - HTML/XML parsing
-- **tqdm** - Progress bars
-
-All dependencies will be automatically installed when you install `pymaftools` using pip or conda.
+All dependencies are automatically installed.
 
 ## Installation
 
-### Create a Conda Environment
+### Using uv (recommended)
 
 ```bash
-conda create -n pymaftools python=3.10
+uv pip install pymaftools
 ```
 
-### Using GitHub (for the latest version) ✅ **Recommended**
-
-To install directly from GitHub (if you want the latest changes):
-
-```bash
-pip install git+https://github.com/xu62u4u6/pymaftools.git
-```
-
-### Using pip (from PyPI)
-
-You can install the stable version `pymaftools` package directly from PyPI using pip:
+### Using pip
 
 ```bash
 pip install pymaftools
 ```
 
+### From GitHub (latest development version)
+
+```bash
+uv pip install git+https://github.com/xu62u4u6/pymaftools.git
+# or
+pip install git+https://github.com/xu62u4u6/pymaftools.git
+```
 
 ## Usage
-
-### Importing the Package
-
-```python
-from pymaftools import *
-```
 
 ### Getting Started
 
 ```python
-# Load MAF files
-maf_case1 = MAF.read_maf("case1.maf")
-maf_case2 = MAF.read_maf("case2.maf")
-all_case_maf = MAF.merge_mafs([maf_case1, maf_case2])
+from pymaftools import *
 
-# if no sample_ID column in MAF file, add it
-all_case_maf["sample_ID"] = all_case_maf["tumor_sample_barcode"] 
+# Load and merge MAF files
+maf1 = MAF.read_maf("case1.maf")
+maf2 = MAF.read_maf("case2.maf")
+merged = MAF.merge_mafs([maf1, maf2])
 
-# Filter to keep only nonsynonymous mutations
-filtered_all_case_maf = all_case_maf.filter_maf(MAF.nonsynonymous_types)
+# Filter to nonsynonymous mutations and convert to pivot table
+pt = merged.filter_maf(MAF.nonsynonymous_types).to_pivot_table()
 
-# Convert to pivot table (features x samples table, mutation classification as values)
-pivot_table = filtered_all_case_maf.to_pivot_table()
+# Process pivot table
+pt = (pt
+    .add_freq()
+    .sort_features(by="freq")
+    .sort_samples_by_mutations()
+    .calculate_TMB(capture_size=50)
+)
 
-# Inspect PivotTable structure
-print(pivot_table)                        # check pivot table
-print(pivot_table.feature_metadata)       # check feature metadata (genes/mutations)
-print(pivot_table.sample_metadata)        # check sample metadata
-
-# Process and sort the pivot table
-sorted_pivot_table = (pivot_table
-                    .add_freq()                     # Calculate mutation frequencies
-                    .sort_features(by="freq")       # Sort features by frequency
-                    .sort_samples_by_mutations()    # Sort samples by mutation patterns
-                    .calculate_TMB(capture_size=50) # Calculate tumor mutation burden
-                    )
-
-# Create basic oncoplot using method chaining
-oncoplot = (OncoPlot(sorted_pivot_table.head(50))
-            .set_config(figsize=(15, 10), 
-                       width_ratios=[20, 2, 2])  # heatmap, frequency bar, classification bar
-            .mutation_heatmap()
-            .plot_freq()
-            .plot_bar()
-            .save("oncoplot.png", dpi=300)
-            )
+# Create oncoplot
+oncoplot = (OncoPlot(pt.head(50))
+    .set_config(figsize=(15, 10), width_ratios=[20, 2, 2])
+    .mutation_heatmap()
+    .plot_freq()
+    .plot_bar()
+    .save("oncoplot.png", dpi=300)
+)
 ```
 
-### Create Mutation Oncoplot with Sample Metadata
+### Advanced Filtering
+
+```python
+# Filter by variance (keep top 25% most variable features)
+filtered = pt.filter_by_variance(quantile=0.75, method="var")
+
+# Filter by statistical test with FDR correction
+filtered = pt.filter_by_statistical_test(
+    group_col="subtype", method="kruskal", alpha=0.05
+)
+```
+
+### Mutation Oncoplot with Sample Metadata
 
 ```python
 # Load and process data
@@ -212,209 +140,191 @@ LUAD_maf = MAF.read_csv("data/WES/LUAD_all_case_maf.csv")
 LUSC_maf = MAF.read_csv("data/WES/LUSC_all_case_maf.csv")
 all_case_maf = MAF.merge_mafs([LUAD_maf, LUSC_maf])
 
-# Filter maf and convert to table
-freq = 0.1
+# Filter and convert to table
 table = (all_case_maf
-         .filter_maf(all_case_maf.nonsynonymous_types)
-         .to_pivot_table()
-         )
-
-# load sample metadata
-all_sample_metadata = pd.read_csv("data/all_sample_metadata.csv")
-
-# get case_ID (case1_T -> case1, T) and concat sample_metadata using case_ID 
-table.sample_metadata[["case_ID", "sample_type"]] = table.columns.to_series().str.rsplit("_", n=1).apply(pd.Series)
-table.sample_metadata = pd.merge(table.sample_metadata.reset_index(), 
-                                 all_sample_metadata, 
-                                 left_on="case_ID",
-                                 right_on="case_ID", 
-                                 ).set_index(["sample_ID"])
-
-# Add frequency calculations for different groups
-table = table.add_freq(
-    groups={"LUAD": table.subset(samples=table.sample_metadata.subtype == "LUAD"),
-           "ASC": table.subset(samples=table.sample_metadata.subtype == "ASC"),
-           "LUSC": table.subset(samples=table.sample_metadata.subtype == "LUSC")}
+    .filter_maf(all_case_maf.nonsynonymous_types)
+    .to_pivot_table()
 )
 
-# Filter and sort table
-table = (table.filter_by_freq(freq)
-         .sort_features(by="freq")
-         .sort_samples_by_group(group_col="subtype", 
-                               group_order=["LUAD", "ASC", "LUSC"], top=10)   
-        )
+# Load sample metadata
+all_sample_metadata = pd.read_csv("data/all_sample_metadata.csv")
+table.sample_metadata[["case_ID", "sample_type"]] = table.columns.to_series().str.rsplit("_", n=1).apply(pd.Series)
+table.sample_metadata = pd.merge(
+    table.sample_metadata.reset_index(), all_sample_metadata,
+    left_on="case_ID", right_on="case_ID"
+).set_index(["sample_ID"])
 
-# Setup color mappings
+# Add group frequencies
+table = table.add_freq(
+    groups={"LUAD": table.subset(samples=table.sample_metadata.subtype == "LUAD"),
+            "ASC": table.subset(samples=table.sample_metadata.subtype == "ASC"),
+            "LUSC": table.subset(samples=table.sample_metadata.subtype == "LUSC")}
+)
+
+# Filter and sort
+freq = 0.1
+table = (table.filter_by_freq(freq)
+    .sort_features(by="freq")
+    .sort_samples_by_group(group_col="subtype",
+                           group_order=["LUAD", "ASC", "LUSC"], top=10)
+)
+
+# Setup colors and create oncoplot
 categorical_columns = ["subtype", "sex", "smoke"]
 cmap_dict = {key: cm.get_cmap(key, alpha=0.7) for key in categorical_columns}
 
-# Create oncoplot with method chaining
 oncoplot = (OncoPlot(table)
-            .set_config(categorical_columns=categorical_columns,
-                       figsize=(30, 14),
-                       width_ratios=[25, 3, 0, 2]) # main heatmap, freq heatmap, flexible region, legend region 
-            .mutation_heatmap() #
-            .plot_freq(freq_columns=["freq", "LUAD_freq", "ASC_freq", "LUSC_freq"])
-            .plot_bar()
-            .plot_categorical_metadata(cmap_dict=cmap_dict) # or like {"subtype": {"LUAD": orange, "ASC": green, "LUSC": blue}, }
-            .plot_all_legends() 
-            .save("mutation_oncoplot.tiff", dpi=300)
-            )
+    .set_config(categorical_columns=categorical_columns,
+                figsize=(30, 14),
+                width_ratios=[25, 3, 0, 2])
+    .mutation_heatmap()
+    .plot_freq(freq_columns=["freq", "LUAD_freq", "ASC_freq", "LUSC_freq"])
+    .plot_bar()
+    .plot_categorical_metadata(cmap_dict=cmap_dict)
+    .plot_all_legends()
+    .save("mutation_oncoplot.tiff", dpi=300)
+)
 ```
 ![image](img/1_subtype_oncoplot_freq_0.1.png)
 
-### Create Numeric CNV Oncoplot
+### Numeric CNV Oncoplot
 
 ```python
-# Create numeric heatmap for CNV data using method chaining
 categorical_columns = ["subtype", "sex", "smoke"]
 cmap_dict = {key: cm.get_cmap(key, alpha=0.7) for key in categorical_columns}
 
 oncoplot = (OncoPlot(CNV_gene_cosmic)
-            .set_config(categorical_columns=categorical_columns,
-                       figsize=(30, 10),
-                       width_ratios=[25, 1, 0, 3]) # main heatmap, freq heatmap, flexible region, legend region 
-            .numeric_heatmap(yticklabels=False, 
-                           cmap="coolwarm",
-                           vmin=-2, vmax=2)
-            .plot_bar()
-            .plot_categorical_metadata(cmap_dict=cmap_dict)
-            .plot_all_legends() 
-            .save("cnv_oncoplot.tiff", dpi=600)
-            )
+    .set_config(categorical_columns=categorical_columns,
+                figsize=(30, 10),
+                width_ratios=[25, 1, 0, 3])
+    .numeric_heatmap(yticklabels=False, cmap="coolwarm", vmin=-2, vmax=2)
+    .plot_bar()
+    .plot_categorical_metadata(cmap_dict=cmap_dict)
+    .plot_all_legends()
+    .save("cnv_oncoplot.tiff", dpi=600)
+)
 ```
 
 ![image](img/1_COSMIC_gene_level.png)
 
-### Create Lolipop plot
+### Lollipop Plot
 
 ```python
-# read MAF file
 maf = MAF.read_csv(YOUR_MAF_PATH)
-gene = "EGFR" # gene name
-AA_length, mutations_data = maf.get_protein_info(gene) # get protein length and mutations data
-domains_data, refseq_ID = MAF.get_domain_info(gene, AA_length) # search domain data match protein length
+gene = "EGFR"
+AA_length, mutations_data = maf.get_protein_info(gene)
+domains_data, refseq_ID = MAF.get_domain_info(gene, AA_length)
 
-# create LollipopPlot object
 plot = LollipopPlot(
-        protein_name=gene,
-        protein_length=AA_length,
-        domains=domains_data,
-        mutations=mutations_data
-    )
+    protein_name=gene,
+    protein_length=AA_length,
+    domains=domains_data,
+    mutations=mutations_data
+)
 plot.plot()
 ```
 
 ![image](img/DEMO_lollipop_plot.png)
 
+### Multi-Omics with Cohort
+
+```python
+cohort = Cohort(sample_IDs=sample_list)
+cohort.add_table("mutations", mutation_pt)
+cohort.add_table("cnv", cnv_table)
+cohort.add_table("expression", expr_table)
+cohort.add_sample_metadata(clinical_df)
+
+# Save/load
+cohort.to_sqlite("cohort.db")
+cohort = Cohort.read_sqlite("cohort.db")
+```
+
+### Machine Learning
+
+```python
+from pymaftools import OmicsStackingModel
+from pymaftools.model.modelUtils import evaluate_model, cross_validate_importance
+
+model = OmicsStackingModel()
+model.fit(cohort, labels)
+preds = model.predict(cohort)
+importance = model.get_omics_feature_importance()
+
+metrics = evaluate_model(model, X_test, y_test)
+results = cross_validate_importance(model, X, y, n_seeds=10)
+```
+
 ## FAQ
 
 ### 1. How to adjust font sizes in OncoPlot?
 
-You can adjust font sizes for different components using the following parameters:
-
 ```python
-# Adjust y-axis gene name font size
 oncoplot = OncoPlot(pivot_table, ytick_fontsize=12)
-
-# Adjust font size in heatmaps
 oncoplot.mutation_heatmap(ytick_fontsize=10)
 oncoplot.numeric_heatmap(ytick_fontsize=8)
-
-# Adjust annotation font size in frequency plot
 oncoplot.plot_freq(annot_fontsize=10)
 ```
 
 ### 2. How to customize color mappings?
 
-You can use the ColorManager to register and retrieve custom colors for different mutation types and categorical variables:
-
 ```python
-from pymaftools.plot.ColorManager import ColorManager
+from pymaftools import ColorManager
 
-# Get the color manager instance
 color_manager = ColorManager()
-
-# Register custom mutation type colors
-custom_mutation_colors = {
+color_manager.register_cmap("custom_mutations", {
     "Missense_Mutation": "#FF6B6B",
-    "Nonsense_Mutation": "#4ECDC4", 
+    "Nonsense_Mutation": "#4ECDC4",
     "Frame_Shift_Del": "#45B7D1"
-}
-color_manager.register_cmap("custom_mutations", custom_mutation_colors)
+})
 
-# Register custom categorical colors
-custom_categorical_colors = {
-    "LUAD": "orange", 
-    "LUSC": "blue", 
-    "ASC": "green"
-}
-color_manager.register_cmap("subtype", custom_categorical_colors)
-
-# Use registered colors in plots
 mutation_cmap = color_manager.get_cmap("custom_mutations")
-subtype_cmap = color_manager.get_cmap("subtype", alpha=0.7) # You can set alpha value here
-
 oncoplot.mutation_heatmap(cmap_dict=mutation_cmap)
-oncoplot.plot_categorical_metadata(cmap_dict={"subtype": subtype_cmap})
 ```
 
-### 3. How to control visualization parameters in similarity analysis?
+### 3. How to save and load analysis results?
 
 ```python
-# Control heatmap display options
-result = SimilarityMatrix.analyze_similarity(
-    table=table,
-    method="jaccard",
-    title="Similarity Analysis",
-    groups=groups,
-    group_order=["Group1", "Group2", "Group3"],
-    layout="horizontal",  # or "grid"
-    heatmap_show_only_x_ticks=True,  # Show only x-axis labels
-    heatmap_annot=False,  # Don't show numeric annotations
-    save_dir="./output"
-)
-```
+# SQLite format (PivotTable and Cohort)
+pivot_table.to_sqlite("results.db")
+loaded = PivotTable.read_sqlite("results.db")
 
-### 4. How to handle performance issues with large datasets?
+cohort.to_sqlite("cohort.db")
+loaded = Cohort.read_sqlite("cohort.db")
 
-For large datasets, consider the following strategies:
-
-```python
-# Filter before analysis
-filtered_table = (pivot_table
-    .filter_by_freq(0.1)  # Keep only features with frequency > 10%
-    .head(100)  # Take only top 100 features
-)
-# do downstream analysis on filtered_table
-```
-
-### 5. How to save and load analysis results?
-
-Use SQLite format for saving both Cohort and PivotTable data:
-
-```python
-# Save PivotTable to SQLite
-pivot_table.to_sqlite("analysis_results.db")
-
-# Load PivotTable from SQLite
-loaded_table = PivotTable.read_sqlite("analysis_results.db")
-
-# Save Cohort to SQLite
-cohort.to_sqlite("cohort_data.db")
-
-# Load Cohort from SQLite
-loaded_cohort = Cohort.read_sqlite("cohort_data.db")
-
-# Save figures (supports multiple formats)
+# Save figures
 oncoplot.save("oncoplot.png", dpi=300)
-oncoplot.save("oncoplot.tiff", dpi=300)
 ```
 
-### License
+## Development and Testing
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+```bash
+# Install with test dependencies
+pip install -e .[test]
 
-### Author
+# Run tests
+make test              # All tests
+make test-core         # Core functionality
+make test-plot         # Plotting tests
+make test-fast         # Exclude slow tests
+make test-coverage     # With coverage report
+```
+
+### Test Categories
+
+- **Core tests** (`tests/core/`): PivotTable, MAF, Cohort
+- **Plot tests** (`tests/plot/`): All visualizations
+- **Model tests** (`tests/model/`): ML components
+- **Integration tests** (`@pytest.mark.integration`): End-to-end workflows
+
+### CI
+
+Tests run on GitHub Actions for Python 3.10-3.12 (stable) and 3.13-3.14 (experimental).
+
+## License
+
+MIT License - see the LICENSE file for details.
+
+## Author
 
 xu62u4u6

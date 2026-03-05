@@ -1,4 +1,7 @@
+#!/bin/bash
+set -e
+
 rm -rf build/ dist/ *.egg-info
-python setup.py sdist bdist_wheel
+python -m build
 twine check dist/*
 twine upload dist/*

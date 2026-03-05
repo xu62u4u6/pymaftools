@@ -4,29 +4,30 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pymaftools"
-version = "0.3.0"
+version = "0.4.0"
 description = "Python package for handling and analyzing Mutation Annotation Format (MAF) files."
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 
 authors = [
-  { name = "xu62u4u6", email = "199928ltyos@gmail.com" }
+  { name = "Ding-Yang Liu", email = "199928ltyos@gmail.com" }
 ]
 
 dependencies = [
-  "pandas>2.0",
-  "numpy",
-  "networkx",
-  "matplotlib",
-  "seaborn",
-  "statannotations",
-  "scikit-learn",
-  "statsmodels",
-  "scipy",
-  "requests",
-  "beautifulsoup4",
-  "tqdm"
+  "pandas>=2.0,<3.0",
+  "numpy>=1.24,<3.0",
+  "networkx>=3.0,<4.0",
+  "matplotlib>=3.7,<4.0",
+  "seaborn>=0.12,<1.0",
+  "statannotations>=0.6,<1.0",
+  "scikit-learn>=1.2,<2.0",
+  "statsmodels>=0.14,<1.0",
+  "scipy>=1.10,<2.0",
+  "requests>=2.28,<3.0",
+  "beautifulsoup4>=4.12,<5.0",
+  "tqdm>=4.64,<5.0",
+  "tables>=3.8,<4.0"
 ]
 
 [project.optional-dependencies]
@@ -35,9 +36,14 @@ test = [
   "pytest-cov>=4.0.0",
   "pytest-mock>=3.10.0"
 ]
+docs = [
+  "sphinx>=7.0",
+  "sphinx-rtd-theme>=2.0",
+  "sphinx-autodoc-typehints>=2.0",
+]
 dev = [
   "pytest>=7.0.0",
-  "pytest-cov>=4.0.0", 
+  "pytest-cov>=4.0.0",
   "pytest-mock>=3.10.0",
   "build",
   "twine"
@@ -45,6 +51,17 @@ dev = [
 
 [project.urls]
 Homepage = "https://github.com/xu62u4u6/pymaftools"
+Documentation = "https://dionic.xyz/pymaftools/"
+
+[tool.ruff]
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+ignore = ["E501"]  # line length handled by formatter
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]  # re-exports
 
 [tool.setuptools.packages.find]
 where = ["."] 

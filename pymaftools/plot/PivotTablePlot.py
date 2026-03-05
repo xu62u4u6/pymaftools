@@ -10,12 +10,10 @@ from __future__ import annotations
 
 # Standard library imports
 from itertools import combinations
-from typing import Any, Dict, List, Optional, Tuple, Union
 
 # Third-party imports
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
-from matplotlib.patches import Rectangle
 import numpy as np
 import pandas as pd
 import seaborn as sns
@@ -26,34 +24,35 @@ from statannotations.Annotator import Annotator
 # Local imports
 from .BasePlot import BasePlot
 
+
 class PivotTablePlot(BasePlot):
     """
     Plotting functionality for PivotTable objects.
-    
+
     This class provides a clean interface for various visualization methods
     while keeping plotting logic separate from the core PivotTable class.
     Inherits from BasePlot to provide legend management and figure saving capabilities.
-    
+
     Parameters
     ----------
     pivot_table : PivotTable
         The PivotTable instance to create plots for.
-        
+
     Examples
     --------
     >>> # Using property accessor (recommended)
     >>> pivot_table.plot.plot_pca_samples(color_col="subtype")
     >>> pivot_table.plot.plot_boxplot_with_annot(test_col="TMB")
-    
+
     >>> # Direct instantiation (not recommended)
     >>> plotter = PivotTablePlot(pivot_table)
     >>> plotter.plot_pca_samples(color_col="subtype")
     """
-    
+
     def __init__(self, pivot_table):
         """
         Initialize PivotTablePlot with a PivotTable instance.
-        
+
         Parameters
         ----------
         pivot_table : PivotTable
@@ -61,28 +60,28 @@ class PivotTablePlot(BasePlot):
         """
         super().__init__()  # Initialize BasePlot
         self.pivot_table = pivot_table
-    
+
     def plot_boxplot_with_annot(
         self,
-        data: Optional[pd.DataFrame] = None,
+        data: pd.DataFrame | None = None,
         group_col: str = "subtype",
         test_col: str = "mutations_count",
-        palette: Optional[Union[str, Dict]] = None,
-        title: Optional[str] = None,
-        xlabel: Optional[str] = None,
-        ylabel: Optional[str] = None,
-        ax: Optional[Axes] = None,
-        test: str = 'Mann-Whitney',
-        comparisons_correction=None, #"benjamini-hochberg"
+        palette: str | dict | None = None,
+        title: str | None = None,
+        xlabel: str | None = None,
+        ylabel: str | None = None,
+        ax: Axes | None = None,
+        test: str = "Mann-Whitney",
+        comparisons_correction: str | None = None,
         alpha: float = 0.8,
-        order: Optional[List[str]] = None,
+        order: list[str] | None = None,
         fontsize: int = 12,
         rotation: int = 0,
-        save_path: Optional[str] = None,
+        save_path: str | None = None,
         dpi: int = 300,
         is_paired: bool = False,
-        pair_col: Optional[str] = None,
-        verbose = False
+        pair_col: str | None = None,
+        verbose: bool = False,
     ) -> Axes:
         """
         Create boxplot with statistical annotations.
@@ -114,6 +113,9 @@ class PivotTablePlot(BasePlot):
         test : str, default 'Mann-Whitney'
             Statistical test for pairwise comparisons. Options include:
             'Mann-Whitney', 'Wilcoxon', 't-test_ind', 'Welch', etc.
+        comparisons_correction : str, optional
+            Method for multiple comparisons correction (e.g., "benjamini-hochberg").
+            If None, no correction is applied.
         alpha : float, default 0.8
             Transparency level for boxplot fill colors (0-1).
         order : list of str, optional
@@ -177,7 +179,7 @@ class PivotTablePlot(BasePlot):
         # Use sample_metadata if no data provided
         if data is None:
             data = self.pivot_table.sample_metadata
-            
+
         if ax is None:
             self.fig, ax = plt.subplots(figsize=(10, 6))
         else:
@@ -189,28 +191,30 @@ class PivotTablePlot(BasePlot):
         # Check paired test requirements
         if is_paired and pair_col is None:
             raise ValueError("pair_col must be specified when is_paired=True")
-        
+
         # Prepare data for paired tests if needed
         if is_paired and pair_col is not None:
             # Validate that pair_col exists
             if pair_col not in data.columns:
                 raise ValueError(f"Column '{pair_col}' not found in data")
-            
+
             # For paired tests, we need to ensure we have complete pairs
             # Group by pair_col and keep only pairs that have both groups
             pair_groups = data.groupby(pair_col)
             valid_pairs = []
-            
+
             for pair_id, pair_data in pair_groups:
                 groups_in_pair = pair_data[group_col].unique()
                 # Only keep pairs that have data for multiple groups
                 if len(groups_in_pair) > 1:
                     valid_pairs.append(pair_data)
-            
+
             if valid_pairs:
                 data = pd.concat(valid_pairs, ignore_index=True)
             else:
-                print("Warning: No valid paired samples found. Switching to unpaired test.")
+                print(
+                    "Warning: No valid paired samples found. Switching to unpaired test."
+                )
                 is_paired = False
 
         gb = data.groupby(group_col)
@@ -222,15 +226,26 @@ class PivotTablePlot(BasePlot):
         ax.set_title(title, fontsize=fontsize)
 
         # boxplot
-        boxplot = sns.boxplot(data=data, x=group_col, y=test_col,
-                              ax=ax, hue=group_col, palette=palette, order=order)
+        boxplot = sns.boxplot(
+            data=data,
+            x=group_col,
+            y=test_col,
+            ax=ax,
+            hue=group_col,
+            palette=palette,
+            order=order,
+        )
 
         # alpha
         for patch in boxplot.patches:
-            patch.set_facecolor((patch.get_facecolor()[0],  # R
-                                patch.get_facecolor()[1],  # G
-                                patch.get_facecolor()[2],  # B
-                                alpha))
+            patch.set_facecolor(
+                (
+                    patch.get_facecolor()[0],  # R
+                    patch.get_facecolor()[1],  # G
+                    patch.get_facecolor()[2],  # B
+                    alpha,
+                )
+            )
 
         # stat
         if is_paired and pair_col is not None:
@@ -241,16 +256,16 @@ class PivotTablePlot(BasePlot):
                 data=data,
                 x=group_col,
                 y=test_col,
-                order=order
+                order=order,
             )
             # Configure for paired test - Wilcoxon is typically used for paired data
-            paired_test = 'Wilcoxon' if test == 'Mann-Whitney' else test
+            paired_test = "Wilcoxon" if test == "Mann-Whitney" else test
             annotator.configure(
                 test=paired_test,
                 comparisons_correction=comparisons_correction,
-                text_format='star',
-                loc='inside',
-                verbose=verbose,  
+                text_format="star",
+                loc="inside",
+                verbose=verbose,
             )
             annotator.apply_and_annotate()
         else:
@@ -261,13 +276,13 @@ class PivotTablePlot(BasePlot):
                 data=data,
                 x=group_col,
                 y=test_col,
-                order=order
+                order=order,
             )
             annotator.configure(
                 test=test,
                 comparisons_correction=comparisons_correction,
-                text_format='star',
-                loc='inside',
+                text_format="star",
+                loc="inside",
                 verbose=verbose,
             )
             annotator.apply_and_annotate()
@@ -276,8 +291,7 @@ class PivotTablePlot(BasePlot):
         sample_counts = gb.size().to_dict()
         # Use order if provided, otherwise use natural groupby order
         groups_list = order if order is not None else list(gb.groups.keys())
-        xticks_labels = [
-            f"{group} (n={sample_counts[group]})" for group in groups_list]
+        xticks_labels = [f"{group} (n={sample_counts[group]})" for group in groups_list]
         # Set tick positions first, then labels
         ax.set_xticks(range(len(groups_list)))
         ax.set_xticklabels(xticks_labels, fontsize=fontsize, rotation=rotation)
@@ -288,28 +302,28 @@ class PivotTablePlot(BasePlot):
 
         # Save figure
         if save_path is not None:
-            self.save(save_path, dpi=dpi, bbox_inches='tight', facecolor='white')
+            self.save(save_path, dpi=dpi, bbox_inches="tight", facecolor="white")
         return ax
-    
+
     def plot_pca_samples(
         self,
         color_col: str = "subtype",
-        shape_col: Optional[str] = None,
-        figsize: Tuple[int, int] = (12, 6),
+        shape_col: str | None = None,
+        figsize: tuple[int, int] = (12, 6),
         to_binary: bool = False,
-        palette: Optional[Union[str, Dict[str, str]]] = None,
+        palette: str | dict[str, str] | None = None,
         alpha: float = 0.8,
-        title: Optional[str] = None,
+        title: str | None = None,
         titlesize: int = 14,
         is_numeric: bool = False,
-        save_path: Optional[str] = None,
+        save_path: str | None = None,
         fontsize: int = 12,
-        width_ratios: Tuple[int, int] = (4, 1),
+        width_ratios: tuple[int, int] = (4, 1),
         legend_item_spacing: float = 0.04,
         legend_group_spacing: float = 0.06,
         dpi: int = 300,
-        s: int = 60
-    ) -> Tuple[pd.DataFrame, np.ndarray, PCA]:
+        s: int = 60,
+    ) -> tuple[pd.DataFrame, np.ndarray, PCA]:
         """
         Plot PCA scatter plot using ColorManager and LegendManager for unified styling.
 
@@ -366,15 +380,15 @@ class PivotTablePlot(BasePlot):
 
         Notes
         -----
-        This method uses ColorManager for automatic color generation and LegendManager 
-        for legend rendering, providing the most consistent styling with other plot 
+        This method uses ColorManager for automatic color generation and LegendManager
+        for legend rendering, providing the most consistent styling with other plot
         types in the package.
-        
+
         For numeric color encoding (is_numeric=True):
         - Uses continuous colormap for color representation
         - Displays colorbar instead of discrete legend
         - Still supports shape encoding via shape_col parameter
-        
+
         For categorical color encoding (is_numeric=False):
         - Uses discrete colors for each category
         - Displays standard legend with color patches
@@ -386,7 +400,7 @@ class PivotTablePlot(BasePlot):
         >>> pca_df, variance, pca_obj = pivot_table.plot.plot_pca_samples(
         ...     color_col="subtype"
         ... )
-        
+
         >>> # PCA with numeric colors and shape encoding
         >>> pca_df, variance, pca_obj = pivot_table.plot.plot_pca_samples(
         ...     color_col="TMB",  # numeric column
@@ -394,7 +408,7 @@ class PivotTablePlot(BasePlot):
         ...     is_numeric=True,
         ...     palette="viridis"
         ... )
-        
+
         >>> # PCA with both categorical color and shape encoding
         >>> pca_df, variance, pca_obj = pivot_table.plot.plot_pca_samples(
         ...     color_col="subtype",
@@ -404,21 +418,21 @@ class PivotTablePlot(BasePlot):
         """
         from .LegendManager import LegendManager
         from .ColorManager import ColorManager
-        
+
         # Calculate PCA result
-        pca_result_df, explained_variance, pca = self.pivot_table.PCA(to_binary=to_binary)
+        pca_result_df, explained_variance, pca = self.pivot_table.PCA(
+            to_binary=to_binary
+        )
 
         # Ensure color_col exists in sample_metadata
         if color_col not in self.pivot_table.sample_metadata.columns:
-            raise ValueError(
-                f"Column '{color_col}' not found in sample_metadata.")
+            raise ValueError(f"Column '{color_col}' not found in sample_metadata.")
         pca_result_df[color_col] = self.pivot_table.sample_metadata[color_col]
-        
+
         # Add shape_col if specified
         if shape_col is not None:
             if shape_col not in self.pivot_table.sample_metadata.columns:
-                raise ValueError(
-                    f"Column '{shape_col}' not found in sample_metadata.")
+                raise ValueError(f"Column '{shape_col}' not found in sample_metadata.")
             pca_result_df[shape_col] = self.pivot_table.sample_metadata[shape_col]
 
         # Create GridSpec layout for PCA plot and legend
@@ -436,24 +450,32 @@ class PivotTablePlot(BasePlot):
             palette = "viridis" if is_numeric else "Set1"
 
         # Check if data is actually numeric
-        is_actually_numeric = is_numeric and pd.api.types.is_numeric_dtype(pca_result_df[color_col])
-        
+        is_actually_numeric = is_numeric and pd.api.types.is_numeric_dtype(
+            pca_result_df[color_col]
+        )
+
         # Show warning if user specified is_numeric=True but data is not numeric
         if is_numeric and not is_actually_numeric:
-            print(f"Warning: Column '{color_col}' contains non-numeric data but is_numeric=True. "
-                  f"Treating as categorical data instead.")
-        
+            print(
+                f"Warning: Column '{color_col}' contains non-numeric data but is_numeric=True. "
+                f"Treating as categorical data instead."
+            )
+
         if is_actually_numeric:
             # Numeric color encoding with colormap
             if isinstance(palette, dict):
-                raise ValueError("For numeric data, palette should be a colormap name (str), not a dictionary")
-            
+                raise ValueError(
+                    "For numeric data, palette should be a colormap name (str), not a dictionary"
+                )
+
             if shape_col is not None:
                 # Handle shape encoding with numeric colors
                 unique_shapes = pca_result_df[shape_col].unique()
-                shape_markers = ['o', 's', '^', 'D', 'v', '<', '>', 'p', '*', 'h'][:len(unique_shapes)]
+                shape_markers = ["o", "s", "^", "D", "v", "<", ">", "p", "*", "h"][
+                    : len(unique_shapes)
+                ]
                 shape_dict = dict(zip(unique_shapes, shape_markers))
-                
+
                 # Plot with both numeric color and shape
                 scatter_objects = []
                 for shape_val in unique_shapes:
@@ -461,15 +483,16 @@ class PivotTablePlot(BasePlot):
                     subset = pca_result_df[mask]
                     if len(subset) > 0:
                         scatter_obj = ax_pca.scatter(
-                            subset["PC1"], subset["PC2"],
+                            subset["PC1"],
+                            subset["PC2"],
                             c=subset[color_col],
                             cmap=palette,
                             marker=shape_dict[shape_val],  # type: ignore
-                            alpha=alpha, 
-                            s=s
+                            alpha=alpha,
+                            s=s,
                         )
                         scatter_objects.append(scatter_obj)
-                
+
                 # Use the first scatter object for colorbar (they all use the same colormap)
                 if scatter_objects:
                     legend_manager.add_numeric_colorbar(
@@ -477,18 +500,20 @@ class PivotTablePlot(BasePlot):
                         scatter_obj=scatter_objects[0],
                         target_ax=ax_pca,
                         label=color_col,
-                        orientation='vertical', 
-                        fraction=0.08, 
-                        pad=0.02
+                        orientation="vertical",
+                        fraction=0.08,
+                        pad=0.02,
                     )
-                    
+
                     # Add shape legend using LegendManager
-                    legend_manager.add_shape_legend(shape_col, {str(k): str(v) for k, v in shape_dict.items()})
+                    legend_manager.add_shape_legend(
+                        shape_col, {str(k): str(v) for k, v in shape_dict.items()}
+                    )
                     legend_manager.plot_pca_legends(
-                        shape_legend=shape_col, 
+                        shape_legend=shape_col,
                         fontsize=fontsize,
                         legend_item_spacing=legend_item_spacing,
-                        legend_group_spacing=legend_group_spacing
+                        legend_group_spacing=legend_group_spacing,
                     )
                 else:
                     # Hide the legend axis since we're using colorbar on the plot
@@ -497,30 +522,30 @@ class PivotTablePlot(BasePlot):
                 # No shape encoding, just numeric colors
                 scatter = ax_pca.scatter(
                     pca_result_df["PC1"],
-                    pca_result_df["PC2"], 
+                    pca_result_df["PC2"],
                     c=pca_result_df[color_col],
                     cmap=palette,
                     alpha=alpha,
-                    s=s
+                    s=s,
                 )
-                
+
                 # Use LegendManager but modify it to create custom colorbar
                 legend_manager.add_numeric_colorbar(
                     legend_name=color_col,
                     scatter_obj=scatter,
                     target_ax=ax_pca,
                     label=color_col,
-                    orientation='vertical', 
-                    fraction=0.08, 
-                    pad=0.02
+                    orientation="vertical",
+                    fraction=0.08,
+                    pad=0.02,
                 )
                 # Hide the legend axis since we're using colorbar on the plot
                 ax_legend.set_visible(False)
-            
+
         else:
             # Categorical color encoding using ColorManager
             unique_colors = pca_result_df[color_col].unique()
-            
+
             # Generate colors using ColorManager
             if isinstance(palette, dict):
                 # Use provided color mapping directly
@@ -528,34 +553,40 @@ class PivotTablePlot(BasePlot):
             elif isinstance(palette, str):
                 # Use ColorManager to generate colors from colormap name
                 color_palette = color_manager.generate_cmap_from_list(
-                    categories=unique_colors.tolist(), 
-                    cmap_name=palette, 
-                    as_hex=True
+                    categories=unique_colors.tolist(), cmap_name=palette, as_hex=True
                 )
             else:
                 # Fallback to seaborn palette
                 colors = sns.color_palette("Set1", len(unique_colors))
-                color_palette = {str(cat): color for cat, color in zip(unique_colors, colors)}
-            
+                color_palette = {
+                    str(cat): color for cat, color in zip(unique_colors, colors)
+                }
+
             # Handle shape encoding
             if shape_col is not None:
                 unique_shapes = pca_result_df[shape_col].unique()
-                shape_markers = ['o', 's', '^', 'D', 'v', '<', '>', 'p', '*', 'h'][:len(unique_shapes)]
+                shape_markers = ["o", "s", "^", "D", "v", "<", ">", "p", "*", "h"][
+                    : len(unique_shapes)
+                ]
                 shape_dict = dict(zip(unique_shapes, shape_markers))
-                
+
                 # Plot with both color and shape
                 for color_val in unique_colors:
                     for shape_val in unique_shapes:
-                        mask = (pca_result_df[color_col] == color_val) & (pca_result_df[shape_col] == shape_val)
+                        mask = (pca_result_df[color_col] == color_val) & (
+                            pca_result_df[shape_col] == shape_val
+                        )
                         subset = pca_result_df[mask]
                         if len(subset) > 0:
                             ax_pca.scatter(
-                                subset["PC1"], subset["PC2"],
-                                c=[color_palette.get(str(color_val), 'gray')], 
+                                subset["PC1"],
+                                subset["PC2"],
+                                c=[color_palette.get(str(color_val), "gray")],
                                 marker=shape_dict[shape_val],  # type: ignore
-                                alpha=alpha, s=60
+                                alpha=alpha,
+                                s=60,
                             )
-                
+
                 # Add legends using LegendManager
                 # Ensure colors are in hex format for LegendManager
                 color_legend_dict = {}
@@ -563,20 +594,23 @@ class PivotTablePlot(BasePlot):
                     if isinstance(color, (tuple, list, np.ndarray)):
                         # Convert RGB/RGBA to hex
                         import matplotlib.colors as mcolors
+
                         color_legend_dict[str(val)] = mcolors.to_hex(color)
                     else:
                         color_legend_dict[str(val)] = str(color)
-                
+
                 legend_manager.add_legend(color_col, color_legend_dict)
-                legend_manager.add_shape_legend(shape_col, {str(k): str(v) for k, v in shape_dict.items()})
+                legend_manager.add_shape_legend(
+                    shape_col, {str(k): str(v) for k, v in shape_dict.items()}
+                )
                 legend_manager.plot_pca_legends(
-                    color_legend=color_col, 
-                    shape_legend=shape_col, 
+                    color_legend=color_col,
+                    shape_legend=shape_col,
                     fontsize=fontsize,
                     legend_item_spacing=legend_item_spacing,
-                    legend_group_spacing=legend_group_spacing
+                    legend_group_spacing=legend_group_spacing,
                 )
-                
+
             else:
                 # Color only
                 for color_val in unique_colors:
@@ -584,35 +618,44 @@ class PivotTablePlot(BasePlot):
                     subset = pca_result_df[mask]
                     if len(subset) > 0:
                         ax_pca.scatter(
-                            subset["PC1"], subset["PC2"],
-                            c=[color_palette.get(str(color_val), 'gray')], 
-                            alpha=alpha, s=s
+                            subset["PC1"],
+                            subset["PC2"],
+                            c=[color_palette.get(str(color_val), "gray")],
+                            alpha=alpha,
+                            s=s,
                         )
-                
+
                 # Add color legend using LegendManager
                 color_legend_dict = {}
                 for val, color in color_palette.items():
                     if isinstance(color, (tuple, list, np.ndarray)):
                         import matplotlib.colors as mcolors
+
                         color_legend_dict[str(val)] = mcolors.to_hex(color)
                     else:
                         color_legend_dict[str(val)] = str(color)
-                
+
                 legend_manager.add_legend(color_col, color_legend_dict)
-                legend_manager.plot_pca_legends(color_legend=color_col, fontsize=fontsize)
+                legend_manager.plot_pca_legends(
+                    color_legend=color_col, fontsize=fontsize
+                )
 
         # Set PCA plot properties
         if title:
             ax_pca.set_title(title, fontsize=titlesize)
         ax_pca.set_xlabel(
-            f"Principal Component 1 ({explained_variance[0] * 100:.2f}%)", fontsize=fontsize)
+            f"Principal Component 1 ({explained_variance[0] * 100:.2f}%)",
+            fontsize=fontsize,
+        )
         ax_pca.set_ylabel(
-            f"Principal Component 2 ({explained_variance[1] * 100:.2f}%)", fontsize=fontsize)
+            f"Principal Component 2 ({explained_variance[1] * 100:.2f}%)",
+            fontsize=fontsize,
+        )
 
         # Save figure using BasePlot's save method
         if save_path is not None:
             self.save(save_path, dpi=dpi)
-                    
+
         plt.tight_layout()
         plt.show()
         return pca_result_df, explained_variance, pca

@@ -4,6 +4,9 @@ dist/
 *.pyc
 *.ttf
 *.TTF
-docs/
+docs/_build/
 fonts/
 __pycache__/
+.coverage
+uv.lock
+.venv/

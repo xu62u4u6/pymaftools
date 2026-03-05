@@ -2,6 +2,32 @@
 
 ---
 
+## 🔖 Version 0.4.0 (March 2026)
+
+### 🆕 New Features
+* **Advanced Filtering**: `filter_by_variance()` supports `var` and `mad` methods with quantile or absolute threshold
+* **Statistical Filtering**: `filter_by_statistical_test()` with FDR correction (t-test, Mann-Whitney, Kruskal-Wallis, ANOVA)
+* **Sphinx Documentation**: Auto-generated API docs from docstrings, deployed to GitHub Pages
+
+### 🔧 Code Quality
+* **Type Hints**: ~90% coverage across all modules with `from __future__ import annotations`
+* **NumPy Docstrings**: Standardized all docstrings to NumPy style
+* **English Comments**: Translated all Chinese comments to English
+* **Ruff Linting**: Added ruff to CI, fixed all lint errors (unused imports, ambiguous variables, formatting)
+* **Specific Exceptions**: Replaced bare `except:` with specific exception types
+* **Explicit Imports**: Replaced wildcard `import *` with explicit imports in `__init__.py`
+
+### 🛠 Enhancements
+* **Dependency Management**: All dependencies now have upper bounds to prevent breaking updates
+* **CI/CD**: Added coverage threshold (`--cov-fail-under=40`), ruff lint job, docs auto-deploy
+* **Build**: Modernized `deploy.sh` to use `python -m build` instead of deprecated `setup.py`
+
+### 📦 Miscellaneous
+* Added `RELEASE_CHECKLIST.md` for standardized release process
+* Updated `.gitignore` for `.coverage`, `uv.lock`, `.venv`
+
+---
+
 ## 🔖 Version 0.3.0 (October 2025)
 
 ### 🔥 Breaking Changes

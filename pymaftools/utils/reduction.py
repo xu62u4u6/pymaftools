@@ -1,6 +1,9 @@
+from __future__ import annotations
+
 from sklearn.decomposition import PCA
 from sklearn.cross_decomposition import CCA
 import pandas as pd
+
 
 class PCA_CCA:
     """
@@ -22,8 +25,12 @@ class PCA_CCA:
     """
 
     def __init__(self, n_pca_components=20, n_cca_components=1, random_state=42):
-        self.pca_model_snv = PCA(n_components=n_pca_components, random_state=random_state)
-        self.pca_model_cnv = PCA(n_components=n_pca_components, random_state=random_state)
+        self.pca_model_snv = PCA(
+            n_components=n_pca_components, random_state=random_state
+        )
+        self.pca_model_cnv = PCA(
+            n_components=n_pca_components, random_state=random_state
+        )
         self.cca_model = CCA(n_components=n_cca_components)
 
         self.features_snv = None
@@ -110,10 +117,10 @@ class PCA_CCA:
         if self.features_snv is None or self.features_cnv is None:
             raise ValueError("Model has not been fitted yet.")
 
-        loadings_snv = self.pca_model_snv.components_.T   # (n_features, n_pca)
+        loadings_snv = self.pca_model_snv.components_.T  # (n_features, n_pca)
         loadings_cnv = self.pca_model_cnv.components_.T
 
-        cca_w_snv = self.cca_model.x_weights_             # (n_pca, n_cca)
+        cca_w_snv = self.cca_model.x_weights_  # (n_pca, n_cca)
         cca_w_cnv = self.cca_model.y_weights_
 
         feature_w_snv = loadings_snv @ cca_w_snv
@@ -122,15 +129,15 @@ class PCA_CCA:
         df_snv = pd.DataFrame(
             feature_w_snv,
             index=self.features_snv,
-            columns=[f"CCA_SNV_comp{i+1}" for i in range(feature_w_snv.shape[1])]
+            columns=[f"CCA_SNV_comp{i + 1}" for i in range(feature_w_snv.shape[1])],
         )
 
         df_cnv = pd.DataFrame(
             feature_w_cnv,
             index=self.features_cnv,
-            columns=[f"CCA_CNV_comp{i+1}" for i in range(feature_w_cnv.shape[1])]
+            columns=[f"CCA_CNV_comp{i + 1}" for i in range(feature_w_cnv.shape[1])],
         )
-        
+
         def _process_weights(df: pd.DataFrame) -> pd.DataFrame:
             """Helper to add abs/mean weights and return sorted DataFrame."""
             df = df.copy()

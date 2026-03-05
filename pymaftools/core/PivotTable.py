@@ -9,24 +9,23 @@ from __future__ import annotations
 
 # Standard library imports
 import sqlite3
-from itertools import combinations
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Union
 
 # Third-party imports
-import matplotlib.pyplot as plt
-import networkx as nx
 import numpy as np
 import pandas as pd
-import seaborn as sns
-from matplotlib.axes import Axes
-from matplotlib.figure import Figure
-from matplotlib.patches import Patch, Rectangle
-from scipy.stats import chi2_contingency, fisher_exact
+from scipy.stats import (
+    chi2_contingency,
+    f_oneway,
+    fisher_exact,
+    kruskal,
+    mannwhitneyu,
+    ttest_ind,
+)
 from sklearn.decomposition import PCA
 from sklearn.metrics import pairwise_distances
 from sklearn.metrics.pairwise import cosine_similarity
-from statannotations.Annotator import Annotator
 from statsmodels.stats.multitest import multipletests
 
 # Local imports
@@ -34,25 +33,28 @@ from .PairwiseMatrix import CooccurrenceMatrix, SimilarityMatrix
 
 # Import for lazy loading in property accessor
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from ..plot.PivotTablePlot import PivotTablePlot
+    from .MAF import MAF
+
 
 class PivotTable(pd.DataFrame):
     """
     Enhanced pandas DataFrame for bioinformatics analysis.
-    
+
     A specialized DataFrame that maintains synchronized metadata for both
     features (rows, typically genes/mutations) and samples (columns).
     Designed for genomic data analysis with built-in support for mutation
     frequency calculations, statistical testing, and visualization.
-    
+
     Attributes
     ----------
     feature_metadata : pd.DataFrame
         Metadata for features (genes/mutations/signatures), indexed by feature names.
-    sample_metadata : pd.DataFrame 
+    sample_metadata : pd.DataFrame
         Metadata for samples, indexed by sample names.
-        
+
     Examples
     --------
     >>> # Create a PivotTable from mutation data
@@ -61,21 +63,17 @@ class PivotTable(pd.DataFrame):
     >>> table = PivotTable(data)
     >>> table.feature_metadata['freq'] = table.add_freq().feature_metadata['freq']
     """
+
     # Store metadata attribute names for pandas inheritance
     _metadata: List[str] = ["feature_metadata", "sample_metadata"]
 
-    def __init__(
-        self, 
-        data: Any = None, 
-        *args: Any, 
-        **kwargs: Any
-    ) -> None:
+    def __init__(self, data: Any = None, *args: Any, **kwargs: Any) -> None:
         """
         Initialize PivotTable with data and metadata.
-        
+
         If data is a PivotTable with existing metadata, preserve the metadata.
         Otherwise, initialize empty metadata DataFrames.
-        
+
         Parameters
         ----------
         data : array-like, dict, or DataFrame
@@ -84,20 +82,63 @@ class PivotTable(pd.DataFrame):
             Additional arguments passed to pandas DataFrame constructor.
         """
         super().__init__(data, *args, **kwargs)
-        
+
         # Check if data is a PivotTable with existing metadata
-        if hasattr(data, 'feature_metadata') and hasattr(data, 'sample_metadata'):
+        if hasattr(data, "feature_metadata") and hasattr(data, "sample_metadata"):
             # Preserve metadata from source PivotTable, but reindex to match new structure
             self.feature_metadata = data.feature_metadata.reindex(
                 self.index, fill_value=pd.NA
             ).copy()
             self.sample_metadata = data.sample_metadata.reindex(
-                self.columns, fill_value=pd.NA  
+                self.columns, fill_value=pd.NA
             ).copy()
         else:
             # Initialize empty metadata DataFrames with matching indices
             self.feature_metadata: pd.DataFrame = pd.DataFrame(index=self.index)
             self.sample_metadata: pd.DataFrame = pd.DataFrame(index=self.columns)
+
+    def info(self) -> str:
+        """Return a summary string of the PivotTable structure."""
+        n_samples = len(self.columns)
+        n_features = len(self.index)
+
+        lines = [f"PivotTable(samples={n_samples}, features={n_features})"]
+
+        # Sample metadata info
+        if hasattr(self, "sample_metadata") and self.sample_metadata is not None:
+            sm_cols = self.sample_metadata.columns.tolist()
+            n_sm_cols = len(sm_cols)
+            if n_sm_cols > 5:
+                cols_str = str(sm_cols[:5])[:-1] + ", ...]"
+            else:
+                cols_str = str(sm_cols)
+            lines.append(f"├── sample_metadata: {cols_str}  ({n_sm_cols} columns)")
+        else:
+            lines.append("├── sample_metadata: None")
+
+        # Feature metadata info
+        if hasattr(self, "feature_metadata") and self.feature_metadata is not None:
+            fm_cols = self.feature_metadata.columns.tolist()
+            n_fm_cols = len(fm_cols)
+            if n_fm_cols > 5:
+                cols_str = str(fm_cols[:5])[:-1] + ", ...]"
+            else:
+                cols_str = str(fm_cols)
+            lines.append(f"├── feature_metadata: {cols_str}  ({n_fm_cols} columns)")
+        else:
+            lines.append("├── feature_metadata: None")
+
+        # Data info
+        dtype_str = str(self.values.dtype) if self.size > 0 else "empty"
+        nan_count = self.isna().sum().sum()
+        lines.append(f"└── data: {dtype_str}, NaN count: {nan_count}")
+
+        return "\n".join(lines)
+
+    def __repr__(self) -> str:
+        """Return DataFrame repr with PivotTable info appended."""
+        df_repr = super().__repr__()
+        return f"{df_repr}\n\n{self.info()}"
 
     @property
     def _constructor(self):
@@ -106,6 +147,7 @@ class PivotTable(pd.DataFrame):
             obj._copy_metadata(self)
             obj._validate_metadata()
             return obj
+
         return _new_constructor
 
     def _copy_metadata(self, source):
@@ -117,29 +159,35 @@ class PivotTable(pd.DataFrame):
                     # Reindex metadata to match current object structure
                     if attr == "feature_metadata":
                         # Match feature_metadata to current index
-                        setattr(self, attr, source_val.reindex(self.index, fill_value=pd.NA))
+                        setattr(
+                            self, attr, source_val.reindex(self.index, fill_value=pd.NA)
+                        )
                     elif attr == "sample_metadata":
                         # Match sample_metadata to current columns
-                        setattr(self, attr, source_val.reindex(self.columns, fill_value=pd.NA))
+                        setattr(
+                            self,
+                            attr,
+                            source_val.reindex(self.columns, fill_value=pd.NA),
+                        )
                     else:
                         # For any other metadata attributes, just copy
                         setattr(self, attr, source_val.copy())
-                        
+
     @property
     def plot(self) -> "PivotTablePlot":
         """
         Access plotting functionality for the PivotTable.
-        
+
         Returns
         -------
         PivotTablePlot
             Plotting interface providing various visualization methods.
-            
+
         Examples
         --------
         >>> # PCA plot colored by subtype
         >>> pivot_table.plot.plot_pca_samples(group_col="subtype")
-        
+
         >>> # Boxplot with statistical annotations
         >>> pivot_table.plot.plot_boxplot_with_annot(
         ...     test_col="TMB",
@@ -148,22 +196,19 @@ class PivotTable(pd.DataFrame):
         """
         # Lazy import to avoid circular dependencies
         from ..plot.PivotTablePlot import PivotTablePlot
+
         return PivotTablePlot(self)
 
     def _validate_metadata(self) -> None:
         """Validate that metadata indices match DataFrame structure."""
         if not self.feature_metadata.index.equals(self.index):
-            raise ValueError(
-                "feature_metadata index does not match PivotTable index.")
+            raise ValueError("feature_metadata index does not match PivotTable index.")
 
         if not self.sample_metadata.index.equals(self.columns):
-            raise ValueError(
-                "sample_metadata index does not match PivotTable columns.")
+            raise ValueError("sample_metadata index does not match PivotTable columns.")
 
     def rename_index_and_columns(
-        self, 
-        index_name: str = "feature", 
-        columns_name: str = "sample"
+        self, index_name: str = "feature", columns_name: str = "sample"
     ) -> "PivotTable":
         """
         Rename the index and columns of the PivotTable.
@@ -174,7 +219,7 @@ class PivotTable(pd.DataFrame):
             New name for the index (features).
         columns_name : str, default "sample"
             New name for the columns (samples).
-            
+
         Returns
         -------
         PivotTable
@@ -190,7 +235,7 @@ class PivotTable(pd.DataFrame):
     def to_sqlite(self, db_path: str) -> None:
         """
         Save PivotTable to SQLite database format.
-        
+
         Parameters
         ----------
         db_path : str
@@ -202,7 +247,6 @@ class PivotTable(pd.DataFrame):
 
         conn = sqlite3.connect(str(db_path))
         table = self.copy().rename_index_and_columns()
-        # TODO: replace False with "WT" in all files
         table = table.replace(False, "WT")
         table.to_sql("data", conn, index=True)
         table.sample_metadata.to_sql("sample_metadata", conn, index=True)
@@ -214,12 +258,12 @@ class PivotTable(pd.DataFrame):
     def read_sqlite(cls, db_path: str) -> "PivotTable":
         """
         Load PivotTable from SQLite database format.
-        
+
         Parameters
         ----------
         db_path : str
             Path to the SQLite database file.
-            
+
         Returns
         -------
         PivotTable
@@ -233,13 +277,14 @@ class PivotTable(pd.DataFrame):
 
         # Load metadata tables
         sample_metadata = pd.read_sql(
-            "SELECT * FROM 'sample_metadata'", conn, index_col="sample")
+            "SELECT * FROM 'sample_metadata'", conn, index_col="sample"
+        )
         feature_metadata = pd.read_sql(
-            "SELECT * FROM 'feature_metadata'", conn, index_col="feature")
+            "SELECT * FROM 'feature_metadata'", conn, index_col="feature"
+        )
 
         # Create PivotTable instance
         table = cls(data)
-        # TODO: replace False with "WT" in all files
         table = table.replace("WT", False)
         table.sample_metadata = sample_metadata
         table.feature_metadata = feature_metadata
@@ -249,9 +294,7 @@ class PivotTable(pd.DataFrame):
         return table
 
     def to_hierarchical_clustering(
-        self,
-        method: str = 'ward',
-        metric: str = 'euclidean'
+        self, method: str = "ward", metric: str = "euclidean"
     ) -> Dict[str, np.ndarray]:
         """
         Perform hierarchical clustering on both features and samples.
@@ -265,18 +308,18 @@ class PivotTable(pd.DataFrame):
         ----------
         method : str, default 'ward'
             Linkage algorithm to use. Options include:
-            
+
             - 'ward': Minimizes within-cluster variance (requires euclidean metric)
-            - 'single': Nearest point algorithm  
+            - 'single': Nearest point algorithm
             - 'complete': Farthest point algorithm
             - 'average': UPGMA algorithm
             - 'weighted': WPGMA algorithm
             - 'centroid': UPGMC algorithm
             - 'median': WPGMC algorithm
-            
+
         metric : str, default 'euclidean'
             Distance metric for clustering. Common options:
-            
+
             - 'euclidean': Standard Euclidean distance
             - 'manhattan': L1 distance
             - 'cosine': Cosine distance
@@ -288,11 +331,11 @@ class PivotTable(pd.DataFrame):
         -------
         Dict[str, np.ndarray]
             Dictionary containing linkage matrices:
-            
+
             - 'gene_linkage' : np.ndarray of shape (n_features-1, 4)
                 Linkage matrix for features (genes), where each row represents
                 a merge operation in the clustering tree
-            - 'sample_linkage' : np.ndarray of shape (n_samples-1, 4)  
+            - 'sample_linkage' : np.ndarray of shape (n_samples-1, 4)
                 Linkage matrix for samples, where each row represents
                 a merge operation in the clustering tree
 
@@ -313,14 +356,14 @@ class PivotTable(pd.DataFrame):
 
         >>> # Using Jaccard distance for binary mutation data
         >>> clustering = pivot_table.to_hierarchical_clustering(
-        ...     method='average', 
+        ...     method='average',
         ...     metric='jaccard'
         ... )
 
         >>> # Create dendrogram from results
         >>> from scipy.cluster.hierarchy import dendrogram
         >>> import matplotlib.pyplot as plt
-        >>> 
+        >>>
         >>> plt.figure(figsize=(10, 6))
         >>> dendrogram(clustering['gene_linkage'])
         >>> plt.title('Gene Clustering Dendrogram')
@@ -335,19 +378,12 @@ class PivotTable(pd.DataFrame):
         from scipy.cluster.hierarchy import linkage
 
         # Feature clustering (genes/mutations along rows)
-        gene_linkage = linkage(self.values,
-                               method=method,
-                               metric=metric)
+        gene_linkage = linkage(self.values, method=method, metric=metric)
 
         # Sample clustering (samples along columns, so transpose data)
-        sample_linkage = linkage(self.values.T,
-                                 method=method,
-                                 metric=metric)
+        sample_linkage = linkage(self.values.T, method=method, metric=metric)
 
-        return {
-            'gene_linkage': gene_linkage,
-            'sample_linkage': sample_linkage
-        }
+        return {"gene_linkage": gene_linkage, "sample_linkage": sample_linkage}
 
     def copy(self, deep: bool = True) -> "PivotTable":
         """
@@ -421,12 +457,16 @@ class PivotTable(pd.DataFrame):
         """
         new = cls(df)
         new.feature_metadata = feature_meta_src.reindex(
-            df.index, fill_value=feature_fill)
+            df.index, fill_value=feature_fill
+        )
         new.sample_metadata = sample_meta_src.reindex(
-            df.columns, fill_value=sample_fill)
+            df.columns, fill_value=sample_fill
+        )
         return new
 
-    def __getitem__(self, key: Union[str, List, Tuple, slice, pd.Series, Callable]) -> "PivotTable":
+    def __getitem__(
+        self, key: Union[str, List, Tuple, slice, pd.Series, Callable]
+    ) -> "PivotTable":
         """
         Enhanced indexing support for PivotTable.
 
@@ -441,7 +481,7 @@ class PivotTable(pd.DataFrame):
 
             - str : Single column name
                 Example: ``tbl["gene1"]``
-            - list : Multiple column names  
+            - list : Multiple column names
                 Example: ``tbl[["gene1", "gene2"]]``
             - tuple : (row_selector, column_selector) for 2D indexing
                 Example: ``tbl[["sample1", "sample2"], ["gene1", "gene2"]]``
@@ -455,8 +495,8 @@ class PivotTable(pd.DataFrame):
         Returns
         -------
         PivotTable
-            Always returns a PivotTable with corresponding feature_metadata 
-            and sample_metadata preserved. Scalar results and Series are 
+            Always returns a PivotTable with corresponding feature_metadata
+            and sample_metadata preserved. Scalar results and Series are
             automatically converted to single-element DataFrames.
 
         Notes
@@ -464,7 +504,7 @@ class PivotTable(pd.DataFrame):
         All results are wrapped as PivotTable objects to maintain consistency:
 
         - Scalar values become 1x1 PivotTable
-        - Series become single-row or single-column PivotTable  
+        - Series become single-row or single-column PivotTable
         - DataFrames maintain their structure as PivotTable
 
         The metadata (feature_metadata and sample_metadata) are automatically
@@ -478,7 +518,7 @@ class PivotTable(pd.DataFrame):
         >>> # Multiple column selection
         >>> oncogenes = pivot_table[["TP53", "KRAS", "EGFR"]]
 
-        >>> # 2D indexing 
+        >>> # 2D indexing
         >>> subset = pivot_table[["sample1", "sample2"], ["gene1", "gene2"]]
 
         >>> # Boolean indexing
@@ -518,7 +558,7 @@ class PivotTable(pd.DataFrame):
         self,
         *,
         features: Optional[Union[List, pd.Series, slice]] = None,
-        samples: Optional[Union[List, pd.Series, slice]] = None
+        samples: Optional[Union[List, pd.Series, slice]] = None,
     ) -> "PivotTable":
         """
         Subset PivotTable by features and/or samples.
@@ -540,7 +580,7 @@ class PivotTable(pd.DataFrame):
                 Example: ``slice(None, 10)`` for first 10 features
             - None : Select all features (default)
 
-        samples : list, pd.Series, or slice, optional  
+        samples : list, pd.Series, or slice, optional
             Samples (columns) to select. Can be:
 
             - list of str : Sample names to select
@@ -567,16 +607,16 @@ class PivotTable(pd.DataFrame):
         --------
         >>> # Select specific genes and samples
         >>> subset = pivot_table.subset(
-        ...     features=["TP53", "KRAS"], 
+        ...     features=["TP53", "KRAS"],
         ...     samples=["sample1", "sample2"]
         ... )
 
-        >>> # Select high-frequency mutations 
+        >>> # Select high-frequency mutations
         >>> high_freq = pivot_table.feature_metadata["freq"] > 0.1
         >>> frequent_mutations = pivot_table.subset(features=high_freq)
 
         >>> # Select samples by subtype
-        >>> luad_samples = pivot_table.sample_metadata["subtype"] == "LUAD"  
+        >>> luad_samples = pivot_table.sample_metadata["subtype"] == "LUAD"
         >>> luad_data = pivot_table.subset(samples=luad_samples)
 
         The metadata is subset based on the DataFrame's index (features)
@@ -645,13 +685,13 @@ class PivotTable(pd.DataFrame):
         >>> # Reindex with new features, filling missing with 0
         >>> new_features = ["TP53", "KRAS", "NEW_GENE"]
         >>> reindexed = pivot_table.reindex(
-        ...     index=new_features, 
+        ...     index=new_features,
         ...     fill_value=0,
         ...     feature_fill_value="Unknown"
         ... )
 
         >>> # Reindex with new samples
-        >>> new_samples = ["sample1", "sample2", "new_sample"] 
+        >>> new_samples = ["sample1", "sample2", "new_sample"]
         >>> reindexed = pivot_table.reindex(
         ...     columns=new_samples,
         ...     sample_fill_value="Missing"
@@ -691,7 +731,7 @@ class PivotTable(pd.DataFrame):
         fill_value: Any = np.nan,
         feature_fill_value: Any = np.nan,
         sample_fill_value: Any = np.nan,
-        join: Literal["inner", "outer"] = "outer"
+        join: Literal["inner", "outer"] = "outer",
     ) -> "PivotTable":
         """
         Merge multiple PivotTables into a single PivotTable.
@@ -751,24 +791,21 @@ class PivotTable(pd.DataFrame):
         merged_data = pd.concat(tables, axis=1)
 
         if not merged_data.columns.is_unique:
-            duplicated = merged_data.columns[merged_data.columns.duplicated(
-            )].tolist()
+            duplicated = merged_data.columns[merged_data.columns.duplicated()].tolist()
             raise ValueError(
                 f"Merged PivotTable has duplicate sample names: {duplicated}. "
                 f"Please ensure sample names are unique across tables."
             )
 
         # Step 2: merge metadata before trimming
-        merged_sample_meta = pd.concat(
-            [t.sample_metadata for t in tables], axis=0)
-        merged_feature_meta = pd.concat(
-            [t.feature_metadata for t in tables], axis=0)
-        merged_feature_meta = merged_feature_meta[~merged_feature_meta.index.duplicated(
-            keep="first")]
+        merged_sample_meta = pd.concat([t.sample_metadata for t in tables], axis=0)
+        merged_feature_meta = pd.concat([t.feature_metadata for t in tables], axis=0)
+        merged_feature_meta = merged_feature_meta[
+            ~merged_feature_meta.index.duplicated(keep="first")
+        ]
         # Step 3: determine features to keep
         if join == "inner":
-            features = sorted(set.intersection(
-                *(set(t.index) for t in tables)))
+            features = sorted(set.intersection(*(set(t.index) for t in tables)))
         else:
             features = merged_data.index
 
@@ -777,8 +814,11 @@ class PivotTable(pd.DataFrame):
         # Step 4: create merged PivotTable and align metadata
         merged = PivotTable(merged_data.fillna(fill_value))
         merged.feature_metadata = merged_feature_meta.fillna(
-            feature_fill_value).infer_objects(copy=False)
-        merged.sample_metadata = merged_sample_meta.fillna(sample_fill_value).infer_objects(copy=False)
+            feature_fill_value
+        ).infer_objects(copy=False)
+        merged.sample_metadata = merged_sample_meta.fillna(
+            sample_fill_value
+        ).infer_objects(copy=False)
         merged = merged.reindex(
             index=features,
             columns=samples,
@@ -790,51 +830,51 @@ class PivotTable(pd.DataFrame):
         return merged
 
     def calculate_TMB(
-        self, 
-        default_capture_size: float = 40, 
-        group_col: str = "subtype", 
-        capture_size_dict: Optional[Dict[str, float]] = None
+        self,
+        default_capture_size: float = 40,
+        group_col: str = "subtype",
+        capture_size_dict: Optional[Dict[str, float]] = None,
     ) -> "PivotTable":
         table = self.copy()
         table.sample_metadata["capture_size"] = default_capture_size
 
         if capture_size_dict is not None:
-
             for group, size in capture_size_dict.items():
                 print(group, size)
                 mask = table.sample_metadata[group_col] == group
                 table.sample_metadata.loc[mask, "capture_size"] = size
 
-        table.sample_metadata["TMB"] = table.sample_metadata["mutations_count"] / \
-            table.sample_metadata["capture_size"]
+        table.sample_metadata["TMB"] = (
+            table.sample_metadata["mutations_count"]
+            / table.sample_metadata["capture_size"]
+        )
         return table
-
 
     def calculate_feature_frequency(self) -> pd.Series[float]:
         """
         Calculate mutation frequency for each feature.
 
-        Computes the frequency of each feature (gene/mutation/signature) across 
-        all samples by converting the data to binary format and calculating the 
+        Computes the frequency of each feature (gene/mutation/signature) across
+        all samples by converting the data to binary format and calculating the
         proportion of samples with mutations for each feature.
 
-        Treats any non-False value as indicating the presence of a mutation, 
-        effectively converting the data to binary (mutated/not mutated) before 
+        Treats any non-False value as indicating the presence of a mutation,
+        effectively converting the data to binary (mutated/not mutated) before
         frequency calculation.
 
         Returns
         -------
         pd.Series
             Mutation frequency for each feature, indexed by feature names.
-            Values range from 0.0 (no mutations in any sample) to 1.0 
+            Values range from 0.0 (no mutations in any sample) to 1.0
             (mutations in all samples).
 
         Notes
         -----
         This method is equivalent to calling:
-        
+
         1. Convert PivotTable to binary format using `to_binary_table()`
-        2. Sum mutations across samples (axis=1) 
+        2. Sum mutations across samples (axis=1)
         3. Divide by total number of samples
 
         The frequency represents the proportion of samples that have a mutation
@@ -844,7 +884,7 @@ class PivotTable(pd.DataFrame):
         --------
         >>> # Create example mutation data
         >>> data = pd.DataFrame({
-        ...     'sample1': [True, False, True], 
+        ...     'sample1': [True, False, True],
         ...     'sample2': [False, True, True],
         ...     'sample3': [True, True, False]
         ... }, index=['TP53', 'KRAS', 'EGFR'])
@@ -852,7 +892,7 @@ class PivotTable(pd.DataFrame):
         >>> frequencies = table.calculate_feature_frequency()
         >>> print(frequencies)
         TP53     0.666667
-        KRAS     0.666667  
+        KRAS     0.666667
         EGFR     0.666667
         dtype: float64
 
@@ -871,14 +911,13 @@ class PivotTable(pd.DataFrame):
         frequency = binary_table.sum(axis=1).astype(float) / binary_table.shape[1]
         return frequency
 
-
     def add_freq(self, groups: Dict[str, "PivotTable"] = {}) -> "PivotTable":
         """
         Add mutation frequency columns to feature_metadata.
 
-        Calculates overall mutation frequency and optionally group-specific 
-        frequencies for all features, adding these as new columns to the 
-        feature_metadata DataFrame. This enables frequency-based filtering 
+        Calculates overall mutation frequency and optionally group-specific
+        frequencies for all features, adding these as new columns to the
+        feature_metadata DataFrame. This enables frequency-based filtering
         and analysis operations.
 
         Parameters
@@ -895,10 +934,10 @@ class PivotTable(pd.DataFrame):
         -------
         PivotTable
             A new PivotTable (copy) with frequency columns added to feature_metadata:
-            
+
             - "{group_name}_freq" : float
                 Frequency for each group specified in the groups dictionary
-            - "freq" : float  
+            - "freq" : float
                 Overall frequency across all samples in the current PivotTable
 
         Raises
@@ -910,9 +949,9 @@ class PivotTable(pd.DataFrame):
         -----
         The frequency calculation treats any non-False value as indicating mutation
         presence. Frequencies are calculated as:
-        
+
         frequency = (number of mutated samples) / (total number of samples)
-        
+
         Group-specific frequencies are calculated independently for each group's
         PivotTable, while the overall frequency uses all samples in the current
         PivotTable.
@@ -924,7 +963,7 @@ class PivotTable(pd.DataFrame):
         >>> print(table_with_freq.feature_metadata.columns)
         Index(['freq'], dtype='object')
 
-        >>> # Add group-specific frequencies  
+        >>> # Add group-specific frequencies
         >>> luad_subset = pivot_table.subset(samples=luad_sample_mask)
         >>> lusc_subset = pivot_table.subset(samples=lusc_sample_mask)
         >>> groups = {"LUAD": luad_subset, "LUSC": lusc_subset}
@@ -950,30 +989,31 @@ class PivotTable(pd.DataFrame):
 
         for group, table in groups.items():
             if not isinstance(table, PivotTable):
-                raise TypeError(f"Expected PivotTable for group '{group}', got {type(table)}.")
+                raise TypeError(
+                    f"Expected PivotTable for group '{group}', got {type(table)}."
+                )
             freq_data[f"{group}_freq"] = table.calculate_feature_frequency()
 
         freq_data["freq"] = pivot_table.calculate_feature_frequency()
         pivot_table.feature_metadata[freq_data.columns] = freq_data
         return pivot_table
 
-
     def sort_features(self, by: str = "freq", ascending: bool = False) -> "PivotTable":
         """
         Sort features (rows) by a column in feature_metadata.
-        
+
         Parameters
         ----------
         by : str, default "freq"
             Column name in feature_metadata to sort by.
         ascending : bool, default False
             Sort order. False for descending (highest values first).
-            
+
         Returns
         -------
         PivotTable
             New PivotTable with features sorted by the specified column.
-            
+
         Raises
         ------
         ValueError
@@ -984,27 +1024,29 @@ class PivotTable(pd.DataFrame):
         table = self.copy()
         # get sorted index based on the specified column
         sorted_index = table.feature_metadata.sort_values(
-            by=by, ascending=ascending).index
+            by=by, ascending=ascending
+        ).index
         return table.subset(features=sorted_index)
 
     def sort_samples_by_mutations(self, top: int = 10) -> "PivotTable":
         """
         Sort samples by their mutation patterns.
-        
-        Uses a binary encoding approach where mutation patterns of the top 
+
+        Uses a binary encoding approach where mutation patterns of the top
         mutated features are converted to integers for sorting.
-        
+
         Parameters
         ----------
         top : int, default 10
             Number of top features to consider for sorting.
-            
+
         Returns
         -------
         PivotTable
             New PivotTable with samples sorted by mutation patterns.
             The mutation weight is added to sample_metadata.
         """
+
         def binary_sort_key(column: pd.Series) -> int:
             """Convert binary mutation pattern to integer for sorting."""
             # Convert mutation status (True/False) to binary string (1/0)
@@ -1015,17 +1057,14 @@ class PivotTable(pd.DataFrame):
         # tmp_pivot_table = pivot_table.drop(columns=freq_columns)
         pivot_table = self.copy()
         binary_pivot_table = pivot_table.to_binary_table()
-        mutations_weight = (binary_pivot_table
-                            .head(top)
-                            .apply(binary_sort_key, axis=0))
+        mutations_weight = binary_pivot_table.head(top).apply(binary_sort_key, axis=0)
         pivot_table.sample_metadata["mutations_weight"] = mutations_weight
-        sorted_samples = (mutations_weight
-                          .sort_values(ascending=False)
-                          .index
-                          .tolist())
+        sorted_samples = mutations_weight.sort_values(ascending=False).index.tolist()
         return pivot_table.subset(samples=sorted_samples)
 
-    def sort_samples_by_group(self, group_col: str, group_order: List[str], top: int = 10) -> "PivotTable":
+    def sort_samples_by_group(
+        self, group_col: str, group_order: List[str], top: int = 10
+    ) -> "PivotTable":
         """
         Sort samples by group membership and then by mutation patterns.
 
@@ -1092,24 +1131,24 @@ class PivotTable(pd.DataFrame):
 
         # Ensure group_col exists in sample_metadata
         if group_col not in pivot_table.sample_metadata.columns:
-            raise ValueError(
-                f"Column '{group_col}' not found in sample_metadata.")
+            raise ValueError(f"Column '{group_col}' not found in sample_metadata.")
 
         sorted_samples = []
 
         # Sort samples by group order
         for subtype in group_order:
             subtype_samples = pivot_table.sample_metadata[
-                pivot_table.sample_metadata[group_col] == subtype].index
+                pivot_table.sample_metadata[group_col] == subtype
+            ].index
 
             if len(subtype_samples) > 0:
                 # Filter samples for this subtype and apply sort_samples_by_mutations
                 subtype_pivot = pivot_table.subset(samples=subtype_samples)
-                sorted_subtype_pivot = subtype_pivot.sort_samples_by_mutations(
-                    top=top)
+                sorted_subtype_pivot = subtype_pivot.sort_samples_by_mutations(top=top)
 
                 sorted_samples.extend(
-                    sorted_subtype_pivot.columns)  # Store sorted sample order
+                    sorted_subtype_pivot.columns
+                )  # Store sorted sample order
 
         # Reorder PivotTable with sorted samples
         return pivot_table.subset(samples=sorted_samples)
@@ -1122,32 +1161,34 @@ class PivotTable(pd.DataFrame):
         ----------
         to_binary : bool
             Whether to convert the data to binary format before PCA.
-            
+
         Returns
         -------
         tuple
             - pca_result_df : pd.DataFrame with PC1 and PC2 for each sample
-            - explained_variance : np.ndarray of variance ratios for PC1 and PC2  
+            - explained_variance : np.ndarray of variance ratios for PC1 and PC2
             - pca : sklearn.decomposition.PCA fitted object
         """
         pivot_table = self.to_binary_table() if to_binary else self
         pca = PCA(n_components=2)
-        pca_result = pca.fit_transform(pivot_table.T)  # Transpose since samples should be rows
+        pca_result = pca.fit_transform(
+            pivot_table.T
+        )  # Transpose since samples should be rows
         explained_variance = pca.explained_variance_ratio_
         pca_result_df = pd.DataFrame(
-            pca_result, index=pivot_table.columns, columns=["PC1", "PC2"])
+            pca_result, index=pivot_table.columns, columns=["PC1", "PC2"]
+        )
         return pca_result_df, explained_variance, pca
-
 
     def head(self, n: int = 50) -> "PivotTable":
         """
         Return the first n features (rows) subset of the PivotTable.
-        
+
         Parameters
         ----------
         n : int, default 50
             Number of features to return.
-            
+
         Returns
         -------
         PivotTable
@@ -1156,16 +1197,16 @@ class PivotTable(pd.DataFrame):
         pivot_table = self.copy()
         head_indices = pivot_table.index[:n].tolist()
         return pivot_table.subset(features=head_indices)
-    
-    def tail(self, n : int = 50) -> "PivotTable":
+
+    def tail(self, n: int = 50) -> "PivotTable":
         """
         Return the last n features (rows) subset of the PivotTable.
-        
+
         Parameters
         ----------
         n : int, default 50
             Number of features to return.
-            
+
         Returns
         -------
         PivotTable
@@ -1175,41 +1216,175 @@ class PivotTable(pd.DataFrame):
         tail_indices = pivot_table.index[-n:].tolist()
         return pivot_table.subset(features=tail_indices)
 
-
     def filter_by_freq(self, threshold: float = 0.05) -> "PivotTable":
         """
         Filter features by their mutation frequency.
-        
+
         Parameters
         ----------
         threshold : float, default 0.05
             Minimum frequency threshold (0 to 1).
-            
+
         Returns
         -------
         PivotTable
             PivotTable containing only features with freq >= threshold.
-            
+
         Raises
         ------
         ValueError
             If 'freq' column is not found in feature_metadata.
         """
         if "freq" not in self.feature_metadata.columns:
-            raise ValueError("freq column not found in feature_metadata. Please perform table.add_freq() first")
+            raise ValueError(
+                "freq column not found in feature_metadata. Please perform table.add_freq() first"
+            )
         pivot_table = self.copy()
-        return pivot_table.subset(features=pivot_table.feature_metadata.freq >= threshold)
+        return pivot_table.subset(
+            features=pivot_table.feature_metadata.freq >= threshold
+        )
 
-    def to_cooccur_matrix(self, freq: bool = True) -> 'CooccurrenceMatrix':
+    def filter_by_variance(
+        self,
+        threshold: float = None,
+        method: Literal["var", "mad"] = "var",
+        quantile: float = None,
+    ) -> "PivotTable":
+        """
+        Filter features by variance or median absolute deviation.
+
+        Parameters
+        ----------
+        threshold : float, optional
+            Minimum variance/MAD threshold. Features with scores >= threshold
+            are kept. If None, ``quantile`` must be specified.
+        method : {"var", "mad"}, default "var"
+            Dispersion metric:
+            - "var": variance
+            - "mad": median absolute deviation
+        quantile : float, optional
+            Quantile cutoff (0–1). E.g. ``quantile=0.75`` keeps the top 25%
+            most variable features. Overrides ``threshold`` when both given.
+
+        Returns
+        -------
+        PivotTable
+            Filtered PivotTable with dispersion scores in ``feature_metadata``.
+
+        Raises
+        ------
+        ValueError
+            If neither ``threshold`` nor ``quantile`` is specified, or if
+            ``method`` is not supported.
+        """
+        if threshold is None and quantile is None:
+            raise ValueError("Either threshold or quantile must be specified.")
+        if method not in ("var", "mad"):
+            raise ValueError(f"Unsupported method '{method}'. Use 'var' or 'mad'.")
+
+        pt = self.copy()
+        numeric = pt.astype(float)
+        if method == "var":
+            scores = numeric.var(axis=1)
+        else:  # mad
+            scores = numeric.apply(lambda x: (x - x.median()).abs().median(), axis=1)
+
+        pt.feature_metadata[method] = scores
+        if quantile is not None:
+            threshold = scores.quantile(quantile)
+        return pt.subset(features=scores >= threshold)
+
+    def filter_by_statistical_test(
+        self,
+        group_col: str,
+        method: Literal["ttest", "mann_whitney", "kruskal", "anova"] = "kruskal",
+        alpha: float = 0.05,
+    ) -> "PivotTable":
+        """
+        Filter features by a statistical test across sample groups.
+
+        For each feature, performs the chosen test on groups defined by
+        ``group_col`` in ``sample_metadata``, applies FDR correction, and
+        returns only features with adjusted p-value < ``alpha``.
+
+        Parameters
+        ----------
+        group_col : str
+            Column in ``sample_metadata`` defining sample groups.
+        method : {"ttest", "mann_whitney", "kruskal", "anova"}, default "kruskal"
+            Statistical test. ``ttest`` and ``mann_whitney`` require exactly
+            two groups; ``kruskal`` and ``anova`` support two or more.
+        alpha : float, default 0.05
+            Significance threshold applied after FDR correction.
+
+        Returns
+        -------
+        PivotTable
+            Filtered PivotTable with ``p_value`` and ``adjusted_p_value``
+            columns added to ``feature_metadata``.
+
+        Raises
+        ------
+        ValueError
+            If ``method`` is unsupported or group count doesn't match the test.
+        """
+        test_funcs = {
+            "ttest": lambda groups: ttest_ind(*groups),
+            "mann_whitney": lambda groups: mannwhitneyu(
+                *groups, alternative="two-sided"
+            ),
+            "kruskal": lambda groups: kruskal(*groups),
+            "anova": lambda groups: f_oneway(*groups),
+        }
+        if method not in test_funcs:
+            raise ValueError(
+                f"Unsupported method '{method}'. Choose from {list(test_funcs)}."
+            )
+
+        two_group_only = {"ttest", "mann_whitney"}
+        pt = self.copy()
+        numeric = pt.astype(float)
+        groups_series = pt.sample_metadata[group_col]
+        unique_groups = groups_series.dropna().unique()
+
+        if method in two_group_only and len(unique_groups) != 2:
+            raise ValueError(
+                f"'{method}' requires exactly 2 groups, got {len(unique_groups)}."
+            )
+
+        p_values = []
+        for feature in numeric.index:
+            row = numeric.loc[feature]
+            group_data = [
+                row[groups_series == g].dropna().values for g in unique_groups
+            ]
+            # Skip features with insufficient data in any group
+            if any(len(g) < 2 for g in group_data):
+                p_values.append(np.nan)
+                continue
+            _, pval = test_funcs[method](group_data)
+            p_values.append(pval)
+
+        p_values = np.array(p_values)
+        valid = ~np.isnan(p_values)
+        adjusted = np.full_like(p_values, np.nan)
+        if valid.any():
+            adjusted[valid] = multipletests(p_values[valid], method="fdr_bh")[1]
+
+        pt.feature_metadata["p_value"] = p_values
+        pt.feature_metadata["adjusted_p_value"] = adjusted
+        return pt.subset(features=adjusted < alpha)
+
+    def to_cooccur_matrix(self, freq: bool = True) -> "CooccurrenceMatrix":
         """
         Convert to co-occurrence matrix format.
-        
+
         Parameters
         ----------
         freq : bool, default True
             If True, normalize by sample count to get frequencies.
             If False, return raw co-occurrence counts.
-            
+
         Returns
         -------
         CooccurrenceMatrix
@@ -1226,10 +1401,10 @@ class PivotTable(pd.DataFrame):
     def to_binary_table(self) -> "PivotTable":
         """
         Convert PivotTable to binary format.
-        
+
         Converts all non-False values to True, creating a binary representation
         of the mutation data.
-        
+
         Returns
         -------
         PivotTable
@@ -1237,7 +1412,7 @@ class PivotTable(pd.DataFrame):
         """
         binary_pivot_table = self.copy()
         # Convert to boolean and ensure proper dtype
-        binary_data = (binary_pivot_table != False).astype(bool)
+        binary_data = (binary_pivot_table != False).astype(bool)  # noqa: E712
         binary_pivot_table[:] = binary_data
         return binary_pivot_table
 
@@ -1248,22 +1423,22 @@ class PivotTable(pd.DataFrame):
         group2: str,
         alpha: float = 0.05,
         minimum_mutations: int = 2,
-        method: Literal["chi2", "fisher"] = "chi2"
+        method: Literal["chi2", "fisher"] = "chi2",
     ) -> pd.DataFrame:
         """
         Perform statistical enrichment test for mutations between two groups.
-        
+
         Tests whether specific mutations are significantly enriched in one group
         compared to another using either Chi-squared test or Fisher's exact test.
         Multiple testing correction is applied using the Benjamini-Hochberg method.
-        
+
         Parameters
         ----------
         group_col : str
             Column name in sample_metadata that contains group assignments.
         group1 : str
             Name of the first group to compare.
-        group2 : str  
+        group2 : str
             Name of the second group to compare.
         alpha : float, default 0.05
             Significance level for multiple testing correction.
@@ -1274,48 +1449,48 @@ class PivotTable(pd.DataFrame):
             Statistical test method to use:
             - "chi2": Chi-squared test of independence
             - "fisher": Fisher's exact test
-            
+
         Returns
         -------
         pd.DataFrame
             Results DataFrame with the following columns:
             - "{group1}_True": Count of mutated samples in group1
-            - "{group1}_False": Count of non-mutated samples in group1  
+            - "{group1}_False": Count of non-mutated samples in group1
             - "{group2}_True": Count of mutated samples in group2
             - "{group2}_False": Count of non-mutated samples in group2
             - "p_value": Raw p-values from statistical test
             - "adjusted_p_value": FDR-corrected p-values
             - "is_significant": Boolean indicating significance after correction
             - "test_method": Method used for testing
-            
+
         Raises
         ------
         ValueError
             If unsupported statistical method is specified.
-            
+
         Notes
         -----
         The method creates 2x2 contingency tables for each feature:
-        
+
                     Group1   Group2
         Mutated       a        b
         Not mutated   c        d
-        
+
         Features with fewer than `minimum_mutations` in both groups are excluded
         to avoid testing rare mutations that may not be statistically meaningful.
-        
+
         Examples
         --------
         >>> # Test for mutations enriched in LUAD vs LUSC
         >>> results = pivot_table.mutation_enrichment_test(
         ...     group_col="subtype",
-        ...     group1="LUAD", 
+        ...     group1="LUAD",
         ...     group2="LUSC",
         ...     method="fisher"
         ... )
         >>> significant = results[results["is_significant"]]
         >>> print(f"Found {len(significant)} significantly enriched mutations")
-        
+
         See Also
         --------
         scipy.stats.chi2_contingency : Chi-squared test implementation
@@ -1327,12 +1502,21 @@ class PivotTable(pd.DataFrame):
         sample_metadata = binary_pivot_table.sample_metadata
 
         subset1 = binary_pivot_table.subset(
-            samples=sample_metadata[group_col] == group1)
+            samples=sample_metadata[group_col] == group1
+        )
         subset2 = binary_pivot_table.subset(
-            samples=sample_metadata[group_col] == group2)
+            samples=sample_metadata[group_col] == group2
+        )
 
-        df = pd.DataFrame(index=binary_pivot_table.index,
-                          columns=[f"{group1}_True", f"{group1}_False", f"{group2}_True", f"{group2}_False"])
+        df = pd.DataFrame(
+            index=binary_pivot_table.index,
+            columns=[
+                f"{group1}_True",
+                f"{group1}_False",
+                f"{group2}_True",
+                f"{group2}_False",
+            ],
+        )
 
         df[f"{group1}_True"] = subset1.sum(axis=1)
         df[f"{group1}_False"] = len(subset1.columns) - df[f"{group1}_True"]
@@ -1341,8 +1525,10 @@ class PivotTable(pd.DataFrame):
         df[f"{group2}_False"] = len(subset2.columns) - df[f"{group2}_True"]
 
         # Filter out mutations not observed enough
-        df = df[(df[f"{group1}_True"] >= minimum_mutations) |
-                (df[f"{group2}_True"] >= minimum_mutations)]
+        df = df[
+            (df[f"{group1}_True"] >= minimum_mutations)
+            | (df[f"{group2}_True"] >= minimum_mutations)
+        ]
 
         def get_p_value(row: pd.Series) -> float:
             contingency_table = row.values.astype(int).reshape(2, 2)
@@ -1358,7 +1544,8 @@ class PivotTable(pd.DataFrame):
 
         p_values = df["p_value"].values
         reject, adjusted_p_value, _, _ = multipletests(
-            p_values, method="fdr_bh", alpha=alpha)
+            p_values, method="fdr_bh", alpha=alpha
+        )
 
         df["adjusted_p_value"] = adjusted_p_value
         df["is_significant"] = reject
@@ -1366,20 +1553,25 @@ class PivotTable(pd.DataFrame):
 
         return df
 
-    def compute_similarity(self, method: Literal["cosine", "hamming", "jaccard", "pearson", "spearman", "kendall"] = "cosine") -> 'SimilarityMatrix':
+    def compute_similarity(
+        self,
+        method: Literal[
+            "cosine", "hamming", "jaccard", "pearson", "spearman", "kendall"
+        ] = "cosine",
+    ) -> "SimilarityMatrix":
         """
         Compute sample similarity matrix using specified metric.
-        
+
         Parameters
         ----------
         method : {"cosine", "hamming", "jaccard", "pearson", "spearman", "kendall"}, default "cosine"
             Similarity metric to use.
-            
+
         Returns
         -------
         SimilarityMatrix
             Pairwise similarity matrix between samples.
-            
+
         Raises
         ------
         ValueError
@@ -1391,7 +1583,7 @@ class PivotTable(pd.DataFrame):
             if method == "cosine":
                 # Calculate cosine similarity
                 similarity = cosine_similarity(X)
-                
+
             elif method in {"hamming", "jaccard"}:
                 # Calculate Hamming or Jaccard similarity (1 - distance)
                 similarity = 1 - pairwise_distances(X, metric=method)
@@ -1401,25 +1593,27 @@ class PivotTable(pd.DataFrame):
             else:
                 raise ValueError(f"Unsupported similarity method: {method}")
         except ValueError:
-            raise ValueError(f"Error calculating similarity with method '{method}'. "
-                              "Ensure the data is numeric and properly formatted.")
-        
-        similarity_df = pd.DataFrame(similarity,
-                                     index=self.columns,
-                                     columns=self.columns)
+            raise ValueError(
+                f"Error calculating similarity with method '{method}'. "
+                "Ensure the data is numeric and properly formatted."
+            )
+
+        similarity_df = pd.DataFrame(
+            similarity, index=self.columns, columns=self.columns
+        )
         return SimilarityMatrix(similarity_df)
 
     def order(self, group_col: str, group_order: List[str]) -> "PivotTable":
         """
         Reorder samples by group membership.
-        
+
         Parameters
         ----------
         group_col : str
             Column name in sample_metadata containing group information.
         group_order : List[str]
             Order of groups for sample arrangement.
-            
+
         Returns
         -------
         PivotTable
@@ -1428,14 +1622,15 @@ class PivotTable(pd.DataFrame):
         subset_list = []
         assert group_col in self.sample_metadata.columns
         for group in group_order:
-            subset_list.append(self.subset(
-                samples=self.sample_metadata[group_col] == group))
-        
+            subset_list.append(
+                self.subset(samples=self.sample_metadata[group_col] == group)
+            )
+
         # Use the merge method but preserve the original class type
         merged_table = PivotTable.merge(subset_list)
-        
+
         # Convert back to the original class type using _constructor
-        if type(self) != PivotTable:
+        if not isinstance(self, PivotTable) or type(self) is not PivotTable:
             # Use _constructor to preserve subclass type
             constructor = self._constructor
             table = constructor(merged_table)
@@ -1447,48 +1642,47 @@ class PivotTable(pd.DataFrame):
             return merged_table
 
     @staticmethod
-    def prepare_data(maf: 'MAF') -> "PivotTable":
+    def prepare_data(maf: "MAF") -> "PivotTable":
         """
         Prepare and process MAF data into a sorted PivotTable.
-        
+
         Filters MAF for nonsynonymous mutations, converts to PivotTable,
-        adds frequency calculations, and sorts by feature frequency 
+        adds frequency calculations, and sorts by feature frequency
         and sample mutation patterns.
-        
+
         Parameters
         ----------
         maf : MAF
             Input MAF object containing mutation data.
-            
+
         Returns
         -------
         PivotTable
             Processed and sorted PivotTable ready for analysis.
         """
         from .MAF import MAF
+
         filtered_all_case_maf = maf.filter_maf(MAF.nonsynonymous_types)
         pivot_table = filtered_all_case_maf.to_pivot_table()
-        sorted_pivot_table = (pivot_table
-                              .add_freq()
-                              .sort_features()
-                              .sort_samples_by_mutations()
-                              )
+        sorted_pivot_table = (
+            pivot_table.add_freq().sort_features().sort_samples_by_mutations()
+        )
         return sorted_pivot_table
 
     def add_sample_metadata(
-        self, 
-        sample_metadata: pd.DataFrame, 
+        self,
+        sample_metadata: pd.DataFrame,
         fill_value: Optional[Union[str, float]] = None,
-        force: bool = False
+        force: bool = False,
     ) -> "PivotTable":
         """
         Safely add sample metadata to the PivotTable.
-        
+
         This method ensures that:
         1. Only samples existing in the PivotTable are added
         2. Existing columns are not overwritten unless forced
         3. Type consistency is maintained
-        
+
         Parameters
         ----------
         sample_metadata : pd.DataFrame
@@ -1497,17 +1691,17 @@ class PivotTable(pd.DataFrame):
             Value to use for missing data.
         force : bool, default False
             If True, allow overwriting existing columns.
-            
+
         Returns
         -------
         PivotTable
             PivotTable with updated sample metadata.
-            
+
         Raises
         ------
         ValueError
             If sample names don't match or columns conflict without force=True.
-            
+
         Examples
         --------
         >>> # Add new metadata columns
@@ -1518,55 +1712,65 @@ class PivotTable(pd.DataFrame):
         >>> table_with_meta = table.add_sample_metadata(new_meta)
         """
         pivot_table = self.copy()
-        
+
         # Check for samples not in the PivotTable
         missing_samples = set(sample_metadata.index) - set(self.columns)
         if missing_samples:
-            print(f"Warning: {len(missing_samples)} samples not found in PivotTable and will be ignored:")
-            print(f"  {list(missing_samples)[:5]}{'...' if len(missing_samples) > 5 else ''}")
-            sample_metadata = sample_metadata.loc[sample_metadata.index.isin(self.columns)]
-        
+            print(
+                f"Warning: {len(missing_samples)} samples not found in PivotTable and will be ignored:"
+            )
+            print(
+                f"  {list(missing_samples)[:5]}{'...' if len(missing_samples) > 5 else ''}"
+            )
+            sample_metadata = sample_metadata.loc[
+                sample_metadata.index.isin(self.columns)
+            ]
+
         # Check for column conflicts
         existing_cols = set(pivot_table.sample_metadata.columns)
         new_cols = set(sample_metadata.columns)
         conflicts = existing_cols & new_cols
-        
+
         if conflicts and not force:
             raise ValueError(
                 f"Column conflicts detected: {list(conflicts)}. "
                 "Use force=True to overwrite existing columns."
             )
-        
+
         # If forcing, remove conflicting columns from existing metadata
         if conflicts and force:
             print(f"Overwriting existing columns: {list(conflicts)}")
-            pivot_table.sample_metadata = pivot_table.sample_metadata.drop(columns=conflicts)
-        
+            pivot_table.sample_metadata = pivot_table.sample_metadata.drop(
+                columns=conflicts
+            )
+
         # Add new metadata, only for non-conflicting columns if not forcing
         if not force:
-            sample_metadata = sample_metadata[[col for col in sample_metadata.columns if col not in existing_cols]]
-        
+            sample_metadata = sample_metadata[
+                [col for col in sample_metadata.columns if col not in existing_cols]
+            ]
+
         # Combine metadata
         pivot_table.sample_metadata = pivot_table.sample_metadata.combine_first(
             sample_metadata
         ).fillna(fill_value)
-        
+
         return pivot_table
-    
+
     def add_feature_metadata(
-        self, 
-        feature_metadata: pd.DataFrame, 
+        self,
+        feature_metadata: pd.DataFrame,
         fill_value: Optional[Union[str, float]] = None,
-        force: bool = False
+        force: bool = False,
     ) -> "PivotTable":
         """
         Safely add feature metadata to the PivotTable.
-        
+
         This method ensures that:
         1. Only features existing in the PivotTable are added
         2. Existing columns are not overwritten unless forced
         3. Type consistency is maintained
-        
+
         Parameters
         ----------
         feature_metadata : pd.DataFrame
@@ -1575,17 +1779,17 @@ class PivotTable(pd.DataFrame):
             Value to use for missing data.
         force : bool, default False
             If True, allow overwriting existing columns.
-            
+
         Returns
         -------
         PivotTable
             PivotTable with updated feature metadata.
-            
+
         Raises
         ------
         ValueError
             If feature names don't match or columns conflict without force=True.
-            
+
         Examples
         --------
         >>> # Add gene annotation metadata
@@ -1596,41 +1800,52 @@ class PivotTable(pd.DataFrame):
         >>> table_with_anno = table.add_feature_metadata(gene_anno)
         """
         pivot_table = self.copy()
-        
+
         # Check for features not in the PivotTable
         missing_features = set(feature_metadata.index) - set(self.index)
         if missing_features:
-            print(f"Warning: {len(missing_features)} features not found in PivotTable and will be ignored:")
-            print(f"  {list(missing_features)[:5]}{'...' if len(missing_features) > 5 else ''}")
-            feature_metadata = feature_metadata.loc[feature_metadata.index.isin(self.index)]
-        
+            print(
+                f"Warning: {len(missing_features)} features not found in PivotTable and will be ignored:"
+            )
+            print(
+                f"  {list(missing_features)[:5]}{'...' if len(missing_features) > 5 else ''}"
+            )
+            feature_metadata = feature_metadata.loc[
+                feature_metadata.index.isin(self.index)
+            ]
+
         # Check for column conflicts
         existing_cols = set(pivot_table.feature_metadata.columns)
         new_cols = set(feature_metadata.columns)
         conflicts = existing_cols & new_cols
-        
+
         if conflicts and not force:
             raise ValueError(
                 f"Column conflicts detected: {list(conflicts)}. "
                 "Use force=True to overwrite existing columns."
             )
-        
+
         # If forcing, remove conflicting columns from existing metadata
         if conflicts and force:
             print(f"Overwriting existing columns: {list(conflicts)}")
-            pivot_table.feature_metadata = pivot_table.feature_metadata.drop(columns=conflicts)
-        
+            pivot_table.feature_metadata = pivot_table.feature_metadata.drop(
+                columns=conflicts
+            )
+
         # Add new metadata, only for non-conflicting columns if not forcing
         if not force:
-            feature_metadata = feature_metadata[[col for col in feature_metadata.columns if col not in existing_cols]]
-        
+            feature_metadata = feature_metadata[
+                [col for col in feature_metadata.columns if col not in existing_cols]
+            ]
+
         # Combine metadata
         pivot_table.feature_metadata = pivot_table.feature_metadata.combine_first(
             feature_metadata
         ).fillna(fill_value)
-        
+
         return pivot_table
-    
+
+
 def capture_size(bed_path: str) -> float:
     """
     Calculate the total capture size (in megabases) from a BED file.
@@ -1643,8 +1858,8 @@ def capture_size(bed_path: str) -> float:
     Returns:
         float: Total capture region size in megabases (Mb).
     """
-    bed = pd.read_csv(bed_path, sep='\t', header=None)
+    bed = pd.read_csv(bed_path, sep="\t", header=None)
     bed = bed.iloc[:, 0:3]
-    bed.columns = ['chrom', 'start', 'end']
+    bed.columns = ["chrom", "start", "end"]
     capture_length = bed.end - bed.start
-    return capture_length.sum()/1e6  # in MB
+    return capture_length.sum() / 1e6  # in MB

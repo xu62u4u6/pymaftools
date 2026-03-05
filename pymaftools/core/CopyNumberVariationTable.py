@@ -1,8 +1,10 @@
+from __future__ import annotations
+
 import numpy as np
 import pandas as pd
 import os
 import re
-from typing import Optional, List, TYPE_CHECKING
+from typing import TYPE_CHECKING
 from .PivotTable import PivotTable
 
 if TYPE_CHECKING:
@@ -11,11 +13,24 @@ if TYPE_CHECKING:
 
 class CopyNumberVariationTable(PivotTable):
     """
-    CopyNumberVariationTable class for handling copy number data.
+    Table for storing and manipulating copy number variation (CNV) data.
+
+    Inherits from ``PivotTable`` and provides specialized methods for reading
+    GISTIC output files, thresholding continuous copy number values, sorting
+    by chromosomal position, clustering, and plotting CNV frequencies.
+
+    The data matrix is oriented with genomic features (genes or chromosome
+    arms) as rows and samples as columns.  Associated ``feature_metadata``
+    and ``sample_metadata`` DataFrames carry annotation such as cytoband,
+    chromosome, arm, thresholds, and sample type.
+
+    See Also
+    --------
+    PivotTable : Base class providing generic pivot-table operations.
     """
 
     @classmethod
-    def from_pivot_table(cls, table: PivotTable) -> 'CopyNumberVariationTable':
+    def from_pivot_table(cls, table: PivotTable) -> "CopyNumberVariationTable":
         """
         Create a CopyNumberVariationTable object from a PivotTable object, preserving all metadata.
 
@@ -29,9 +44,12 @@ class CopyNumberVariationTable(PivotTable):
         CopyNumberVariationTable
             A CopyNumberVariationTable object with original sample_metadata and feature_metadata preserved.
         """
-        if not hasattr(table, 'sample_metadata') or not hasattr(table, 'feature_metadata'):
+        if not hasattr(table, "sample_metadata") or not hasattr(
+            table, "feature_metadata"
+        ):
             raise ValueError(
-                "PivotTable must have sample_metadata and feature_metadata attributes.")
+                "PivotTable must have sample_metadata and feature_metadata attributes."
+            )
 
         cnv_table = cls(table.values, index=table.index, columns=table.columns)
         cnv_table.sample_metadata = table.sample_metadata.copy()
@@ -57,14 +75,14 @@ class CopyNumberVariationTable(PivotTable):
         CopyNumberVariationTable
             A CopyNumberVariationTable object with arm-level copy number data.
         """
-        df = pd.read_csv(file_path,
-                         sep="\t", index_col=0)
+        df = pd.read_csv(file_path, sep="\t", index_col=0)
         df.columns = df.columns.str.replace(".call", "", regex=False)
         df = df.fillna(0)
         order = [arm for i in range(1, 23) for arm in (f"{i}p", f"{i}q")]
         table = CopyNumberVariationTable(df).reindex(index=order, fill_value=0)
         table.feature_metadata["Chromosome"] = table.index.str.replace(
-            "p", "").str.replace("q", "")
+            "p", ""
+        ).str.replace("q", "")
         table.feature_metadata["Arm"] = table.feature_metadata.index.str[-1]
         return table.rename_index_and_columns()
 
@@ -72,14 +90,14 @@ class CopyNumberVariationTable(PivotTable):
     def read_gistic_gene_level(
         cls,
         file_path: str,
-        feature_columns: List[str] = ["Gene Symbol", "Gene ID", "Cytoband"],
-        samples: Optional[List[str]] = None
+        feature_columns: list[str] = ["Gene Symbol", "Gene ID", "Cytoband"],
+        samples: list[str] | None = None,
     ):
         """
         Read GISTIC results file and create a CopyNumberVariationTable object.
 
-        This method reads GISTIC output files (typically all_data_by_genes.txt or 
-        all_thresholded.by_genes.txt) and converts them into a CopyNumberVariationTable object with 
+        This method reads GISTIC output files (typically all_data_by_genes.txt or
+        all_thresholded.by_genes.txt) and converts them into a CopyNumberVariationTable object with
         properly formatted feature and sample metadata.
 
         Parameters
@@ -115,15 +133,15 @@ class CopyNumberVariationTable(PivotTable):
         4. Parses Cytoband information into Chromosome, Arm, and Band columns
         5. Subsets data to specified samples if provided
 
-        The Cytoband parsing supports both numeric chromosomes (1-22) and 
+        The Cytoband parsing supports both numeric chromosomes (1-22) and
         sex chromosomes (X, Y) using the pattern: chromosome + arm (p/q) + band.
 
         Examples
         --------
         >>> cnv = CopyNumberVariationTable.read_gistic_gene_level('data/all_data_by_genes.txt')
-        >>> cnv = CopyNumberVariationTable.read_gistic_gene_level('data/all_thresholded.by_genes.txt', 
+        >>> cnv = CopyNumberVariationTable.read_gistic_gene_level('data/all_thresholded.by_genes.txt',
         ...                       feature_columns=['Gene Symbol', 'Gene ID', 'Cytoband', 'Locus ID'])
-        >>> cnv = CopyNumberVariationTable.read_gistic_gene_level('data/all_data_by_genes.txt', 
+        >>> cnv = CopyNumberVariationTable.read_gistic_gene_level('data/all_data_by_genes.txt',
         ...                       samples=['LUAD_001_T', 'LUAD_002_T'])
         """
 
@@ -146,9 +164,7 @@ class CopyNumberVariationTable(PivotTable):
 
         # Process sample metadata - extract case_ID and sample_type from column names
         table.sample_metadata[["case_ID", "sample_type"]] = (
-            table.columns.to_series()
-            .str.rsplit("_", n=1)
-            .apply(pd.Series)
+            table.columns.to_series().str.rsplit("_", n=1).apply(pd.Series)
         )
 
         # Process chromosome information - parse cytoband into components
@@ -156,21 +172,20 @@ class CopyNumberVariationTable(PivotTable):
             cytoband_extract = table.feature_metadata["Cytoband"].str.extract(
                 r"(\w+)([pq])([\d.]+)", expand=True
             )
-            table.feature_metadata[["Chromosome",
-                                    "Arm", "Band"]] = cytoband_extract
+            table.feature_metadata[["Chromosome", "Arm", "Band"]] = cytoband_extract
 
             # Prepare chromosomal data for sorting
             table._prepare_chromosomal_sorting()
 
         # Subset samples if specified
         if samples is not None:
-            available_samples = table.columns[table.columns.isin(
-                samples)].tolist()
+            available_samples = table.columns[table.columns.isin(samples)].tolist()
             if available_samples:
                 table = table.subset(samples=available_samples)
             else:
                 print(
-                    f"Warning: No matching samples found from {len(samples)} specified samples")
+                    f"Warning: No matching samples found from {len(samples)} specified samples"
+                )
 
         return table.rename_index_and_columns()
 
@@ -188,33 +203,31 @@ class CopyNumberVariationTable(PivotTable):
         2. Converting Arm to categorical with order: p, q
         3. Adding a Band_numeric column for numerical sorting of bands
         """
-        if not all(col in self.feature_metadata.columns for col in ['Chromosome', 'Arm', 'Band']):
+        if not all(
+            col in self.feature_metadata.columns
+            for col in ["Chromosome", "Arm", "Band"]
+        ):
             return
 
         # Convert chromosome to categorical for proper sorting
         # Define the order: 1, 2, ..., 22, X, Y
-        chrom_order = [str(i) for i in range(1, 23)] + ['X', 'Y']
-        self.feature_metadata['Chromosome'] = pd.Categorical(
-            self.feature_metadata['Chromosome'],
-            categories=chrom_order,
-            ordered=True
+        chrom_order = [str(i) for i in range(1, 23)] + ["X", "Y"]
+        self.feature_metadata["Chromosome"] = pd.Categorical(
+            self.feature_metadata["Chromosome"], categories=chrom_order, ordered=True
         )
 
         # Convert arm to categorical (p comes before q)
-        arm_order = ['p', 'q']
-        self.feature_metadata['Arm'] = pd.Categorical(
-            self.feature_metadata['Arm'],
-            categories=arm_order,
-            ordered=True
+        arm_order = ["p", "q"]
+        self.feature_metadata["Arm"] = pd.Categorical(
+            self.feature_metadata["Arm"], categories=arm_order, ordered=True
         )
 
         # Convert band to numeric for proper sorting
-        self.feature_metadata['Band_numeric'] = pd.to_numeric(
-            self.feature_metadata['Band'],
-            errors='coerce'
+        self.feature_metadata["Band_numeric"] = pd.to_numeric(
+            self.feature_metadata["Band"], errors="coerce"
         )
 
-    def sort_by_chromosome(self, ascending: bool = True) -> 'CopyNumberVariationTable':
+    def sort_by_chromosome(self, ascending: bool = True) -> "CopyNumberVariationTable":
         """
         Sort CopyNumberVariationTable data by chromosomal position.
 
@@ -246,65 +259,99 @@ class CopyNumberVariationTable(PivotTable):
         >>> cnv_sorted = cnv_table.sort_by_chromosome()
         >>> cnv_desc = cnv_table.sort_by_chromosome(ascending=False)
         """
-        if not all(col in self.feature_metadata.columns for col in ['Chromosome', 'Arm', 'Band']):
-            raise ValueError("Chromosome, Arm, and Band columns are required for sorting. "
-                             "These are typically created by parsing Cytoband information.")
+        if not all(
+            col in self.feature_metadata.columns
+            for col in ["Chromosome", "Arm", "Band"]
+        ):
+            raise ValueError(
+                "Chromosome, Arm, and Band columns are required for sorting. "
+                "These are typically created by parsing Cytoband information."
+            )
 
         # Create a copy to avoid modifying the original object
         sorted_cnv_table = self.copy()
 
         # Prepare chromosomal data for sorting if not already done
-        if 'Band_numeric' not in sorted_cnv_table.feature_metadata.columns:
+        if "Band_numeric" not in sorted_cnv_table.feature_metadata.columns:
             sorted_cnv_table._prepare_chromosomal_sorting()
 
         # Sort by chromosome, arm, and band
-        sort_columns = ['Chromosome', 'Arm', 'Band_numeric']
+        sort_columns = ["Chromosome", "Arm", "Band_numeric"]
         sort_order = [ascending] * len(sort_columns)
 
         sorted_indices = sorted_cnv_table.feature_metadata.sort_values(
-            sort_columns,
-            ascending=sort_order
+            sort_columns, ascending=sort_order
         ).index
 
         # Reorder the CopyNumberVariationTable data and metadata
         sorted_cnv_table = sorted_cnv_table.subset(features=sorted_indices)
 
         # Clean up temporary column
-        sorted_cnv_table.feature_metadata.drop(
-            'Band_numeric', axis=1, inplace=True)
+        sorted_cnv_table.feature_metadata.drop("Band_numeric", axis=1, inplace=True)
 
         return sorted_cnv_table
 
+    def to_thresholded_cnv(self) -> CopyNumberVariationTable:
+        """
+        Convert continuous CNV values to discrete thresholded categories.
 
-    def to_thresholded_cnv(self):
+        Each value is mapped to one of five integer levels based on
+        per-sample thresholds stored in ``sample_metadata``:
+        -2 (deep deletion), -1 (shallow deletion), 0 (neutral),
+        +1 (low-level gain), +2 (high-level amplification).
+
+        Returns
+        -------
+        CopyNumberVariationTable
+            A new table with the same shape where every cell contains
+            an integer in {-2, -1, 0, 1, 2}.
+
+        Raises
+        ------
+        KeyError
+            If ``sample_metadata`` does not contain the required threshold
+            columns: ``del_high_threshold``, ``del_low_threshold``,
+            ``amp_low_threshold``, ``amp_high_threshold``.
         """
-        Convert cnv table to a thresholded version.
-        
-        del_high_threshold, del_low_threshold, amp_low_threshold, amp_high_threshold must be defined in sample_metadata.
-        """
-        cutoffs = self.sample_metadata.loc[:, ["del_high_threshold", 
-                                                "del_low_threshold", 
-                                                "amp_low_threshold", 
-                                                "amp_high_threshold", 
-                                                ]]
+        cutoffs = self.sample_metadata.loc[
+            :,
+            [
+                "del_high_threshold",
+                "del_low_threshold",
+                "amp_low_threshold",
+                "amp_high_threshold",
+            ],
+        ]
+
         def classify_cnv_column(column, cutoffs):
             sample = column.name
             thresholds = cutoffs.loc[sample]
-            return column.apply(lambda x: 
-                -2 if x < thresholds['del_high_threshold'] else
-                -1 if x < thresholds['del_low_threshold'] else
-                +2 if x > thresholds['amp_high_threshold'] else
-                +1 if x > thresholds['amp_low_threshold'] else
-                0
+            return column.apply(
+                lambda x: (
+                    -2
+                    if x < thresholds["del_high_threshold"]
+                    else -1
+                    if x < thresholds["del_low_threshold"]
+                    else +2
+                    if x > thresholds["amp_high_threshold"]
+                    else +1
+                    if x > thresholds["amp_low_threshold"]
+                    else 0
+                )
             )
-        thresholded_cnv = self.apply(lambda col: classify_cnv_column(col, cutoffs), axis=0)
+
+        thresholded_cnv = self.apply(
+            lambda col: classify_cnv_column(col, cutoffs), axis=0
+        )
         return thresholded_cnv
 
     @staticmethod
-    def read_all_gistic(all_data_by_genes_file,
-                        sample_cutoffs_file,
-                        all_thresholded_by_genes_file,
-                        broad_values_by_arm_file):
+    def read_all_gistic(
+        all_data_by_genes_file,
+        sample_cutoffs_file,
+        all_thresholded_by_genes_file,
+        broad_values_by_arm_file,
+    ):
         """
         Read all GISTIC output files and create CopyNumberVariationTable objects.
 
@@ -329,40 +376,83 @@ class CopyNumberVariationTable(PivotTable):
             - broad_values_by_arm_table : CopyNumberVariationTable
         """
 
-        all_data_by_genes_table = CopyNumberVariationTable.read_gistic_gene_level(all_data_by_genes_file)
+        all_data_by_genes_table = CopyNumberVariationTable.read_gistic_gene_level(
+            all_data_by_genes_file
+        )
         sample_cutoff_df = read_sample_cutoff_file(sample_cutoffs_file)
         thresholded_cnv_table = CopyNumberVariationTable.read_gistic_gene_level(
             all_thresholded_by_genes_file,
-            feature_columns=["Gene Symbol", "Gene ID", "Cytoband", "Locus ID"])
-        broad_values_by_arm_table = CopyNumberVariationTable.read_gistic_arm_level(broad_values_by_arm_file)
+            feature_columns=["Gene Symbol", "Gene ID", "Cytoband", "Locus ID"],
+        )
+        broad_values_by_arm_table = CopyNumberVariationTable.read_gistic_arm_level(
+            broad_values_by_arm_file
+        )
 
         # Add sample metadata to the tables
-        all_data_by_genes_table = all_data_by_genes_table.add_sample_metadata(sample_cutoff_df, fill_value=np.nan)
-        thresholded_cnv_table = thresholded_cnv_table.add_sample_metadata(sample_cutoff_df, fill_value=np.nan)
-        return (all_data_by_genes_table,
-                sample_cutoff_df,
-                thresholded_cnv_table,
-                broad_values_by_arm_table)
-    
-    def to_cluster_table(self, cluster_col="cluster") -> pd.DataFrame:
+        all_data_by_genes_table = all_data_by_genes_table.add_sample_metadata(
+            sample_cutoff_df, fill_value=np.nan
+        )
+        thresholded_cnv_table = thresholded_cnv_table.add_sample_metadata(
+            sample_cutoff_df, fill_value=np.nan
+        )
+        return (
+            all_data_by_genes_table,
+            sample_cutoff_df,
+            thresholded_cnv_table,
+            broad_values_by_arm_table,
+        )
+
+    def to_cluster_table(
+        self, cluster_col: str = "cluster"
+    ) -> CopyNumberVariationTable:
         """
-        cluster must in feature_metadata.
+        Aggregate features by cluster label and return a cluster-level table.
+
+        Groups features (rows) according to ``cluster_col`` in
+        ``feature_metadata`` and computes the mean CNV value per cluster
+        per sample.
+
+        Parameters
+        ----------
+        cluster_col : str, default "cluster"
+            Name of the column in ``feature_metadata`` that contains cluster
+            assignments.
+
+        Returns
+        -------
+        CopyNumberVariationTable
+            A new table whose rows are clusters and whose columns are samples.
+            The ``feature_metadata`` of the returned table contains:
+            ``unique_chr_arm``, ``features`` (list of original feature names),
+            and ``features_count``.
+
+        Raises
+        ------
+        ValueError
+            If ``cluster_col`` is not found in ``feature_metadata``.
         """
         if cluster_col not in self.feature_metadata.columns:
             raise ValueError(f"Column '{cluster_col}' not found in feature_metadata.")
         # save clustering results
         table = self.copy()
-        table.feature_metadata["chr_arm"] = table.feature_metadata["Chromosome"].astype(str) + table.feature_metadata["Arm"]
+        table.feature_metadata["chr_arm"] = (
+            table.feature_metadata["Chromosome"].astype(str)
+            + table.feature_metadata["Arm"]
+        )
         table[cluster_col] = table.feature_metadata[cluster_col]
-        
+
         # to cluster table
-        cluster_table = CopyNumberVariationTable(pd.DataFrame(table).groupby(cluster_col).mean())
+        cluster_table = CopyNumberVariationTable(
+            pd.DataFrame(table).groupby(cluster_col).mean()
+        )
         cluster_table.sample_metadata = table.sample_metadata
 
         gb = table.feature_metadata.groupby(cluster_col)
-        cluster_table.feature_metadata["unique_chr_arm"]  = gb["chr_arm"].unique()
+        cluster_table.feature_metadata["unique_chr_arm"] = gb["chr_arm"].unique()
         cluster_table.feature_metadata["features"] = gb.apply(lambda df: list(df.index))
-        cluster_table.feature_metadata["features_count"] = cluster_table.feature_metadata["features"].apply(len)
+        cluster_table.feature_metadata["features_count"] = (
+            cluster_table.feature_metadata["features"].apply(len)
+        )
         return cluster_table.rename_index_and_columns()
 
     def plot_cnv_band_ratio(
@@ -371,11 +461,11 @@ class CopyNumberVariationTable(PivotTable):
         mode: str = "gain",
         threshold: float = 0.1,
         sample_type: str = "T",
-        subtype_order: Optional[List[str]] = None,
-        ax: Optional["plt.Axes"] = None,
-        cmap: Optional[str] = None,
+        subtype_order: list[str] | None = None,
+        ax: "plt.Axes | None" = None,
+        cmap: str | None = None,
         show: bool = True,
-        title: Optional[str] = None,
+        title: str | None = None,
     ) -> pd.DataFrame:
         """
         Plot gain or loss frequency across cytobands for a specific CNV cluster and sample type.
@@ -400,7 +490,7 @@ class CopyNumberVariationTable(PivotTable):
             Whether to show the plot.
         title : str, optional
             Title to display on plot.
-        
+
         Returns
         -------
         pd.DataFrame
@@ -410,49 +500,63 @@ class CopyNumberVariationTable(PivotTable):
             import seaborn as sns
             import matplotlib.pyplot as plt
         except ImportError as e:
-            raise ImportError(f"Required plotting libraries not available: {e}. "
-                            "Please install matplotlib and seaborn.")
-        
+            raise ImportError(
+                f"Required plotting libraries not available: {e}. "
+                "Please install matplotlib and seaborn."
+            )
+
         # Set default values
         if subtype_order is None:
             subtype_order = ["LUAD", "ASC", "LUSC"]
-        
+
         # Select default colormap
         if cmap is None:
             cmap = "Reds" if mode == "gain" else "Blues"
-        
+
         # Validate mode
         if mode not in ["gain", "loss"]:
             raise ValueError("mode must be either 'gain' or 'loss'")
-        
+
         # Check if required columns exist
         if "cluster" not in self.feature_metadata.columns:
             raise ValueError("Column 'cluster' not found in feature_metadata.")
         if "Band" not in self.feature_metadata.columns:
-            raise ValueError("Column 'Band' not found in feature_metadata. This is typically created by parsing Cytoband information.")
+            raise ValueError(
+                "Column 'Band' not found in feature_metadata. This is typically created by parsing Cytoband information."
+            )
         if "sample_type" not in self.sample_metadata.columns:
             raise ValueError("Column 'sample_type' not found in sample_metadata.")
         if "subtype" not in self.sample_metadata.columns:
             raise ValueError("Column 'subtype' not found in sample_metadata.")
-        
+
         # 1. Subset cluster & sample type
-        cluster_features = self.feature_metadata[self.feature_metadata["cluster"] == cluster_id].index
-        sample_type_samples = self.sample_metadata[self.sample_metadata["sample_type"] == sample_type].index
-        
+        cluster_features = self.feature_metadata[
+            self.feature_metadata["cluster"] == cluster_id
+        ].index
+        sample_type_samples = self.sample_metadata[
+            self.sample_metadata["sample_type"] == sample_type
+        ].index
+
         if len(cluster_features) == 0:
             raise ValueError(f"No features found for cluster '{cluster_id}'")
         if len(sample_type_samples) == 0:
             raise ValueError(f"No samples found for sample_type '{sample_type}'")
-        
+
         subset = self.subset(features=cluster_features, samples=sample_type_samples)
-        
+
         # Order samples by subtype if specified
         if subtype_order:
-            available_subtypes = [s for s in subtype_order if s in subset.sample_metadata["subtype"].values]
+            available_subtypes = [
+                s
+                for s in subtype_order
+                if s in subset.sample_metadata["subtype"].values
+            ]
             if available_subtypes:
                 ordered_samples = []
                 for subtype in available_subtypes:
-                    subtype_samples = subset.sample_metadata[subset.sample_metadata["subtype"] == subtype].index
+                    subtype_samples = subset.sample_metadata[
+                        subset.sample_metadata["subtype"] == subtype
+                    ].index
                     ordered_samples.extend(subtype_samples.tolist())
                 subset = subset.subset(samples=ordered_samples)
 
@@ -469,8 +573,7 @@ class CopyNumberVariationTable(PivotTable):
 
         # 4. Compute frequency table by subtype
         freq_df = (
-            binary_df.T
-            .assign(subtype=subset.sample_metadata["subtype"].values)
+            binary_df.T.assign(subtype=subset.sample_metadata["subtype"].values)
             .groupby("subtype")
             .mean()
             .T
@@ -484,33 +587,55 @@ class CopyNumberVariationTable(PivotTable):
             fig, ax = plt.subplots(figsize=(5, 10))
 
         sns.heatmap(
-            freq_df, ax=ax, cmap=cmap,
-            vmin=0, vmax=1,
-            annot=True, fmt=".0%",
-            cbar_kws={"label": f"{mode.capitalize()} Frequency"}
+            freq_df,
+            ax=ax,
+            cmap=cmap,
+            vmin=0,
+            vmax=1,
+            annot=True,
+            fmt=".0%",
+            cbar_kws={"label": f"{mode.capitalize()} Frequency"},
         )
         ax.set_title(title or f"{mode.capitalize()} Ratio - Cluster {cluster_id}")
         ax.set_xlabel("Subtype")
         ax.set_ylabel("Cytoband")
-        
+
         if show and ax is None:
             plt.show()
-        
+
         return freq_df
-    
 
-    def to_cnv_table(all_sample_df):
+    @staticmethod
+    def to_cnv_table(all_sample_df: pd.DataFrame) -> CopyNumberVariationTable:
+        """
+        Build a CopyNumberVariationTable from a long-format DataFrame.
+
+        Pivots ``all_sample_df`` so that genes become rows and samples become
+        columns, then attaches gene-level metadata (name, chromosome, start,
+        end).  Duplicate gene names are disambiguated by appending the
+        Ensembl gene ID.
+
+        Parameters
+        ----------
+        all_sample_df : pd.DataFrame
+            Long-format DataFrame with at least the columns ``gene_id``,
+            ``gene_name``, ``chromosome``, ``start``, ``end``,
+            ``sample_ID``, and ``copy_number``.
+
+        Returns
+        -------
+        CopyNumberVariationTable
+            A table indexed by (unique) gene name with samples as columns.
+        """
         cnv_matrix = all_sample_df.pivot_table(
-            index="gene_id", # ENSG ID to avoid duplication
-            columns="sample_ID",  
-            values="copy_number" 
+            index="gene_id",  # ENSG ID to avoid duplication
+            columns="sample_ID",
+            values="copy_number",
         )
 
-        feature_metadata = (
-            all_sample_df
-            .drop_duplicates(subset=["gene_id"])
-            .set_index("gene_id")[["gene_name", "chromosome", "start", "end"]] 
-        )
+        feature_metadata = all_sample_df.drop_duplicates(subset=["gene_id"]).set_index(
+            "gene_id"
+        )[["gene_name", "chromosome", "start", "end"]]
 
         # create CopyNumberVariationTable object
         table = CopyNumberVariationTable(cnv_matrix)
@@ -518,16 +643,25 @@ class CopyNumberVariationTable(PivotTable):
         table._validate_metadata()
 
         # make gene_name unique
-        dup_genes = table.feature_metadata.gene_name[table.feature_metadata.gene_name.duplicated()].unique()
-        dup_mask = table.feature_metadata.gene_name.isin(dup_genes) # if gene_name is duplicated
-        table.feature_metadata.loc[dup_mask, "gene_name"] = table.feature_metadata.gene_name[dup_mask] + "|" + table.feature_metadata.index[dup_mask] # add ENSG ID to duplicated gene_name
+        dup_genes = table.feature_metadata.gene_name[
+            table.feature_metadata.gene_name.duplicated()
+        ].unique()
+        dup_mask = table.feature_metadata.gene_name.isin(
+            dup_genes
+        )  # if gene_name is duplicated
+        table.feature_metadata.loc[dup_mask, "gene_name"] = (
+            table.feature_metadata.gene_name[dup_mask]
+            + "|"
+            + table.feature_metadata.index[dup_mask]
+        )  # add ENSG ID to duplicated gene_name
 
         # set index to gene_name
         table.index = table.feature_metadata.gene_name
         table.feature_metadata.index = table.feature_metadata.gene_name
         return table
 
-def read_sample_cutoff_file(sample_cutoff_file):
+
+def read_sample_cutoff_file(sample_cutoff_file: str) -> pd.DataFrame:
     """
     Read the sample cutoff file and extract the amp_thresh and del_thresh values.
 
@@ -544,34 +678,58 @@ def read_sample_cutoff_file(sample_cutoff_file):
     with open(sample_cutoff_file, "r") as f:
         first_line = f.readline().strip()
 
-    match = re.search(r'amp_thresh=([\d.]+), del_thresh=([\d.]+)', first_line)
+    match = re.search(r"amp_thresh=([\d.]+), del_thresh=([\d.]+)", first_line)
     if not match:
         raise ValueError(
-            "Could not find amp_thresh and del_thresh in the first line of the file.")
+            "Could not find amp_thresh and del_thresh in the first line of the file."
+        )
 
     amp_threshold = float(match.group(1))
     del_threshold = float(match.group(2))
-    sample_cutoffs_df = pd.read_csv(sample_cutoff_file,
-                                    sep="\t",
-                                    skiprows=1,
-                                    index_col=0)  # pass header
+    sample_cutoffs_df = pd.read_csv(
+        sample_cutoff_file, sep="\t", skiprows=1, index_col=0
+    )  # pass header
     sample_cutoffs_df.index = sample_cutoffs_df.index.str.replace(".call", "")
-    sample_cutoffs_df = sample_cutoffs_df.rename(columns={
-        "High": "amp_high_threshold",
-        "Low": "del_high_threshold"
-    })
+    sample_cutoffs_df = sample_cutoffs_df.rename(
+        columns={"High": "amp_high_threshold", "Low": "del_high_threshold"}
+    )
     sample_cutoffs_df["amp_low_threshold"] = amp_threshold
     sample_cutoffs_df["del_low_threshold"] = -del_threshold
     column_order = [
         "del_high_threshold",
         "del_low_threshold",
         "amp_low_threshold",
-        "amp_high_threshold"
+        "amp_high_threshold",
     ]
     sample_cutoffs_df = sample_cutoffs_df.reindex(columns=column_order)
     return sample_cutoffs_df
 
-def TCGA_sample_type(TCGA_barcode):
+
+def TCGA_sample_type(TCGA_barcode: str) -> str:
+    """
+    Determine the sample type from a TCGA barcode suffix.
+
+    Parses the two-digit sample-type code near the end of the barcode
+    and returns a single-character label.
+
+    Parameters
+    ----------
+    TCGA_barcode : str
+        A TCGA-style barcode ending with a sample-type portion
+        (e.g., ``"TCGA-XX-XXXX-01A"``).
+
+    Returns
+    -------
+    str
+        ``"T"`` for tumor (codes 00-09), ``"N"`` for normal (codes 10-19),
+        or ``"C"`` for control (codes 20-29).
+
+    Raises
+    ------
+    ValueError
+        If the barcode does not match the expected format or the
+        sample-type code is 30 or above.
+    """
     pattern = r"-([0-2][0-9])[A-Z]$"
     match = re.search(pattern, TCGA_barcode)
     if not match:
@@ -586,7 +744,29 @@ def TCGA_sample_type(TCGA_barcode):
     else:
         raise ValueError(f"Sample type code {sample_type} is not recognized.")
 
-def get_target_sample_ID(paired_sample_IDs, target_sample_type):
+
+def get_target_sample_ID(paired_sample_IDs: str, target_sample_type: str) -> str:
+    """
+    Extract the sample ID matching a target type from a comma-separated list.
+
+    Parameters
+    ----------
+    paired_sample_IDs : str
+        Comma-separated TCGA barcode strings (e.g.,
+        ``"TCGA-XX-XXXX-01A, TCGA-XX-XXXX-11A"``).
+    target_sample_type : str
+        Desired sample type (``"T"``, ``"N"``, or ``"C"``).
+
+    Returns
+    -------
+    str
+        The first barcode whose type matches ``target_sample_type``.
+
+    Raises
+    ------
+    ValueError
+        If no barcode in the list matches the requested type.
+    """
     paired_sample_IDs_list = paired_sample_IDs.split(",")
     for sample_ID in paired_sample_IDs_list:
         sample_ID = sample_ID.strip()
@@ -595,21 +775,74 @@ def get_target_sample_ID(paired_sample_IDs, target_sample_type):
             return sample_ID
     raise ValueError("No matching sample type found.")
 
-def read_TCGA_ASCAT3_CNV_file_sheet(file_path, file_suffix="ascat3.gene_level_copy_number.v36.tsv"):
+
+def read_TCGA_ASCAT3_CNV_file_sheet(
+    file_path: str,
+    file_suffix: str = "ascat3.gene_level_copy_number.v36.tsv",
+) -> pd.DataFrame:
+    """
+    Read a TCGA ASCAT3 file sheet and extract tumor/normal sample IDs.
+
+    Filters rows whose ``File Name`` column contains ``file_suffix``,
+    then derives ``tumor_sample_ID`` and ``normal_sample_ID`` from the
+    paired ``Sample ID`` field.
+
+    Parameters
+    ----------
+    file_path : str
+        Path to a tab-separated file sheet downloaded from the GDC portal.
+    file_suffix : str, default "ascat3.gene_level_copy_number.v36.tsv"
+        Substring used to filter relevant file rows.
+
+    Returns
+    -------
+    pd.DataFrame
+        The filtered file sheet with added ``tumor_sample_ID`` and
+        ``normal_sample_ID`` columns.
+    """
     file_sheet = pd.read_csv(file_path, sep="\t", header=0)
-    file_sheet = file_sheet[file_sheet["File Name"].str.contains(file_suffix, regex=True)].copy()
-    file_sheet["tumor_sample_ID"] = file_sheet["Sample ID"].apply(lambda x: get_target_sample_ID(x, "T"))
-    file_sheet["normal_sample_ID"] = file_sheet["Sample ID"].apply(lambda x: get_target_sample_ID(x, "N"))
+    file_sheet = file_sheet[
+        file_sheet["File Name"].str.contains(file_suffix, regex=True)
+    ].copy()
+    file_sheet["tumor_sample_ID"] = file_sheet["Sample ID"].apply(
+        lambda x: get_target_sample_ID(x, "T")
+    )
+    file_sheet["normal_sample_ID"] = file_sheet["Sample ID"].apply(
+        lambda x: get_target_sample_ID(x, "N")
+    )
     return file_sheet
 
-def read_cnv_files(base_dir, file_sheet):
-	all_samples = []
-	for _, row in file_sheet.iterrows():
-		tumor_sample_ID = row["tumor_sample_ID"]
-		path = os.path.join(base_dir, row["File Name"])
-		cnv_df = pd.read_csv(path, sep="\t")
-		cnv_df["sample_ID"] = tumor_sample_ID
-		cnv_df = cnv_df.dropna()
-		all_samples.append(cnv_df)
-	all_sample_df = pd.concat(all_samples, axis=0)
-	return all_sample_df
+
+def read_cnv_files(base_dir: str, file_sheet: pd.DataFrame) -> pd.DataFrame:
+    """
+    Read and concatenate per-sample CNV files listed in a file sheet.
+
+    Iterates over ``file_sheet``, reads each tab-separated CNV file from
+    ``base_dir``, tags rows with the tumor sample ID, drops rows with
+    missing values, and concatenates everything into a single long-format
+    DataFrame.
+
+    Parameters
+    ----------
+    base_dir : str
+            Directory containing the individual CNV files.
+    file_sheet : pd.DataFrame
+            DataFrame with at least ``File Name`` and ``tumor_sample_ID``
+            columns (as produced by :func:`read_TCGA_ASCAT3_CNV_file_sheet`).
+
+    Returns
+    -------
+    pd.DataFrame
+            Concatenated long-format DataFrame of all samples with an added
+            ``sample_ID`` column.
+    """
+    all_samples = []
+    for _, row in file_sheet.iterrows():
+        tumor_sample_ID = row["tumor_sample_ID"]
+        path = os.path.join(base_dir, row["File Name"])
+        cnv_df = pd.read_csv(path, sep="\t")
+        cnv_df["sample_ID"] = tumor_sample_ID
+        cnv_df = cnv_df.dropna()
+        all_samples.append(cnv_df)
+    all_sample_df = pd.concat(all_samples, axis=0)
+    return all_sample_df
