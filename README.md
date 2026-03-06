@@ -1,5 +1,8 @@
 # pymaftools
 
+[![Documentation](https://img.shields.io/badge/docs-dionic.xyz%2Fpymaftools-blue)](https://dionic.xyz/pymaftools/)
+[![PyPI](https://img.shields.io/pypi/v/pymaftools)](https://pypi.org/project/pymaftools/)
+
 `pymaftools` is a Python package for handling and analyzing MAF (Mutation Annotation Format) files and multi-omics cancer genomics data. It provides classes for data manipulation, statistical analysis, machine learning, and visualization.
 
 <p align="center">
