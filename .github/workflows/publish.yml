@@ -18,7 +18,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install build tools
-        run: pip install build twine
+        run: pip install build "twine>=5.0,<6.0"
 
       - name: Build package
         run: python -m build
@@ -43,7 +43,7 @@ jobs:
           path: dist/
 
       - name: Publish to TestPyPI
-        run: pip install twine && twine upload --repository testpypi dist/*
+        run: pip install "twine>=5.0,<6.0" && twine upload --repository testpypi dist/*
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.TEST_PYPI_TOKEN }}
@@ -59,7 +59,7 @@ jobs:
           path: dist/
 
       - name: Publish to PyPI
-        run: pip install twine && twine upload dist/*
+        run: pip install "twine>=5.0,<6.0" && twine upload dist/*
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
