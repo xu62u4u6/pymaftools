@@ -51,6 +51,9 @@ from .model.modelUtils import (
     run_model_evaluation,
 )
 
+# io
+from .io.tcga import GDCClient, parse_tcga_barcode
+
 # utils
 from .utils.geneset import read_GMT, fetch_msigdb_geneset
 from .utils.reduction import PCA_CCA
