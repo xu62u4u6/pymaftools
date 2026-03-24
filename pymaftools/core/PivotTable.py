@@ -293,6 +293,103 @@ class PivotTable(pd.DataFrame):
         print(f"[PivotTable] loaded from {db_path}")
         return table
 
+    # ------------------------------------------------------------------ #
+    #  AnnData interoperability
+    # ------------------------------------------------------------------ #
+
+    def to_anndata(self, **kwargs: Any) -> "anndata.AnnData":
+        """
+        Convert PivotTable to an AnnData object.
+
+        AnnData convention is observations (samples) × variables (features),
+        so the data matrix is transposed.  ``sample_metadata`` maps to
+        ``adata.obs`` and ``feature_metadata`` maps to ``adata.var``.
+
+        Parameters
+        ----------
+        **kwargs
+            Additional keyword arguments passed to ``anndata.AnnData()``.
+
+        Returns
+        -------
+        anndata.AnnData
+            AnnData object with ``.obs``, ``.var`` populated from metadata.
+
+        Examples
+        --------
+        >>> adata = table.to_anndata()
+        >>> adata.obs  # sample_metadata
+        >>> adata.var  # feature_metadata
+        """
+        try:
+            import anndata
+        except ImportError:
+            raise ImportError(
+                "anndata is required for AnnData conversion. "
+                "Install it with: pip install anndata"
+            )
+
+        X = self.values.T  # (samples, features)
+
+        # Handle non-numeric / mixed dtype: store as object array
+        if X.dtype == object:
+            import numpy as _np
+            X = _np.array(X, dtype=object)
+
+        adata = anndata.AnnData(
+            X=X,
+            obs=self.sample_metadata.copy(),
+            var=self.feature_metadata.copy(),
+            **kwargs,
+        )
+        return adata
+
+    @classmethod
+    def from_anndata(cls, adata: "anndata.AnnData") -> "PivotTable":
+        """
+        Create a PivotTable from an AnnData object.
+
+        Parameters
+        ----------
+        adata : anndata.AnnData
+            AnnData object. ``adata.X`` is transposed back to
+            features × samples layout.
+
+        Returns
+        -------
+        PivotTable
+            PivotTable with metadata from ``adata.obs`` / ``adata.var``.
+
+        Examples
+        --------
+        >>> table = PivotTable.from_anndata(adata)
+        """
+        try:
+            import anndata  # noqa: F401
+        except ImportError:
+            raise ImportError(
+                "anndata is required for AnnData conversion. "
+                "Install it with: pip install anndata"
+            )
+
+        import scipy.sparse as sp
+
+        X = adata.X
+        if sp.issparse(X):
+            X = X.toarray()
+
+        data = pd.DataFrame(
+            X.T,  # transpose back to (features, samples)
+            index=adata.var_names,
+            columns=adata.obs_names,
+        )
+
+        table = cls(data)
+        table.feature_metadata = adata.var.copy()
+        table.sample_metadata = adata.obs.copy()
+        table._validate_metadata()
+        return table
+
     def to_hierarchical_clustering(
         self, method: str = "ward", metric: str = "euclidean"
     ) -> Dict[str, np.ndarray]:
