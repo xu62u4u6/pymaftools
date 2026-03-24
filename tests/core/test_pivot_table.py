@@ -280,3 +280,101 @@ class TestPivotTablePerformance:
         
         assert len(frequencies) == 2000
         assert all(0 <= freq <= 1 for freq in frequencies)
+
+
+class TestAnnDataInterop:
+    """Test AnnData interoperability methods"""
+
+    def test_to_anndata_basic(self, sample_pivot_table):
+        """Test basic PivotTable to AnnData conversion"""
+        anndata = pytest.importorskip("anndata")
+        adata = sample_pivot_table.to_anndata()
+
+        assert isinstance(adata, anndata.AnnData)
+        # AnnData is (samples, features), PivotTable is (features, samples)
+        assert adata.shape == (sample_pivot_table.shape[1], sample_pivot_table.shape[0])
+        assert list(adata.obs_names) == list(sample_pivot_table.columns)
+        assert list(adata.var_names) == list(sample_pivot_table.index)
+
+    def test_to_anndata_preserves_metadata(self, sample_pivot_table):
+        """Test that metadata is preserved in AnnData conversion"""
+        pytest.importorskip("anndata")
+        adata = sample_pivot_table.to_anndata()
+
+        # obs should contain sample_metadata
+        assert "subtype" in adata.obs.columns
+        assert "age" in adata.obs.columns
+        assert list(adata.obs["subtype"]) == list(sample_pivot_table.sample_metadata["subtype"])
+
+        # var should contain feature_metadata
+        assert "chromosome" in adata.var.columns
+        assert "gene_type" in adata.var.columns
+
+    def test_from_anndata_basic(self, sample_pivot_table):
+        """Test AnnData to PivotTable conversion"""
+        pytest.importorskip("anndata")
+        adata = sample_pivot_table.to_anndata()
+        table = PivotTable.from_anndata(adata)
+
+        assert isinstance(table, PivotTable)
+        assert table.shape == sample_pivot_table.shape
+
+    def test_roundtrip_numeric(self):
+        """Test numeric data roundtrip preserves values"""
+        pytest.importorskip("anndata")
+        data = pd.DataFrame(
+            {"s1": [1.5, 2.3, 0.0], "s2": [3.1, 0.0, 1.7]},
+            index=["geneA", "geneB", "geneC"],
+        )
+        table = PivotTable(data)
+        table.sample_metadata["group"] = ["A", "B"]
+        table.feature_metadata["chr"] = ["1", "2", "3"]
+
+        table2 = PivotTable.from_anndata(table.to_anndata())
+
+        assert np.allclose(table.values, table2.values)
+        assert table.sample_metadata.equals(table2.sample_metadata)
+        assert table.feature_metadata.equals(table2.feature_metadata)
+
+    def test_roundtrip_boolean(self, sample_pivot_table):
+        """Test boolean mutation data roundtrip"""
+        pytest.importorskip("anndata")
+        adata = sample_pivot_table.to_anndata()
+        table2 = PivotTable.from_anndata(adata)
+
+        # Values should match (bool may become float in AnnData)
+        original = sample_pivot_table.values.astype(float)
+        recovered = table2.values.astype(float)
+        assert np.allclose(original, recovered)
+
+    def test_from_anndata_sparse(self):
+        """Test conversion from sparse AnnData"""
+        anndata = pytest.importorskip("anndata")
+        import scipy.sparse as sp
+
+        X_sparse = sp.csr_matrix(np.array([[1, 0, 3], [0, 2, 0]]))
+        adata = anndata.AnnData(
+            X=X_sparse,
+            obs=pd.DataFrame({"group": ["A", "B"]}, index=["s1", "s2"]),
+            var=pd.DataFrame({"chr": ["1", "2", "3"]}, index=["g1", "g2", "g3"]),
+        )
+        table = PivotTable.from_anndata(adata)
+
+        assert table.shape == (3, 2)  # (features, samples)
+        assert table.loc["g1", "s1"] == 1
+        assert table.loc["g2", "s1"] == 0
+        assert "group" in table.sample_metadata.columns
+
+    def test_to_anndata_missing_anndata(self, sample_pivot_table, monkeypatch):
+        """Test ImportError when anndata is not installed"""
+        import builtins
+        real_import = builtins.__import__
+
+        def mock_import(name, *args, **kwargs):
+            if name == "anndata":
+                raise ImportError("No module named 'anndata'")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", mock_import)
+        with pytest.raises(ImportError, match="anndata is required"):
+            sample_pivot_table.to_anndata()
