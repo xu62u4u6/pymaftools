@@ -67,3 +67,8 @@ ignore = ["E501"]  # line length handled by formatter
 where = ["."] 
 include = ["pymaftools*"]
 exclude = ["tests*"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]

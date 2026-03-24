@@ -10,3 +10,6 @@ __pycache__/
 .coverage
 uv.lock
 .venv/
+
+data/
+todo.md
