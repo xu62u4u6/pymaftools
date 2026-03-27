@@ -654,8 +654,9 @@ class PivotTable(pd.DataFrame):
     def subset(
         self,
         *,
-        features: Optional[Union[List, pd.Series, slice]] = None,
-        samples: Optional[Union[List, pd.Series, slice]] = None,
+        features: Optional[Union[List, pd.Index, pd.Series, slice]] = None,
+        samples: Optional[Union[List, pd.Index, pd.Series, slice]] = None,
+        errors: Literal["raise", "ignore"] = "raise",
     ) -> "PivotTable":
         """
         Subset PivotTable by features and/or samples.
@@ -666,39 +667,49 @@ class PivotTable(pd.DataFrame):
 
         Parameters
         ----------
-        features : list, pd.Series, or slice, optional
+        features : list, pd.Index, pd.Series, or slice, optional
             Features (rows) to select. Can be:
 
             - list of str : Feature names to select
                 Example: ``["TP53", "KRAS", "EGFR"]``
+            - pd.Index : Feature index to select
+                Example: ``pd.Index(["TP53", "KRAS"])``
             - pd.Series (bool) : Boolean mask for feature selection
                 Example: ``pivot_table.feature_metadata["freq"] > 0.1``
             - slice : Slice object for feature selection
                 Example: ``slice(None, 10)`` for first 10 features
             - None : Select all features (default)
 
-        samples : list, pd.Series, or slice, optional
+        samples : list, pd.Index, pd.Series, or slice, optional
             Samples (columns) to select. Can be:
 
             - list of str : Sample names to select
                 Example: ``["sample1", "sample2", "sample3"]``
+            - pd.Index : Sample index to select
+                Example: ``pd.Index(["sample1", "sample2"])``
             - pd.Series (bool) : Boolean mask for sample selection
                 Example: ``pivot_table.sample_metadata["subtype"] == "LUAD"``
             - slice : Slice object for sample selection
                 Example: ``slice(None, 20)`` for first 20 samples
             - None : Select all samples (default)
 
+        errors : {"raise", "ignore"}, default "raise"
+            How to handle missing labels in ``features`` or ``samples``.
+            Use ``"raise"`` to detect unexpected labels, or ``"ignore"``
+            to silently drop labels that are not present.
+
         Returns
         -------
         PivotTable
-            Subset PivotTable with synchronized metadata. Only keeps existing
-            labels (inner join behavior).
+            Subset PivotTable with synchronized metadata.
 
         Notes
         -----
-        This method uses inner join behavior, meaning only existing labels
-        are kept. Missing labels are silently ignored. For outer join behavior
-        that includes missing labels with NaN values, use the ``reindex`` method.
+        By default, this method validates that requested labels exist in the
+        PivotTable and raises an error when they do not. Set ``errors="ignore"``
+        to use inner join behavior that silently drops missing labels. For outer
+        join behavior that includes missing labels with NaN values, use the
+        ``reindex`` method.
 
         Examples
         --------
@@ -725,8 +736,39 @@ class PivotTable(pd.DataFrame):
         PivotTable.reindex : For outer join behavior with missing labels.
         PivotTable.__getitem__ : For direct indexing operations.
         """
-        features = slice(None) if features is None else features
-        samples = slice(None) if samples is None else samples
+        if errors not in {"raise", "ignore"}:
+            raise ValueError("errors must be either 'raise' or 'ignore'")
+
+        def _validate_axis_labels(
+            labels: Union[List, pd.Index], available: pd.Index, axis_name: str
+        ) -> Union[List, pd.Index]:
+            if errors == "ignore":
+                if isinstance(labels, list):
+                    return [label for label in labels if label in available]
+                return labels.intersection(available)
+
+            missing = [label for label in labels if label not in available]
+            if missing:
+                missing_str = ", ".join(map(str, missing[:10]))
+                if len(missing) > 10:
+                    missing_str += ", ..."
+                raise KeyError(f"Unknown {axis_name} labels: {missing_str}")
+            return labels
+
+        if features is None:
+            features = slice(None)
+        elif isinstance(features, pd.Index):
+            features = _validate_axis_labels(features, self.index, "feature")
+        elif isinstance(features, list):
+            features = _validate_axis_labels(features, self.index, "feature")
+
+        if samples is None:
+            samples = slice(None)
+        elif isinstance(samples, pd.Index):
+            samples = _validate_axis_labels(samples, self.columns, "sample")
+        elif isinstance(samples, list):
+            samples = _validate_axis_labels(samples, self.columns, "sample")
+
         return self[features, samples]
 
     def reindex(
