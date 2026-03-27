@@ -122,7 +122,10 @@ class Cohort:
             table = table.subset(samples=self.sample_IDs)
             self.tables[table_name] = table
 
-        self.add_sample_metadata(table.sample_metadata, source=table_name)
+        # Reindex sample_metadata to cohort's sample_IDs before merging
+        # (table may have fewer samples after subset)
+        meta = table.sample_metadata.reindex(self.sample_IDs)
+        self.add_sample_metadata(meta, source=table_name)
 
     def _is_index_matched(self, table: PivotTable) -> bool:
         """
