@@ -177,7 +177,7 @@ class MAF(pd.DataFrame):
         if len(non_false_mutations) > 1:
             return "Multi_Hit"
         elif len(non_false_mutations) == 1:
-            return non_false_mutations[0]
+            return non_false_mutations.iloc[0]
 
     def to_pivot_table(self) -> PivotTable:
         """

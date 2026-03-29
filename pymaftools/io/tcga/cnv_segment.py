@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from ...core.CopyNumberVariationTable import CopyNumberVariationTable
@@ -28,7 +29,7 @@ class TCGACNVSegmentBuilder(TCGATableBuilder):
         Path to file_to_case.tsv or pre-loaded mapping DataFrame.
     """
 
-    file_pattern = "*.nocnv_grch38.seg.v2.txt"
+    file_pattern = "*.ascat3.allelic_specific.seg.txt"
 
     def read_and_merge(self, files: list[dict]) -> pd.DataFrame:
         segments = []
@@ -37,6 +38,9 @@ class TCGACNVSegmentBuilder(TCGATableBuilder):
             df["case_id"] = f["case_id"]
             df["sample_type"] = f["sample_type"]
             df = df.drop(columns=["GDC_Aliquot"], errors="ignore")
+            # Convert absolute copy number to log2 ratio (Segment_Mean convention)
+            if "Segment_Mean" not in df.columns and "Copy_Number" in df.columns:
+                df["Segment_Mean"] = np.log2(np.maximum(df["Copy_Number"], 0.001) / 2)
             segments.append(df)
 
         return pd.concat(segments, ignore_index=True)

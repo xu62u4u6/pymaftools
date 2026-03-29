@@ -102,6 +102,33 @@ def parse_tcga_barcode(barcode: str) -> dict:
     return result
 
 
+def _is_tumor_sample(sample: dict) -> bool:
+    """Return True when sample metadata indicates a tumor sample."""
+    submitter_id = sample.get("submitter_id", "")
+    parts = submitter_id.split("-") if submitter_id else []
+    if len(parts) > 3 and len(parts[3]) >= 2 and parts[3][:2].isdigit():
+        return int(parts[3][:2]) < 10
+
+    sample_type = sample.get("sample_type")
+    if isinstance(sample_type, int):
+        return sample_type < 10
+    if isinstance(sample_type, str) and sample_type[:2].isdigit():
+        return int(sample_type[:2]) < 10
+
+    return False
+
+
+def _pick_preferred_sample(samples: list[dict]) -> dict | None:
+    """Prefer tumor sample in tumor-normal paired records."""
+    if not samples:
+        return None
+
+    for sample in samples:
+        if _is_tumor_sample(sample):
+            return sample
+    return samples[0]
+
+
 class GDCClient:
     """
     Client for querying, aligning, and downloading TCGA data from GDC.
@@ -243,7 +270,8 @@ class GDCClient:
         fields = (
             "file_id,file_name,file_size,md5sum,state,data_type,"
             "analysis.workflow_type,"
-            "cases.submitter_id,cases.samples.sample_type,cases.project.project_id"
+            "cases.submitter_id,cases.samples.submitter_id,"
+            "cases.samples.sample_type,cases.project.project_id"
         )
         results = []
         for attempt in range(1, MAX_RETRIES + 1):
@@ -414,8 +442,9 @@ class GDCClient:
                     case_id     = c.get("submitter_id")
                     project     = (c.get("project") or {}).get("project_id")
                     samples     = c.get("samples", [])
-                    if samples:
-                        sample_type = samples[0].get("sample_type")
+                    preferred   = _pick_preferred_sample(samples)
+                    if preferred:
+                        sample_type = preferred.get("sample_type")
                 mapping[fid] = (case_id, sample_type, project)
 
         df = pd.DataFrame(records)
@@ -584,8 +613,9 @@ class GDCClient:
                     case_id     = c.get("submitter_id")
                     project     = (c.get("project") or {}).get("project_id")
                     samples     = c.get("samples", [])
-                    if samples:
-                        sample_type = samples[0].get("sample_type")
+                    preferred   = _pick_preferred_sample(samples)
+                    if preferred:
+                        sample_type = preferred.get("sample_type")
                 meta[fid] = {
                     "filename":    hit.get("file_name", ""),
                     "md5":         hit.get("md5sum", ""),
