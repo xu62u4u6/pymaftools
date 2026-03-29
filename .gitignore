@@ -11,5 +11,6 @@ __pycache__/
 uv.lock
 .venv/
 
-data/
+data/*
+tmp/
 todo.md
