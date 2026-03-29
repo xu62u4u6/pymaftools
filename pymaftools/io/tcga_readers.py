@@ -17,6 +17,7 @@ from typing import Literal
 import pandas as pd
 import requests
 
+from ..core.CopyNumberVariationTable import CopyNumberVariationTable
 from ..core.ExpressionTable import ExpressionTable
 from ..core.MAF import MAF
 from ..core.PivotTable import PivotTable
@@ -95,11 +96,14 @@ def build_uuid_to_case_mapping(manifest_path: str | Path) -> dict[str, str]:
 
 def scan_gdc_directory(data_dir: str | Path, pattern: str) -> dict[str, Path]:
     """
-    Scan a gdc-client download directory and find files matching a pattern.
+    Scan a GDC download directory and find files matching a pattern.
 
-    gdc-client creates ``{data_dir}/{file_uuid}/{filename}`` structure.
-    This scans for files matching the glob pattern and extracts the uuid
-    from the parent directory name.
+    Supports two directory layouts:
+
+    1. **gdc-client layout**: ``{data_dir}/{file_uuid}/{filename}``
+       UUID is extracted from the parent directory name.
+    2. **flat layout**: ``{data_dir}/{filename}``
+       UUID is extracted from the manifest by matching filenames.
 
     Parameters
     ----------
@@ -116,10 +120,15 @@ def scan_gdc_directory(data_dir: str | Path, pattern: str) -> dict[str, Path]:
     data_dir = Path(data_dir)
     result = {}
     for filepath in data_dir.rglob(pattern):
-        uuid = filepath.parent.name
-        if uuid == "logs":
+        parent = filepath.parent.name
+        if parent == "logs":
             continue
-        result[uuid] = filepath
+        if parent == data_dir.name:
+            # Flat layout: use filename stem as key (will be resolved via manifest)
+            result[filepath.name] = filepath
+        else:
+            # gdc-client layout: parent is UUID
+            result[parent] = filepath
     return result
 
 
@@ -150,14 +159,23 @@ def resolve_files_to_cases(
     list of (case_id, Path)
         Deduplicated list sorted by case_id.
     """
-    uuid_to_path = scan_gdc_directory(data_dir, pattern)
+    key_to_path = scan_gdc_directory(data_dir, pattern)
     uuid_to_case = build_uuid_to_case_mapping(manifest_path)
 
+    # Build filename→uuid lookup for flat layout
+    manifest = read_manifest(manifest_path)
+    fname_to_uuid = {}
+    for file_id, row in manifest.iterrows():
+        fname_to_uuid[row["filename"]] = file_id
+
     seen_cases = {}
-    for uuid, filepath in uuid_to_path.items():
-        case_id = uuid_to_case.get(uuid)
-        if case_id and case_id not in seen_cases:
-            seen_cases[case_id] = filepath
+    for key, filepath in key_to_path.items():
+        # key is either a UUID (gdc-client layout) or filename (flat layout)
+        uuid = key if key in uuid_to_case else fname_to_uuid.get(key)
+        if uuid:
+            case_id = uuid_to_case.get(uuid)
+            if case_id and case_id not in seen_cases:
+                seen_cases[case_id] = filepath
 
     return sorted(seen_cases.items(), key=lambda x: x[0])
 
@@ -270,6 +288,192 @@ def read_seg_files(
         f"{result['case_id'].nunique()} cases"
     )
     return result
+
+
+def seg_to_cytoband_table(
+    seg_df: pd.DataFrame,
+    cytoband_path: str | Path | None = None,
+) -> CopyNumberVariationTable:
+    """
+    Convert segment-level CNV data to a cytoband × sample CopyNumberVariationTable.
+
+    For each (case, cytoband) pair, computes the overlap-weighted average of
+    Segment_Mean across all overlapping segments.
+
+    Parameters
+    ----------
+    seg_df : pd.DataFrame
+        Long-format segment DataFrame from :func:`read_seg_files`.
+        Required columns: case_id, Chromosome, Start, End, Segment_Mean.
+    cytoband_path : str or Path, optional
+        Path to UCSC cytoBand.txt. Defaults to the bundled file in
+        ``pymaftools/data/cytoBand.txt``.
+
+    Returns
+    -------
+    CopyNumberVariationTable
+        Cytoband × sample matrix (weighted-mean Segment_Mean).
+    """
+    if cytoband_path is None:
+        cytoband_path = Path(__file__).resolve().parent.parent / "data" / "cytoBand.txt"
+
+    bands = pd.read_csv(
+        cytoband_path, sep="\t", header=None,
+        names=["chrom", "start", "end", "band", "stain"],
+    )
+    # Keep only standard chromosomes (chr1-22, chrX, chrY), drop alt/random contigs
+    standard = [f"chr{i}" for i in range(1, 23)] + ["chrX", "chrY"]
+    bands = bands[bands["chrom"].isin(standard)].copy()
+    bands["label"] = bands["chrom"] + bands["band"]  # e.g. chr1p36.33
+
+    # Normalize chromosome naming
+    seg = seg_df.copy()
+    seg["Chromosome"] = seg["Chromosome"].astype(str)
+    if not seg["Chromosome"].iloc[0].startswith("chr"):
+        seg["Chromosome"] = "chr" + seg["Chromosome"]
+
+    records = []
+    for _, b in bands.iterrows():
+        chrom, bstart, bend, label = b["chrom"], b["start"], b["end"], b["label"]
+        # Find overlapping segments
+        mask = (
+            (seg["Chromosome"] == chrom)
+            & (seg["Start"] < bend)
+            & (seg["End"] > bstart)
+        )
+        overlap = seg.loc[mask].copy()
+        if overlap.empty:
+            continue
+
+        # Compute overlap length for weighting
+        overlap["ol_start"] = overlap["Start"].clip(lower=bstart)
+        overlap["ol_end"] = overlap["End"].clip(upper=bend)
+        overlap["ol_len"] = overlap["ol_end"] - overlap["ol_start"]
+
+        # Weighted mean per case
+        weighted = (
+            overlap.groupby("case_id")
+            .apply(
+                lambda g: (g["Segment_Mean"] * g["ol_len"]).sum() / g["ol_len"].sum(),
+                include_groups=False,
+            )
+            .rename(label)
+        )
+        records.append(weighted)
+
+    matrix = pd.DataFrame(records)
+    matrix.index.name = "cytoband"
+
+    # Feature metadata: chromosome, arm, band, stain
+    feature_meta = bands.set_index("label")[["chrom", "start", "end", "stain"]].copy()
+    feature_meta = feature_meta.rename(columns={"chrom": "chromosome"})
+    feature_meta["arm"] = feature_meta.index.str.extract(r"chr\w+([pq])")[0].values
+    feature_meta = feature_meta.reindex(matrix.index)
+
+    sample_meta = pd.DataFrame({"case_id": matrix.columns}, index=matrix.columns)
+
+    table = CopyNumberVariationTable(matrix)
+    table.feature_metadata = feature_meta
+    table.sample_metadata = sample_meta
+
+    print(
+        f"[seg_to_cytoband_table] {table.shape[0]} cytobands × "
+        f"{table.shape[1]} samples"
+    )
+    return table
+
+
+# ------------------------------------------------------------------ #
+#  Reader 2b: Gene-level CNV
+# ------------------------------------------------------------------ #
+
+
+def read_gene_level_cnv(
+    data_dir: str | Path,
+    manifest_path: str | Path,
+    value_column: str = "copy_number",
+    strip_gene_version: bool = True,
+) -> CopyNumberVariationTable:
+    """
+    Read TCGA gene-level copy number files into a gene × sample CopyNumberVariationTable.
+
+    Scans for ``*.gene_level_copy_number.v36.tsv`` files produced by the
+    ASCAT3 pipeline available on GDC.
+
+    Parameters
+    ----------
+    data_dir : str or Path
+        gdc-client download directory containing uuid subdirectories.
+    manifest_path : str or Path
+        Path to manifest TSV.
+    value_column : str, default "copy_number"
+        Column to use as values. Typical columns in the file:
+        ``copy_number``, ``min_copy_number``, ``max_copy_number``.
+    strip_gene_version : bool, default True
+        If True, strip ENSG version suffix (e.g. ``.15``).
+
+    Returns
+    -------
+    CopyNumberVariationTable
+        Gene × sample matrix with feature_metadata (gene_name, chromosome,
+        start, end) and sample_metadata (case_id).
+    """
+    # Support both ASCAT3 filename variants
+    case_files = resolve_files_to_cases(
+        data_dir, "*.gene_level_copy_number.v36.tsv", manifest_path
+    )
+    if not case_files:
+        case_files = resolve_files_to_cases(
+            data_dir, "*.gene_level.copy_number_variation.tsv", manifest_path
+        )
+
+    if not case_files:
+        raise FileNotFoundError(
+            f"No gene-level CNV files found in {data_dir}. "
+            "Expected *.gene_level_copy_number.v36.tsv or "
+            "*.gene_level.copy_number_variation.tsv inside uuid subdirectories."
+        )
+
+    gene_info = None
+    series_dict = {}
+
+    for case_id, filepath in case_files:
+        df = pd.read_csv(filepath, sep="\t")
+
+        if gene_info is None:
+            info_cols = [c for c in ["gene_id", "gene_name", "chromosome", "start", "end"] if c in df.columns]
+            gene_info = df[info_cols].copy()
+
+        gene_ids = df["gene_id"]
+        if strip_gene_version:
+            gene_ids = gene_ids.str.replace(r"\.\d+$", "", regex=True)
+
+        series_dict[case_id] = pd.Series(
+            df[value_column].values, index=gene_ids.values, name=case_id
+        )
+
+    matrix = pd.DataFrame(series_dict)
+
+    # Build feature metadata
+    if strip_gene_version:
+        gene_info["gene_id"] = gene_info["gene_id"].str.replace(r"\.\d+$", "", regex=True)
+    feature_meta = gene_info.set_index("gene_id")
+    feature_meta = feature_meta[~feature_meta.index.duplicated(keep="first")]
+
+    sample_meta = pd.DataFrame(
+        {"case_id": list(series_dict.keys())},
+        index=list(series_dict.keys()),
+    )
+
+    table = CopyNumberVariationTable(matrix)
+    table.feature_metadata = feature_meta.reindex(matrix.index)
+    table.sample_metadata = sample_meta
+
+    print(
+        f"[read_gene_level_cnv] Loaded {table.shape[0]} genes × "
+        f"{table.shape[1]} samples (column: {value_column})"
+    )
+    return table
 
 
 # ------------------------------------------------------------------ #
