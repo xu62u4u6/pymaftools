@@ -164,7 +164,27 @@ class GDCClient:
         Parameters
         ----------
         config_path : str or Path
-            Path to config.toml.
+            Path to a TOML file with the following structure::
+
+                projects = ["TCGA-LUAD", "TCGA-LUSC"]
+
+                [download]
+                gdc_client = "tools/gdc-client"
+                token      = "/path/to/gdc-token.txt"
+                threads    = 8
+                retries    = 5
+
+                [data_types.expression]
+                data_type     = "Gene Expression Quantification"
+                workflow_type = "STAR - Counts"
+
+                [data_types.mutation]
+                data_type     = "Masked Somatic Mutation"
+                workflow_type = "Aliquot Ensemble Somatic Variant Merging and Masking"
+
+            Each ``[data_types.<label>]`` entry must have ``data_type`` and
+            optionally ``workflow_type``. Labels become manifest filename
+            prefixes and raw download directory names.
 
         Returns
         -------
