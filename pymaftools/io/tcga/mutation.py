@@ -25,9 +25,11 @@ class TCGAMutationBuilder(TCGATableBuilder):
 
     file_pattern = "*.maf.gz"
 
-    def read_and_merge(self, files: list[dict]) -> MAF:
+    def read_and_merge(self, files: list[dict], tumor_only: bool = True) -> MAF:
         frames = []
         for f in files:
+            if tumor_only and f.get("sample_type") != "Primary Tumor":
+                continue
             df = pd.read_csv(f["filepath"], sep="\t", comment="#", low_memory=False)
             df["sample_ID"] = f["case_id"]
             df["sample_type"] = f["sample_type"]
@@ -42,9 +44,11 @@ class TCGAMutationBuilder(TCGATableBuilder):
 
     def build_sample_metadata(self, table, files):
         # MAF is flat, sample_metadata doesn't apply the same way
-        # Return a per-case summary
+        # Return a per-case summary (Primary Tumor only)
         meta_records = {}
         for f in files:
+            if f.get("sample_type") != "Primary Tumor":
+                continue
             cid = f["case_id"]
             if cid not in meta_records:
                 meta_records[cid] = {
