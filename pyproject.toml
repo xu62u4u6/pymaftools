@@ -25,6 +25,7 @@ dependencies = [
   "statsmodels>=0.14,<1.0",
   "scipy>=1.10,<2.0",
   "requests>=2.28,<3.0",
+  "pybiomart>=0.2,<1.0",
   "beautifulsoup4>=4.12,<5.0",
   "tqdm>=4.64,<5.0",
   "tables>=3.8,<4.0"

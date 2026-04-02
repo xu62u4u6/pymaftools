@@ -155,3 +155,114 @@ def get_gene_description_df(gene_symbols: list[str]) -> pd.DataFrame:
     gene_description_df.rename(columns={"index": "Gene"}, inplace=True)
 
     return gene_description_df
+
+
+from pathlib import Path
+
+_DATA_DIR = Path(__file__).parent.parent / "data"
+_ENSEMBL_CACHE = _DATA_DIR / "ensembl_gene_map.tsv"
+
+
+def load_ensembl_map(force: bool = False) -> pd.DataFrame:
+    """Load Ensembl gene ID -> HUGO symbol mapping, downloading if needed.
+
+    Parameters
+    ----------
+    force:
+        If True, re-download even if the cache exists.
+
+    Returns
+    -------
+    pd.DataFrame
+        Columns: ensembl_gene_id, hugo_symbol, chromosome_name,
+        start_position, end_position, gene_biotype
+    """
+    if _ENSEMBL_CACHE.exists() and not force:
+        return pd.read_csv(_ENSEMBL_CACHE, sep="\t")
+
+    from pybiomart import Server  # lazy import
+
+    server = Server(host="http://www.ensembl.org")
+    dataset = (
+        server.marts["ENSEMBL_MART_ENSEMBL"].datasets["hsapiens_gene_ensembl"]
+    )
+    df = dataset.query(
+        attributes=[
+            "ensembl_gene_id",
+            "external_gene_name",
+            "chromosome_name",
+            "start_position",
+            "end_position",
+            "gene_biotype",
+        ]
+    )
+    # pybiomart returns display-name columns for these attributes.
+    rename_map = {
+        "Gene stable ID": "ensembl_gene_id",
+        "Gene name": "hugo_symbol",
+        "Chromosome/scaffold name": "chromosome_name",
+        "Gene start (bp)": "start_position",
+        "Gene end (bp)": "end_position",
+        "Gene type": "gene_biotype",
+    }
+    df = df.rename(columns=rename_map)
+    _DATA_DIR.mkdir(parents=True, exist_ok=True)
+    df.to_csv(_ENSEMBL_CACHE, sep="\t", index=False)
+    return df
+
+
+def ensembl_to_symbol(
+    ensembl_ids,
+    force_download: bool = False,
+) -> dict:
+    """Map Ensembl gene IDs to HUGO symbols.
+
+    Parameters
+    ----------
+    ensembl_ids:
+        Ensembl IDs to convert (with or without version suffix, e.g.
+        ENSG00000141510.18).
+    force_download:
+        Passed to load_ensembl_map.
+
+    Returns
+    -------
+    dict
+        Mapping each input ID to its HUGO symbol (or None if not found).
+    """
+    df = load_ensembl_map(force=force_download)
+    mapping = df.set_index("ensembl_gene_id")["hugo_symbol"].to_dict()
+    result = {}
+    for eid in ensembl_ids:
+        base = eid.split(".")[0]  # strip version suffix
+        result[eid] = mapping.get(base) or mapping.get(eid)
+    return result
+
+
+def symbol_to_ensembl(
+    symbols,
+    force_download: bool = False,
+) -> dict:
+    """Map HUGO symbols to Ensembl gene IDs.
+
+    Parameters
+    ----------
+    symbols:
+        HUGO symbols to convert.
+    force_download:
+        Passed to load_ensembl_map.
+
+    Returns
+    -------
+    dict
+        Mapping each symbol to its Ensembl gene ID (or None if not found).
+        If a symbol maps to multiple Ensembl IDs, the first is returned.
+    """
+    df = load_ensembl_map(force=force_download)
+    mapping = (
+        df.dropna(subset=["hugo_symbol"])
+        .drop_duplicates(subset=["hugo_symbol"], keep="first")
+        .set_index("hugo_symbol")["ensembl_gene_id"]
+        .to_dict()
+    )
+    return {s: mapping.get(s) for s in symbols}
