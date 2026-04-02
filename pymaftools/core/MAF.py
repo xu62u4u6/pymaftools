@@ -7,6 +7,7 @@ from typing import Any
 import pandas as pd
 
 from .PivotTable import PivotTable
+from .SmallVariationTable import SmallVariationTable
 
 
 class MAF(pd.DataFrame):
@@ -179,37 +180,52 @@ class MAF(pd.DataFrame):
         elif len(non_false_mutations) == 1:
             return non_false_mutations.iloc[0]
 
-    def to_pivot_table(self) -> PivotTable:
+    def to_pivot_table(self) -> "SmallVariationTable":
         """
         Create a gene-by-sample pivot table of variant classifications.
 
+        Delegates to :meth:`to_mutation_table` followed by
+        :meth:`SmallVariationTable.to_gene_level`, so both the mutation-level
+        and gene-level tables share the same construction logic.
+
         Returns
         -------
-        PivotTable
-            Pivot table with genes as rows, samples as columns, and variant
-            classifications (or ``"Multi_Hit"`` / ``False``) as values.
+        SmallVariationTable
+            Gene × sample matrix with gene-level feature_metadata.
         """
-        pivot_table = self.pivot_table(
-            values="Variant_Classification",
-            index="Hugo_Symbol",
-            columns="sample_ID",
-            aggfunc=MAF.merge_mutations,
-        ).fillna(False)
-        pivot_table = PivotTable(pivot_table)
-        pivot_table.sample_metadata["mutations_count"] = self.mutations_count
-        # pivot_table.sample_metadata["TMB"] = self.mutations_count / 40
-        return pivot_table
+        return self.to_mutation_table().to_gene_level()
 
-    def to_mutation_table(self) -> PivotTable:
+    # Columns to carry into mutation-level feature_metadata
+    _FEATURE_META_COLS = [
+        # position / structure
+        "Hugo_Symbol", "Chromosome", "Start_Position", "End_Position", "Strand",
+        "EXON", "INTRON", "cDNA_position", "CDS_position", "Protein_position",
+        # variant identity
+        "Variant_Type", "Variant_Classification", "VARIANT_CLASS",
+        "Reference_Allele", "Tumor_Seq_Allele2",
+        "Consequence", "One_Consequence", "CONTEXT",
+        # functional impact
+        "IMPACT", "HGVSc", "HGVSp_Short", "Amino_acids", "Codons",
+        "SIFT", "PolyPhen", "DOMAINS",
+        # gene-level annotation
+        "Entrez_Gene_Id", "Gene", "BIOTYPE", "TRANSCRIPT_STRAND",
+        "HGNC_ID", "RefSeq", "MANE", "APPRIS",
+        # clinical / databases
+        "hotspot", "COSMIC", "Existing_variation", "CLIN_SIG",
+        "GENE_PHENO", "dbSNP_RS", "callers",
+    ]
+
+    def to_mutation_table(self) -> "SmallVariationTable":
         """
         Create a mutation-level pivot table.
 
         Each row corresponds to a unique mutation (composite index) rather
         than a gene, providing finer resolution than :meth:`to_pivot_table`.
+        feature_metadata is populated with per-mutation annotation columns.
 
         Returns
         -------
-        PivotTable
+        SmallVariationTable
             Pivot table indexed by individual mutations.
         """
         mutation_table = self.pivot_table(
@@ -218,8 +234,15 @@ class MAF(pd.DataFrame):
             values="Variant_Classification",
             aggfunc="first",
         ).fillna(False)
-        mutation_table = PivotTable(mutation_table)
+        mutation_table = SmallVariationTable(mutation_table)
         mutation_table.sample_metadata["mutations_count"] = self.mutations_count
+
+        # Build feature_metadata from MAF rows (one row per unique mutation index)
+        present_cols = [c for c in self._FEATURE_META_COLS if c in self.columns]
+        deduped = self.reset_index().drop_duplicates(subset=["index"])
+        deduped = deduped.set_index("index")[present_cols]
+        mutation_table.feature_metadata = deduped.reindex(mutation_table.index)
+
         return mutation_table
 
     def change_index_level(self, index_col: list[str] | None = None) -> MAF:
