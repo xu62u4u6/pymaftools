@@ -12,5 +12,6 @@ uv.lock
 .venv/
 
 data/*
+pymaftools/data/*.tsv
 tmp/
 todo.md
