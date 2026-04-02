@@ -125,6 +125,27 @@ class Cohort:
         # Reindex sample_metadata to cohort's sample_IDs before merging
         # (table may have fewer samples after subset)
         meta = table.sample_metadata.reindex(self.sample_IDs)
+
+        # Rename columns that would conflict with existing metadata by prefixing table_name
+        if self.sample_metadata is not None:
+            shared = set(meta.columns) & set(self.sample_metadata.columns)
+            conflict = {
+                col for col in shared
+                if not meta[col].reindex(self.sample_metadata.index).equals(self.sample_metadata[col])
+            }
+            if conflict:
+                renamed = ", ".join(
+                    f"{col} -> {table_name}_{col}" for col in sorted(conflict)
+                )
+                warnings.warn(
+                    f"Conflicting sample metadata columns detected while adding "
+                    f"'{table_name}': {renamed}. Renaming incoming columns with "
+                    f"'{table_name}_' prefix to preserve both versions.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+                meta = meta.rename(columns={col: f"{table_name}_{col}" for col in conflict})
+
         self.add_sample_metadata(meta, source=table_name)
 
     def _is_index_matched(self, table: PivotTable) -> bool:
