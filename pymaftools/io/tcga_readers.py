@@ -217,10 +217,17 @@ def read_star_counts(
     qc_prefixes = {"N_unmapped", "N_multimapping", "N_noFeature", "N_ambiguous"}
     gene_info = None
     series_dict = {}
+    qc_dict = {}
 
     for case_id, filepath in case_files:
         df = pd.read_csv(filepath, sep="	", comment="#")
-        df = df[~df["gene_id"].isin(qc_prefixes)]
+
+        # Extract STAR QC rows into sample metadata
+        qc_mask = df["gene_id"].isin(qc_prefixes)
+        qc_rows = df.loc[qc_mask].set_index("gene_id")[value_column]
+        qc_dict[case_id] = qc_rows
+
+        df = df[~qc_mask]
 
         if gene_info is None:
             gene_info = df[["gene_id", "gene_name", "gene_type"]].copy()
@@ -241,6 +248,8 @@ def read_star_counts(
     feature_meta = feature_meta[~feature_meta.index.duplicated(keep="first")]
 
     sample_meta = pd.DataFrame({"case_id": list(series_dict.keys())}, index=list(series_dict.keys()))
+    qc_df = pd.DataFrame(qc_dict).T.reindex(sample_meta.index)
+    sample_meta = pd.concat([sample_meta, qc_df], axis=1)
 
     table = ExpressionTable(matrix)
     table.feature_metadata = feature_meta.reindex(matrix.index)

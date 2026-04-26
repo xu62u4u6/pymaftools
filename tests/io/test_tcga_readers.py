@@ -282,6 +282,10 @@ class TestReadStarCounts:
         table = read_star_counts(mock_star_dir, mock_manifest_for_star)
         assert "N_unmapped" not in table.index
         assert "N_multimapping" not in table.index
+        # QC values should be in sample_metadata instead
+        for col in ["N_unmapped", "N_multimapping", "N_noFeature", "N_ambiguous"]:
+            assert col in table.sample_metadata.columns
+        assert table.sample_metadata.loc["TCGA-01-0001", "N_unmapped"] == 100
 
     @patch("pymaftools.io.tcga_readers.build_uuid_to_case_mapping")
     def test_feature_metadata(self, mock_mapping, mock_star_dir, mock_manifest_for_star):
