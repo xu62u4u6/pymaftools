@@ -10,7 +10,7 @@ from __future__ import annotations
 # Standard library imports
 import sqlite3
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Literal, Optional, Self, Tuple, Union
 
 # Third-party imports
 import numpy as np
@@ -657,7 +657,7 @@ class PivotTable(pd.DataFrame):
         features: Optional[Union[List, pd.Index, pd.Series, slice]] = None,
         samples: Optional[Union[List, pd.Index, pd.Series, slice]] = None,
         errors: Literal["raise", "ignore"] = "raise",
-    ) -> "PivotTable":
+    ) -> Self:
         """
         Subset PivotTable by features and/or samples.
 
@@ -700,8 +700,8 @@ class PivotTable(pd.DataFrame):
 
         Returns
         -------
-        PivotTable
-            Subset PivotTable with synchronized metadata.
+        Self
+            Subset of the same type with synchronized metadata.
 
         Notes
         -----
@@ -769,7 +769,12 @@ class PivotTable(pd.DataFrame):
         elif isinstance(samples, list):
             samples = _validate_axis_labels(samples, self.columns, "sample")
 
-        return self[features, samples]
+        result = self[features, samples]
+        if type(result) is not type(self):
+            result = type(self)._from_dataframe(
+                result, result.feature_metadata, result.sample_metadata
+            )
+        return result
 
     def reindex(
         self,
