@@ -1,6 +1,6 @@
 # pymaftools Optimization Roadmap
 
-> Last updated: 2026-03-06
+> Last updated: 2026-05-31
 
 ## Phase 1: Foundation ✅ Complete
 
@@ -107,6 +107,31 @@
 - [ ] Consider interactive plots (plotly) as optional feature
 
 ---
+
+## Known Issues & API Gaps (from figure reproduction, 2026-05)
+
+Surfaced while reproducing Fig3A/B/C and Supp Fig5A/B. Severity: 🔴 silently
+wrong output · 🟠 forces a workaround · 🟡 ergonomics. A1① shipped in v0.4.1
+(`add_freq` now fails loud instead of writing all-NaN); the rest are pending.
+
+### Data model (PivotTable / MAF)
+- [ ] 🟠 **A1②③** Add `PivotTable.relabel_features(mapper)` to sync data index *and* `feature_metadata.index`; auto-validate metadata before plotting. (A1① done in v0.4.1.)
+- [ ] 🟠 **A2** `to_mutation_table()` drops `Chromosome / Variant_Type / Variant_Classification / HGVSp_Short`; add them to `feature_metadata` and provide `format_feature_labels(style=...)` for human-readable labels (`EGFR p.L858R`). Unify the 6- vs 7-segment mutation key schema.
+- [ ] 🟡 **A3** No feature-level set/group operations (shared / private); `set_operations(by=..., group_col=...)` + clean pandas 2.2 `fillna` downcasting.
+- [ ] 🟡 **A4** `MAF.read_csv` uses CWD-relative paths → easy `FileNotFoundError`; resolve against a base/project dir and report attempted absolute path.
+- [ ] 🟡 **A5** (env, not code) Multiple on-disk copies + editable install cause intermittent `cannot import name 'MAF'`; ensure a single installable `pymaftools`.
+
+### Plotting (OncoPlot)
+- [ ] 🟠 **B1** `feature_groups` support: stack groups with equal row height, gaps, separators, and section titles (currently needs manual gridspec).
+- [ ] 🟠 **B2** `add_xticklabel(fontsize=None, rotation=90)` — fontsize is currently unsettable, rotation hardcoded.
+- [ ] 🟡 **B3** Custom y-axis side label; `numeric_heatmap` force-clears ylabel.
+- [ ] 🟠 **B4** `numeric_heatmap` reuses `ax_freq` as colorbar → freq column and colorbar can't coexist; give colorbar its own axis.
+- [ ] 🟡 **B5** Rigid 4-column layout requires width-0 dummy columns; use named optional components.
+- [ ] 🟠 **B6** Method chain has implicit ordering dependencies and silently toggles axes; make axis on/off declarative.
+- [ ] 🟡 **B7** `set_config()` calls `plt.close("all")` and rebuilds the figure (global side effect); accept an existing `fig`/subfigure.
+- [ ] 🟡 **B8** Color mapping is exact-match; unknown categories silently turn white. Warn + add "Unknown" to legend; normalize case/aliases.
+
+> Detailed write-up (symptoms, root cause with file:line, workarounds) in the analysis repo's `docs/pymaftools_limitations.md`.
 
 ## Metrics
 
