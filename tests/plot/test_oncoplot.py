@@ -22,7 +22,13 @@ import pytest
 
 from pymaftools.core.PivotTable import PivotTable
 from pymaftools.plot.OncoPlot import OncoPlot
-from pymaftools.plot.Track import MainMatrixTrack
+from pymaftools.plot.Track import (
+    MainMatrixTrack,
+    BarTrack,
+    FreqTrack,
+    CategoricalTrack,
+    NumericTrack,
+)
 
 VARIANT_TYPES = ["Missense_Mutation", "Nonsense_Mutation", "Frame_Shift_Del"]
 
@@ -45,6 +51,9 @@ def mutation_table():
 
     table = PivotTable(pd.DataFrame(matrix, index=genes, columns=samples))
     table.sample_metadata["TMB"] = rng.gamma(2.0, 1.0, len(samples))
+    table.sample_metadata["subtype"] = rng.choice(["LUAD", "LUSC"], len(samples))
+    table.sample_metadata["sex"] = rng.choice(["M", "F"], len(samples))
+    table.sample_metadata["age"] = rng.integers(45, 80, len(samples)).astype(float)
     return table.add_freq()
 
 
@@ -112,3 +121,57 @@ def test_main_rejects_non_mutation_kind(mutation_table):
     op = OncoPlot(mutation_table, figsize=(8, 6))
     with pytest.raises(ValueError, match="kind='mutation'"):
         op.main(kind="cnv")
+
+
+# --- Stage 2: sample-annotation tracks -------------------------------------
+
+
+def test_plot_bar_registers_bartrack_and_draws(mutation_table):
+    """plot_bar must register a BarTrack and draw one bar per sample."""
+    op = OncoPlot(mutation_table, figsize=(8, 6))
+    op.plot_bar(bar_col="TMB")
+
+    bar_tracks = [t for t in op.tracks if isinstance(t, BarTrack)]
+    assert len(bar_tracks) == 1
+    # one bar patch per sample
+    assert len(op.ax_bar.patches) == mutation_table.shape[1]
+    assert op.ax_bar.get_ylabel() == "TMB"
+
+
+def test_plot_freq_registers_freqtrack_and_draws(mutation_table):
+    """plot_freq must register a FreqTrack and draw the freq heatmap."""
+    op = OncoPlot(mutation_table, figsize=(8, 6))
+    op.plot_freq()
+
+    assert any(isinstance(t, FreqTrack) for t in op.tracks)
+    assert len(op.ax_freq.collections) >= 1
+
+
+def test_plot_categorical_metadata_tracks_and_legends(mutation_table):
+    """One CategoricalTrack per column, each contributing its own legend."""
+    op = OncoPlot(mutation_table, figsize=(8, 6), categorical_columns=["subtype", "sex"])
+    op.plot_categorical_metadata()
+
+    cat_tracks = [t for t in op.tracks if isinstance(t, CategoricalTrack)]
+    assert len(cat_tracks) == 2
+    assert op.has_legend("subtype") and op.has_legend("sex")
+
+
+def test_plot_numeric_metadata_colorbar_default_on(mutation_table):
+    """P1#3: a numeric strip carries a colorbar by default, drawn as an inset
+    (child) axis of the strip, so the value scale is interpretable."""
+    op = OncoPlot(mutation_table, figsize=(8, 6), numeric_columns=["age"])
+    op.plot_numeric_metadata()  # cbar defaults True
+
+    num_tracks = [t for t in op.tracks if isinstance(t, NumericTrack)]
+    assert len(num_tracks) == 1
+    # the inset colorbar is a child axis of the strip
+    assert len(op.axs_numeric_columns["age"].child_axes) == 1
+
+
+def test_plot_numeric_metadata_colorbar_opt_out(mutation_table):
+    """cbar=False must preserve the legacy no-colorbar behaviour."""
+    op = OncoPlot(mutation_table, figsize=(8, 6), numeric_columns=["age"])
+    op.plot_numeric_metadata(cbar=False)
+
+    assert len(op.axs_numeric_columns["age"].child_axes) == 0  # no colorbar

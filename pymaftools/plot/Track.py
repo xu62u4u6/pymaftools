@@ -14,10 +14,12 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import seaborn as sns
+from matplotlib import cm
 from matplotlib.axes import Axes
-from matplotlib.colors import ListedColormap
+from matplotlib.colors import ListedColormap, Normalize
 from matplotlib.patches import Rectangle
 
 
@@ -163,3 +165,233 @@ class MainMatrixTrack(Track):
             if key != "Unknown"
         }
         return {"Mutation": mutation_legend}
+
+
+class BarTrack(Track):
+    """Per-sample bar strip (e.g. TMB) drawn above the matrix."""
+
+    side = "top"
+
+    def __init__(
+        self,
+        values,
+        label: str,
+        *,
+        bar_value: bool = False,
+        fontsize: int = 6,
+        ylabel_size: int = 8,
+    ) -> None:
+        self.values = np.asarray(values)
+        self.label = label
+        self.bar_value = bar_value
+        self.fontsize = fontsize
+        self.ylabel_size = ylabel_size
+
+    def render(self, ax: Axes) -> Axes:
+        x = np.arange(len(self.values))
+        ax.bar(x, self.values, width=0.95, color="gray", edgecolor="white")
+        ax.set_xlim(-0.5, len(self.values) - 0.5)
+        if self.bar_value:
+            for i, value in enumerate(self.values):
+                # NOTE: the original OncoPlot.plot_bar formatted the whole array
+                # here (``f"{bar_values:.1f}"``), which raised on an ndarray;
+                # bar_value defaults False so it was never hit. Format the scalar.
+                ax.text(
+                    i, value + 2, f"{value:.1f}", ha="center", fontsize=self.fontsize
+                )
+
+        ax.spines["left"].set_visible(True)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.spines["bottom"].set_visible(False)
+        ax.set_xticks([])
+        ax.set_ylabel(self.label, fontsize=self.ylabel_size)
+        return ax
+
+
+class FreqTrack(Track):
+    """Per-feature frequency annotation column drawn right of the matrix."""
+
+    side = "right"
+
+    def __init__(
+        self,
+        freq_data: pd.DataFrame,
+        *,
+        line_color: str = "white",
+        annot_fontsize: int = 9,
+        linewidths: float = 1,
+        xtick_fontsize: int = 9,
+    ) -> None:
+        self.freq_data = freq_data
+        self.line_color = line_color
+        self.annot_fontsize = annot_fontsize
+        self.linewidths = linewidths
+        self.xtick_fontsize = xtick_fontsize
+
+    def render(self, ax: Axes) -> Axes:
+        sns.heatmap(
+            self.freq_data,
+            cbar=False,
+            linewidths=self.linewidths,
+            linecolor=self.line_color,
+            ax=ax,
+            xticklabels=self.freq_data.columns,
+            yticklabels=False,
+            annot=True,
+            fmt=".2f",
+            annot_kws={"size": self.annot_fontsize},
+            cmap="Blues",
+        )
+        ax.tick_params(axis="x", labelsize=self.xtick_fontsize)
+        ax.set_ylabel("")
+        ax.set_yticks([])  # hide y-axis
+        return ax
+
+
+class CategoricalTrack(Track):
+    """Single categorical sample-annotation strip drawn below the matrix."""
+
+    side = "bottom"
+
+    def __init__(
+        self,
+        data: pd.DataFrame,
+        column_cmap: dict,
+        name: str,
+        *,
+        line_color: str = "white",
+        linewidths: float = 1,
+        alpha: float = 1.0,
+        annotate: bool = False,
+        annotation_font_size: int = 10,
+        annotate_text_color: str = "black",
+        ytick_fontsize: int = 10,
+    ) -> None:
+        self.data = data  # 1xN DataFrame (one metadata column, transposed)
+        self.column_cmap = column_cmap
+        self.name = name
+        self.line_color = line_color
+        self.linewidths = linewidths
+        self.alpha = alpha
+        self.annotate = annotate
+        self.annotation_font_size = annotation_font_size
+        self.annotate_text_color = annotate_text_color
+        self.ytick_fontsize = ytick_fontsize
+
+    def render(self, ax: Axes) -> Axes:
+        _fig, ax, _info = draw_categorical_heatmap(
+            table=self.data,
+            category_cmap=self.column_cmap,
+            ax=ax,
+            linecolor=self.line_color,
+            linewidths=self.linewidths,
+            xticklabels=False,
+            yticklabels=list(self.data.index),
+            alpha=self.alpha,
+        )
+
+        if self.annotate:
+            for i in range(self.data.shape[0]):
+                for j in range(self.data.shape[1]):
+                    ax.text(
+                        j + 0.5,
+                        i + 0.5,  # center the text
+                        f"{self.data.iloc[i, j]}",
+                        ha="center",
+                        va="center",
+                        fontsize=self.annotation_font_size,
+                        color=self.annotate_text_color,
+                    )
+
+        ax.set_xticks([])
+        ax.set_yticks([i + 0.5 for i in range(len(self.data.index))])
+        ax.set_yticklabels(self.data.index, rotation=0, fontsize=self.ytick_fontsize)
+        ax.set_xlabel("")
+        ax.tick_params(axis="x", which="both", bottom=False, top=False)
+        return ax
+
+    def legend_entries(self) -> dict[str, dict]:
+        return {self.name: self.column_cmap}
+
+
+class NumericTrack(Track):
+    """Single numeric sample-annotation strip drawn below the matrix.
+
+    Unlike the legacy ``plot_numeric_metadata`` it carries its own colorbar
+    (an inset axis), so the value scale is interpretable (PLOTTING_REVIEW P1#3).
+    """
+
+    side = "bottom"
+
+    def __init__(
+        self,
+        data: pd.DataFrame,
+        *,
+        cmap: str = "Blues",
+        line_color: str = "white",
+        linewidths: float = 1,
+        alpha: float = 1,
+        annotate: bool = False,
+        annotation_font_size: int = 10,
+        fmt: str = ".2f",
+        ytick_fontsize: int = 10,
+        cbar: bool = True,
+    ) -> None:
+        self.data = data  # 1xN DataFrame (one metadata column, transposed)
+        self.cmap = cmap
+        self.line_color = line_color
+        self.linewidths = linewidths
+        self.alpha = alpha
+        self.annotate = annotate
+        self.annotation_font_size = annotation_font_size
+        self.fmt = fmt
+        self.ytick_fontsize = ytick_fontsize
+        self.cbar = cbar
+
+    def render(self, ax: Axes) -> Axes:
+        # Color range: symmetric around 0 for the diverging "coolwarm" map,
+        # otherwise span the data (matches legacy plot_numeric_metadata).
+        if self.cmap == "coolwarm":
+            vextreme = max(abs(self.data.min().min()), abs(self.data.max().max()))
+            vmin, vmax = -vextreme, vextreme
+        else:
+            vmin = float(self.data.min().min())
+            vmax = float(self.data.max().max())
+
+        sns.heatmap(
+            self.data,
+            cmap=self.cmap,
+            cbar=False,
+            linewidths=self.linewidths,
+            linecolor=self.line_color,
+            ax=ax,
+            xticklabels=False,
+            yticklabels=list(self.data.index),
+            annot=self.annotate,
+            fmt=self.fmt if self.annotate else "",
+            annot_kws={"size": self.annotation_font_size} if self.annotate else None,
+            alpha=self.alpha,
+            vmin=vmin,
+            vmax=vmax,
+        )
+        ax.set_yticks([i + 0.5 for i in range(len(self.data.index))])
+        ax.set_yticklabels(self.data.index, rotation=0, fontsize=self.ytick_fontsize)
+        ax.set_xticks([])
+        ax.set_xlabel("")
+
+        if self.cbar:
+            self._draw_colorbar(ax, vmin, vmax)
+        return ax
+
+    def _draw_colorbar(self, ax: Axes, vmin: float, vmax: float) -> None:
+        """Draw a compact colorbar in an inset axis just right of the strip."""
+        cax = ax.inset_axes([1.01, 0.0, 0.01, 1.0])
+        cbar = ax.figure.colorbar(
+            cm.ScalarMappable(norm=Normalize(vmin=vmin, vmax=vmax), cmap=self.cmap),
+            cax=cax,
+            ticks=[vmin, vmax],
+        )
+        cbar.ax.tick_params(labelsize=7, length=2, width=0.5)
+        for spine in cbar.ax.spines.values():
+            spine.set_visible(False)

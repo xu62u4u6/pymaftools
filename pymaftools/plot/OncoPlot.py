@@ -9,7 +9,15 @@ import seaborn as sns
 from matplotlib import cm, ticker
 from matplotlib.colors import Normalize
 from .BasePlot import BasePlot
-from .Track import Track, MainMatrixTrack, draw_categorical_heatmap
+from .Track import (
+    Track,
+    MainMatrixTrack,
+    BarTrack,
+    FreqTrack,
+    CategoricalTrack,
+    NumericTrack,
+    draw_categorical_heatmap,
+)
 
 # Type checking imports to avoid circular dependencies
 from typing import TYPE_CHECKING
@@ -156,9 +164,13 @@ class OncoPlot(BasePlot):
         cmap_dict: dict | None = None,
         alpha: float = 1,
         linewidths: float = 1,
+        cbar: bool = True,
     ) -> OncoPlot:
         """
         Plot numeric metadata as heatmaps below the main mutation heatmap.
+
+        Thin wrapper: registers one :class:`~pymaftools.plot.Track.NumericTrack`
+        per column and renders it onto the matching eager axis.
 
         Parameters
         ----------
@@ -176,47 +188,30 @@ class OncoPlot(BasePlot):
             Transparency level (0-1)
         linewidths : float, default 1
             Width of lines between cells
+        cbar : bool, default True
+            Whether to draw a per-column colorbar (an inset axis) so the value
+            scale is interpretable (PLOTTING_REVIEW P1#3).
         Returns
         -------
         self : OncoPlot
             Returns self for method chaining
         """
         for col, ax in self.axs_numeric_columns.items():
-            cmap = cmap_dict.get(col, "Blues") if cmap_dict else "Blues"
-            data = self.sample_metadata[[col]].T
-            # Set vmin and vmax if coolwarm cmap
-            if cmap == "coolwarm":
-                vextreme = max(abs(data.min().min()), abs(data.max().max()))
-                vmin, vmax = -vextreme, vextreme
-            else:
-                vmin, vmax = None, None
-
-            sns.heatmap(
-                data,
-                cmap=cmap,
-                cbar=False,
+            col_cmap = cmap_dict.get(col, "Blues") if cmap_dict else "Blues"
+            track = NumericTrack(
+                self.sample_metadata[[col]].T,
+                cmap=col_cmap,
+                line_color=self.line_color,
                 linewidths=linewidths,
-                linecolor=self.line_color,
-                ax=ax,
-                xticklabels=False,
-                yticklabels=list(data.index),
-                annot=annotate,  # Enable/disable annotation
-                fmt=fmt if annotate else "",  # Format to 2 decimal places if enabled
-                annot_kws={"size": annotation_font_size}
-                if annotate
-                else None,  # Font size for annotations
                 alpha=alpha,
-                vmin=vmin,
-                vmax=vmax,
+                annotate=annotate,
+                annotation_font_size=annotation_font_size,
+                fmt=fmt,
+                ytick_fontsize=self.ytick_fontsize,
+                cbar=cbar,
             )
-            ax.set_yticks(
-                [i + 0.5 for i in range(len(data.index))]
-            )  # Shift the ticks by +0.5
-            ax.set_yticklabels(
-                data.index, rotation=0, fontsize=self.ytick_fontsize
-            )  # Set labels horizontally
-            ax.set_xticks([])  # Hide x-axis ticks
-            ax.set_xlabel("")  # Clear x-axis label
+            self.tracks.append(track)
+            track.render(ax)
         return self
 
     def heatmap_rectangle(
@@ -472,29 +467,16 @@ class OncoPlot(BasePlot):
             )
         if bar_col not in self.sample_metadata.columns:
             raise ValueError(f"Column '{bar_col}' not found in sample metadata.")
-        bar_values = self.sample_metadata[bar_col].values
-        x = np.arange(len(bar_values))
-        width = 0.95
 
-        self.ax_bar.bar(x, bar_values, width=width, color="gray", edgecolor="white")
-        self.ax_bar.set_xlim(-0.5, len(bar_values) - 0.5)
-        if bar_value:
-            for i, tmb_value in enumerate(bar_values):
-                self.ax_bar.text(
-                    i,
-                    tmb_value + 2,
-                    f"{bar_values:.1f}",
-                    ha="center",
-                    fontsize=fontsize,
-                )
-
-        self.ax_bar.spines["left"].set_visible(True)  # True !!!
-
-        self.ax_bar.spines["top"].set_visible(False)
-        self.ax_bar.spines["right"].set_visible(False)
-        self.ax_bar.spines["bottom"].set_visible(False)
-        self.ax_bar.set_xticks([])
-        self.ax_bar.set_ylabel(bar_col, fontsize=ylabel_size)
+        track = BarTrack(
+            self.sample_metadata[bar_col].values,
+            bar_col,
+            bar_value=bar_value,
+            fontsize=fontsize,
+            ylabel_size=ylabel_size,
+        )
+        self.tracks.append(track)
+        track.render(self.ax_bar)
         return self
 
     def plot_freq(
@@ -523,23 +505,15 @@ class OncoPlot(BasePlot):
         self : OncoPlot
             Returns self for method chaining
         """
-        freq_data = self.feature_metadata[freq_columns]
-        sns.heatmap(
-            freq_data,
-            cbar=False,
+        track = FreqTrack(
+            self.feature_metadata[freq_columns],
+            line_color=self.line_color,
+            annot_fontsize=annot_fontsize,
             linewidths=linewidths,
-            linecolor=self.line_color,
-            ax=self.ax_freq,
-            xticklabels=freq_data.columns,
-            yticklabels=False,
-            annot=True,
-            fmt=".2f",
-            annot_kws={"size": annot_fontsize},
-            cmap="Blues",
+            xtick_fontsize=xtick_fontsize,
         )
-        self.ax_freq.tick_params(axis="x", labelsize=xtick_fontsize)
-        self.ax_freq.set_ylabel("")
-        self.ax_freq.set_yticks([])  # hide y-axis
+        self.tracks.append(track)
+        track.render(self.ax_freq)
         return self
 
     def plot_categorical_metadata(
@@ -598,40 +572,22 @@ class OncoPlot(BasePlot):
                     data.iloc[0], default_palette=default_cmap
                 )
 
-            # Use categorical_heatmap method
-            fig, ax, legend_info = self.categorical_heatmap(
-                table=data,
-                category_cmap=column_cmap,
-                ax=ax,
-                linecolor=self.line_color,
+            track = CategoricalTrack(
+                data,
+                column_cmap,
+                col,
+                line_color=self.line_color,
                 linewidths=linewidths,
-                xticklabels=False,
-                yticklabels=list(data.index),
                 alpha=alpha,
+                annotate=annotate,
+                annotation_font_size=annotation_font_size,
+                annotate_text_color=annotate_text_color,
+                ytick_fontsize=self.ytick_fontsize,
             )
-
-            # Add text annotations (if needed)
-            if annotate:
-                for i in range(data.shape[0]):
-                    for j in range(data.shape[1]):
-                        ax.text(
-                            j + 0.5,
-                            i + 0.5,  # Center the text
-                            f"{data.iloc[i, j]}",  # Display the actual value
-                            ha="center",
-                            va="center",
-                            fontsize=annotation_font_size,
-                            color=annotate_text_color,
-                        )
-
-            # Set axis labels and ticks
-            ax.set_xticks([])
-            ax.set_yticks([i + 0.5 for i in range(len(data.index))])
-            ax.set_yticklabels(data.index, rotation=0, fontsize=self.ytick_fontsize)
-            ax.set_xlabel("")
-            ax.tick_params(axis="x", which="both", bottom=False, top=False)
-
-            self.add_legend(col, column_cmap)
+            self.tracks.append(track)
+            track.render(ax)
+            for name, color_dict in track.legend_entries().items():
+                self.add_legend(name, color_dict)
 
         return self
 
