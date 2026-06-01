@@ -38,6 +38,9 @@ from .plot.ColorManager import ColorManager
 from .plot.FontManager import FontManager
 from .plot.ModelPlot import ModelPlot
 
+# bundled example datasets
+from .datasets import load_example_maf, example_maf_path
+
 # model
 from .model.StackingModel import OmicsStackingModel, ASCStackingModel
 from .model.modelUtils import (

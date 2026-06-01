@@ -11,26 +11,34 @@ Installation
 Quick Start
 -----------
 
-Read a MAF file and create an OncoPlot:
+Read a MAF file and create an OncoPlot. A small multi-sample MAF is bundled with
+the package, so this runs as-is after ``pip install``:
 
 .. code-block:: python
 
-   from pymaftools import MAF, OncoPlot
+   from pymaftools import load_example_maf
 
-   # Read MAF file (sample_ID is required — see "Reading MAF Files" below)
-   maf = MAF.read_maf("data/tcga_paad.maf", sample_ID="TCGA-PAAD-01")
+   # Bundled example (use MAF.read_maf("your.maf") for your own data)
+   maf = load_example_maf("multisample")
 
-   # Create mutation table
-   table = maf.to_pivot_table()
-
-   # Plot top 20 mutated genes
-   (
-       OncoPlot(table)
-       .set_config(figsize=(12, 8))
-       .oncoplot()
-       .add_barplot()
-       .add_legend()
+   # Build + prepare the mutation table
+   table = (
+       maf.to_pivot_table()
+       .add_freq()
+       .calculate_TMB(default_capture_size=40)
+       .sort_features(by="freq")
+       .sort_samples_by_mutations()
    )
+
+   # Compose the oncoplot from tracks, then render once
+   op = (
+       table.plot.oncoplot(figsize=(12, 8))
+       .main()                        # mutation matrix
+       .add_bar("TMB", side="top")
+       .add_freq(side="right")
+       .render()
+   )
+   op.save("oncoplot.png", dpi=300)
 
 Reading MAF Files
 -----------------

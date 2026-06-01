@@ -308,7 +308,7 @@ class OncoPlot(BasePlot):
     ) -> OncoPlot:
         """Register a per-sample bar track (e.g. TMB) for ``render()``."""
         if bar_col not in self.sample_metadata.columns:
-            hint = " Please do table.calculate_tmb() first." if bar_col == "TMB" else ""
+            hint = " Please do table.calculate_TMB() first." if bar_col == "TMB" else ""
             raise ValueError(f"Column '{bar_col}' not found in sample metadata.{hint}")
         track = BarTrack(self.sample_metadata[bar_col].values, bar_col, **kwargs)
         track.side = side
@@ -814,7 +814,7 @@ class OncoPlot(BasePlot):
         """
         if bar_col == "TMB" and bar_col not in self.sample_metadata.columns:
             raise ValueError(
-                f"Column '{bar_col}' not found in sample metadata. Please do table.calculate_tmb() first."
+                f"Column '{bar_col}' not found in sample metadata. Please do table.calculate_TMB() first."
             )
         if bar_col not in self.sample_metadata.columns:
             raise ValueError(f"Column '{bar_col}' not found in sample metadata.")

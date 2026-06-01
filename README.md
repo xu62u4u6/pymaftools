@@ -110,7 +110,7 @@ pt = (pt
     .add_freq()
     .sort_features(by="freq")
     .sort_samples_by_mutations()
-    .calculate_TMB(capture_size=50)
+    .calculate_TMB(default_capture_size=50)
 )
 
 # Create oncoplot. The convenience methods register tracks; a single
