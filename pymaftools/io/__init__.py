@@ -12,10 +12,14 @@ from .tcga_readers import (
     scan_gdc_directory,
     seg_to_cytoband_table,
 )
+from .vcf import parse_info, parse_vcf_rows, sample_type
 
 __all__ = [
     "GDCClient",
     "parse_tcga_barcode",
+    "parse_vcf_rows",
+    "parse_info",
+    "sample_type",
     "read_manifest",
     "build_uuid_to_case_mapping",
     "scan_gdc_directory",
