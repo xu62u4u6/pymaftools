@@ -89,15 +89,14 @@ def prepare(table: PivotTable) -> PivotTable:
 def demo_default(table: PivotTable) -> None:
     """Figure 1: a basic oncoplot (heatmap + freq + TMB bar + legends).
 
-    NOTE: ``OncoPlot.default_oncoplot`` is currently broken (passes a
-    3-element width_ratios into a hardcoded 4-column GridSpec), so we build
-    the same figure manually here.
+    The convenience methods (``mutation_heatmap``/``plot_freq``/``plot_bar``)
+    now register tracks; a single ``render()`` draws the figure.
     """
     op = OncoPlot(table, figsize=(12, 8))
     op.mutation_heatmap()
     op.plot_freq()
     op.plot_bar()
-    op.plot_all_legends()
+    op.render()
     op.add_xticklabel()
     op.save(str(OUT_DIR / "demo_oncoplot_default.png"))
     op.close()
@@ -116,7 +115,7 @@ def demo_with_metadata(table: PivotTable) -> None:
     op.plot_bar()
     op.plot_categorical_metadata()
     op.plot_numeric_metadata()
-    op.plot_all_legends()
+    op.render()
     op.add_xticklabel()
     op.save(str(OUT_DIR / "demo_oncoplot_metadata.png"))
     op.close()
@@ -126,6 +125,7 @@ def demo_numeric(table: PivotTable) -> None:
     """Figure 3: numeric (CNV) heatmap with a diverging colormap."""
     op = OncoPlot(table, figsize=(12, 8))
     op.numeric_heatmap(cmap="coolwarm", symmetric=True)
+    op.render()
     op.add_xticklabel()
     op.save(str(OUT_DIR / "demo_oncoplot_numeric.png"))
     op.close()

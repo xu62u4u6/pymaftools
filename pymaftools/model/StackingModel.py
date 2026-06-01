@@ -224,6 +224,7 @@ class OmicsStackingModel:
             .set_config(numeric_columns=["abs_mean"], figsize=(10, 8))
             .numeric_heatmap(annot=True, symmetric=True, cmap="coolwarm")
             .plot_numeric_metadata(annotate=True)
+            .render()
             .add_xticklabel()
         )
 

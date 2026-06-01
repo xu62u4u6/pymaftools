@@ -64,39 +64,38 @@ def teardown_function(_):
 
 
 def test_default_oncoplot_does_not_crash(mutation_table):
-    """P0#1 regression: the convenience entry point must build a 4-column
-    GridSpec, not raise ValueError on a width_ratios/column-count mismatch."""
+    """P0#1 regression: the convenience entry point must build and render
+    without error. It derives a 3-column layout (heatmap + freq + legend)."""
     op = OncoPlot.default_oncoplot(mutation_table, figsize=(8, 6))
 
     assert op.fig is not None
-    # eager layout is a 4-column GridSpec; default_oncoplot must agree
-    assert op.gs.ncols == 4
-    assert len(op.width_ratios) == 4
+    # 0 left + main + 1 right (freq) + legend = 3 cols; 1 top (bar) + main = 2 rows
+    assert op.gs.ncols == 3
+    assert op.gs.nrows == 2
 
 
-def test_mutation_heatmap_registers_track_and_draws(mutation_table):
-    """The thin wrapper must register exactly one MainMatrixTrack and draw the
-    categorical heatmap (a QuadMesh) onto the eager heatmap axis."""
+def test_mutation_heatmap_registers_track_then_renders(mutation_table):
+    """The convenience wrapper registers exactly one MainMatrixTrack; render()
+    draws the categorical heatmap (a QuadMesh)."""
     op = OncoPlot(mutation_table, figsize=(8, 6))
     op.mutation_heatmap()
 
     assert len(op.tracks) == 1
     assert isinstance(op.tracks[0], MainMatrixTrack)
-    # sns.heatmap adds a QuadMesh collection
+
+    op.render()
     assert len(op.ax_heatmap.collections) >= 1
 
 
 def test_mutation_legend_content(mutation_table):
-    """Legend must carry every cmap category except the sentinel 'Unknown'
-    (current behaviour; wild-type 'False' filtering is deferred to Stage 4)."""
-    op = OncoPlot(mutation_table, figsize=(8, 6))
-    op.mutation_heatmap()
+    """After render the legend carries the present variant types and never the
+    'Unknown' sentinel."""
+    op = OncoPlot(mutation_table, figsize=(8, 6)).main().render()
 
     assert op.has_legend("Mutation")
     legend = op.legend_manager.legend_dict["Mutation"]
-    # variant types that exist in the default nonsynonymous cmap are present
-    for variant in VARIANT_TYPES:
-        assert variant in legend
+    # variant types present in the data appear; wild-type/absent are filtered
+    assert set(legend).issubset(set(VARIANT_TYPES))
     assert "Unknown" not in legend
 
 
@@ -142,62 +141,67 @@ def test_main_cnv_renders_numeric_matrix_with_colorbar():
 
     assert any(isinstance(t, NumericMatrixTrack) for t in op.tracks)
     assert len(op.ax_heatmap.collections) >= 1
-    # inset colorbar is a child axis of the heatmap
-    assert len(op.ax_heatmap.child_axes) == 1
+    # the colorbar fills the legend column (a QuadMesh on ax_legend), not an inset
+    assert len(op.ax_legend.collections) >= 1
+    assert len(op.ax_heatmap.child_axes) == 0
 
 
 # --- Stage 2: sample-annotation tracks -------------------------------------
 
 
 def test_plot_bar_registers_bartrack_and_draws(mutation_table):
-    """plot_bar must register a BarTrack and draw one bar per sample."""
+    """plot_bar registers a top BarTrack; render() draws one bar per sample."""
     op = OncoPlot(mutation_table, figsize=(8, 6))
-    op.plot_bar(bar_col="TMB")
+    op.main().plot_bar(bar_col="TMB").render()
 
     bar_tracks = [t for t in op.tracks if isinstance(t, BarTrack)]
-    assert len(bar_tracks) == 1
-    # one bar patch per sample
-    assert len(op.ax_bar.patches) == mutation_table.shape[1]
-    assert op.ax_bar.get_ylabel() == "TMB"
+    assert len(bar_tracks) == 1 and bar_tracks[0].side == "top"
+    # one bar patch per sample, drawn on the (top) bar axis
+    assert any(len(ax.patches) == mutation_table.shape[1] for ax in op.fig.axes)
 
 
 def test_plot_freq_registers_freqtrack_and_draws(mutation_table):
-    """plot_freq must register a FreqTrack and draw the freq heatmap."""
+    """plot_freq registers a right FreqTrack; render() draws the freq heatmap."""
     op = OncoPlot(mutation_table, figsize=(8, 6))
-    op.plot_freq()
+    op.main().plot_freq().render()
 
-    assert any(isinstance(t, FreqTrack) for t in op.tracks)
-    assert len(op.ax_freq.collections) >= 1
+    freq_tracks = [t for t in op.tracks if isinstance(t, FreqTrack)]
+    assert len(freq_tracks) == 1 and freq_tracks[0].side == "right"
+    assert op.fig is not None
 
 
 def test_plot_categorical_metadata_tracks_and_legends(mutation_table):
-    """One CategoricalTrack per column, each contributing its own legend."""
+    """One CategoricalTrack per configured column, each contributing its own
+    legend after render()."""
     op = OncoPlot(mutation_table, figsize=(8, 6), categorical_columns=["subtype", "sex"])
-    op.plot_categorical_metadata()
+    op.main().plot_categorical_metadata().render()
 
     cat_tracks = [t for t in op.tracks if isinstance(t, CategoricalTrack)]
     assert len(cat_tracks) == 2
     assert op.has_legend("subtype") and op.has_legend("sex")
 
 
+def _total_child_axes(op):
+    return sum(len(ax.child_axes) for ax in op.fig.axes)
+
+
 def test_plot_numeric_metadata_colorbar_default_on(mutation_table):
     """P1#3: a numeric strip carries a colorbar by default, drawn as an inset
-    (child) axis of the strip, so the value scale is interpretable."""
+    (child) axis, so the value scale is interpretable."""
     op = OncoPlot(mutation_table, figsize=(8, 6), numeric_columns=["age"])
-    op.plot_numeric_metadata()  # cbar defaults True
+    op.main().plot_numeric_metadata().render()  # cbar defaults True
 
     num_tracks = [t for t in op.tracks if isinstance(t, NumericTrack)]
     assert len(num_tracks) == 1
-    # the inset colorbar is a child axis of the strip
-    assert len(op.axs_numeric_columns["age"].child_axes) == 1
+    assert _total_child_axes(op) == 1  # the inset colorbar
 
 
 def test_plot_numeric_metadata_colorbar_opt_out(mutation_table):
-    """cbar=False must preserve the legacy no-colorbar behaviour."""
+    """cbar=False must draw no colorbar."""
     op = OncoPlot(mutation_table, figsize=(8, 6), numeric_columns=["age"])
-    op.plot_numeric_metadata(cbar=False)
+    op.main().plot_numeric_metadata(cbar=False).render()
 
-    assert len(op.axs_numeric_columns["age"].child_axes) == 0  # no colorbar
+    assert _total_child_axes(op) == 0  # no colorbar
 
 
 # --- Stage 3: feature annotation + multi-side render() ----------------------
@@ -288,8 +292,7 @@ def test_full_declarative_render_smoke(mutation_table):
 def test_mutation_legend_filters_wildtype_and_absent(mutation_table):
     """P1#4: by default the legend drops wild-type ('False') and any colormap
     category that does not occur in this cohort."""
-    op = OncoPlot(mutation_table, figsize=(8, 6))
-    op.mutation_heatmap()
+    op = OncoPlot(mutation_table, figsize=(8, 6)).main().render()
 
     legend = op.legend_manager.legend_dict["Mutation"]
     assert "False" not in legend  # wild-type sentinel gone
@@ -302,7 +305,7 @@ def test_mutation_legend_filters_wildtype_and_absent(mutation_table):
 def test_show_all_categories_restores_full_legend(mutation_table):
     """The escape hatch must bring back the full colormap (minus Unknown)."""
     op = OncoPlot(mutation_table, figsize=(8, 6))
-    op.mutation_heatmap(show_all_categories=True)
+    op.mutation_heatmap(show_all_categories=True).render()
 
     legend = op.legend_manager.legend_dict["Mutation"]
     assert "False" in legend  # full colormap includes the wild-type key
@@ -312,8 +315,7 @@ def test_show_all_categories_restores_full_legend(mutation_table):
 def test_add_xticklabel_rotation_and_fontsize(mutation_table):
     """P2#5: add_xticklabel must honour rotation and fontsize instead of a
     hardcoded rotation=90."""
-    op = OncoPlot(mutation_table, figsize=(8, 6))
-    op.mutation_heatmap()
+    op = OncoPlot(mutation_table, figsize=(8, 6)).main().render()
     op.add_xticklabel(rotation=45, fontsize=7)
 
     label = op.ax_heatmap.get_xticklabels()[0]

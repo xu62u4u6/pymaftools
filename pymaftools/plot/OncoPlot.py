@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 import matplotlib.pyplot as plt
-from matplotlib.patches import Rectangle
 from matplotlib.gridspec import GridSpec
-import seaborn as sns
 from .BasePlot import BasePlot
 from .Track import (
     Track,
@@ -84,17 +82,19 @@ class OncoPlot(BasePlot):
         figsize : tuple, default (20, 15)
             Figure size (width, height)
         width_ratios : list, default [25, 1, 1, 2]
-            Width ratios for subplot columns
+            Layout hint; only the main-matrix width (``width_ratios[0]``) is used
+            by ``render()`` to size the heatmap column relative to side tracks.
         height_ratios : list, default [1, 20]
-            Height ratios for subplot rows
+            Layout hint; only the main-matrix height (``height_ratios[-1]``) is
+            used by ``render()``.
         wspace : float, default 0.015
-            Width spacing between subplots
+            Default inter-axis width spacing for ``render()``.
         hspace : float, default 0.02
-            Height spacing between subplots
+            Default inter-axis height spacing for ``render()``.
         categorical_columns : list, default []
-            List of categorical metadata columns to display
+            Categorical metadata columns drawn by ``plot_categorical_metadata()``.
         numeric_columns : list, default []
-            List of numeric metadata columns to display
+            Numeric metadata columns drawn by ``plot_numeric_metadata()``.
         ytick_fontsize : int, default 10
             Font size for y-axis tick labels
 
@@ -114,44 +114,7 @@ class OncoPlot(BasePlot):
         self.categorical_columns = categorical_columns
         self.numeric_columns = numeric_columns
         self.ytick_fontsize = ytick_fontsize
-        self.update_layout()
         return self
-
-    def update_layout(self) -> None:
-        """
-        Update the subplot layout based on configured metadata columns.
-
-        Creates a GridSpec layout with appropriate dimensions for the main heatmap,
-        TMB bar plot, frequency plot, legend area, and metadata annotations.
-        """
-        num_categorical = len(self.categorical_columns)
-        num_numeric = len(self.numeric_columns)
-        height_ratios = [1, 20] + [1] * num_categorical + [1] * num_numeric
-
-        # Make sure only one figure is created
-        plt.close("all")
-        self.fig = plt.figure(figsize=self.figsize)
-        self.gs = GridSpec(
-            2 + num_categorical + num_numeric,
-            4,
-            width_ratios=self.width_ratios,
-            height_ratios=height_ratios,
-            wspace=self.wspace,
-            hspace=self.hspace,
-        )
-
-        self.ax_bar = self.fig.add_subplot(self.gs[0, 0])
-        self.ax_heatmap = self.fig.add_subplot(self.gs[1, 0])
-        self.ax_legend = self.fig.add_subplot(self.gs[1, 3])
-        self.ax_freq = self.fig.add_subplot(self.gs[1, 1])
-        self.axs_categorical_columns = {
-            col: self.fig.add_subplot(self.gs[2 + i, 0])
-            for i, col in enumerate(self.categorical_columns)
-        }
-        self.axs_numeric_columns = {
-            col: self.fig.add_subplot(self.gs[2 + len(self.categorical_columns) + i, 0])
-            for i, col in enumerate(self.numeric_columns)
-        }
 
     def plot_numeric_metadata(
         self,
@@ -165,10 +128,11 @@ class OncoPlot(BasePlot):
         cbar: bool = True,
     ) -> OncoPlot:
         """
-        Plot numeric metadata as heatmaps below the main mutation heatmap.
+        Register one numeric sample-annotation track per ``numeric_columns``.
 
-        Thin wrapper: registers one :class:`~pymaftools.plot.Track.NumericTrack`
-        per column and renders it onto the matching eager axis.
+        Backward-compatible convenience over :meth:`add_sample_annotation`:
+        registers the tracks (drawn on the next :meth:`render`). The columns come
+        from ``numeric_columns`` configured in :meth:`set_config`.
 
         Parameters
         ----------
@@ -194,94 +158,23 @@ class OncoPlot(BasePlot):
         self : OncoPlot
             Returns self for method chaining
         """
-        for col, ax in self.axs_numeric_columns.items():
+        for col in self.numeric_columns:
             col_cmap = cmap_dict.get(col, "Blues") if cmap_dict else "Blues"
-            track = NumericTrack(
-                self.sample_metadata[[col]].T,
-                cmap=col_cmap,
-                line_color=self.line_color,
-                linewidths=linewidths,
-                alpha=alpha,
-                annotate=annotate,
-                annotation_font_size=annotation_font_size,
-                fmt=fmt,
-                ytick_fontsize=self.ytick_fontsize,
-                cbar=cbar,
-            )
-            self.tracks.append(track)
-            track.render(ax)
-        return self
-
-    def heatmap_rectangle(
-        self,
-        show_frame: bool = False,
-        n: int = 3,
-        cmap: dict | None = None,
-        table: pd.DataFrame | None = None,
-        width: float = 1,
-        height: float = 1,
-        line_color: str = "white",
-    ) -> OncoPlot:
-        """
-        Plot mutation heatmap using colored rectangles for each mutation type.
-
-        Parameters
-        ----------
-        show_frame : bool, default False
-            Whether to show frames around groups of columns
-        n : int, default 3
-            Number of columns per frame group
-        cmap : dict, optional
-            Color mapping for mutation types
-        table : DataFrame, optional
-            Mutation table to plot (defaults to self.pivot_table)
-        width : float, default 1
-            Width of rectangles (0-1)
-        height : float, default 1
-            Height of rectangles (0-1)
-        line_color : str, default "white"
-            Color of lines between rectangles
-
-        Returns
-        -------
-        self : OncoPlot
-            Returns self for method chaining
-        """
-        if table is None:
-            table = self.pivot_table
-        if cmap is None:
-            cmap = self.cmap
-
-        def color_encode(val):
-            return cmap.get(val, "#ffffff")
-
-        color_matrix = table.map(color_encode)
-
-        self.plot_color_heatmap(
-            self.ax_heatmap,
-            color_matrix,
-            linecolor=line_color,
-            linewidths=1,
-            xticklabels=False,
-            width=width,
-            height=height,
-            ytick_fontsize=self.ytick_fontsize,
-        )
-
-        # Add frame every n columns
-        if show_frame:
-            for i in range(0, color_matrix.shape[1], n):
-                rect = Rectangle(
-                    (i, -0.5),
-                    n,
-                    color_matrix.shape[0] + 1,
-                    linewidth=1,
-                    edgecolor="lightgray",
-                    facecolor="none",
+            self.tracks.append(
+                NumericTrack(
+                    self.sample_metadata[[col]].T,
+                    side="bottom",
+                    cmap=col_cmap,
+                    line_color=self.line_color,
+                    linewidths=linewidths,
+                    alpha=alpha,
+                    annotate=annotate,
+                    annotation_font_size=annotation_font_size,
+                    fmt=fmt,
+                    ytick_fontsize=self.ytick_fontsize,
+                    cbar=cbar,
                 )
-                self.ax_heatmap.add_patch(rect)
-
-        self.add_legend("Variant Types", self.cmap)
+            )
         return self
 
     @staticmethod
@@ -352,25 +245,21 @@ class OncoPlot(BasePlot):
         if ytick_fontsize is None:
             ytick_fontsize = self.ytick_fontsize
 
-        # Thin wrapper: register a MainMatrixTrack and draw it onto the eager
-        # heatmap axis, preserving the existing behaviour exactly.
-        track = MainMatrixTrack(
-            self.pivot_table,
-            cmap_dict,
-            linecolor=linecolor,
-            linewidths=linewidths,
-            show_frame=show_frame,
-            n=n,
-            yticklabels=yticklabels,
-            ytick_fontsize=ytick_fontsize,
-            show_ylabel=show_ylabel,
-            show_all_categories=show_all_categories,
+        # Register-only convenience over main(kind="mutation"); drawn on render().
+        self.tracks.append(
+            MainMatrixTrack(
+                self.pivot_table,
+                cmap_dict,
+                linecolor=linecolor,
+                linewidths=linewidths,
+                show_frame=show_frame,
+                n=n,
+                yticklabels=yticklabels,
+                ytick_fontsize=ytick_fontsize,
+                show_ylabel=show_ylabel,
+                show_all_categories=show_all_categories,
+            )
         )
-        self.tracks.append(track)
-        track.render(self.ax_heatmap)
-        for name, color_dict in track.legend_entries().items():
-            self.add_legend(name, color_dict)
-
         return self
 
     def main(self, kind: str = "mutation", cmap_dict: dict | None = None, **kwargs) -> OncoPlot:
@@ -508,20 +397,20 @@ class OncoPlot(BasePlot):
     ) -> OncoPlot:
         """Derive the layout from registered tracks and draw them in one pass.
 
-        Declarative entry point. Groups registered tracks by ``side`` and builds
-        a GridSpec whose rows are ``[top..] + main + [bottom..]`` and columns are
+        The sole draw path. Groups registered tracks by ``side`` and builds a
+        GridSpec whose rows are ``[top..] + main + [bottom..]`` and columns are
         ``[left..] + main + [right..] + legend``; sample-aligned tracks (top/
         bottom) share the matrix width, feature-aligned tracks (left/right) share
-        its height. Replaces the eager ``update_layout`` path and works for any
-        combination of registered tracks (this is what makes feature annotation,
-        unreachable from the eager layout, possible).
+        its height. The convenience methods (``mutation_heatmap`` / ``plot_freq``
+        / ``plot_bar`` / ``plot_categorical_metadata`` / ``plot_numeric_metadata``
+        / ``numeric_heatmap``) only register tracks; this method draws them.
 
         Parameters
         ----------
         fig : matplotlib.figure.Figure, optional
-            Existing figure to draw into. If *None*, a new figure is created.
-            (Retiring the eager ``update_layout``'s global ``plt.close`` is left
-            to the v0.5.0 eager-path removal.)
+            Existing figure to draw into. If *None*, a new figure is created via
+            ``plt.figure`` (the only remaining global-pyplot touch; pass ``fig``
+            to embed the oncoplot in a larger figure).
         legend_width : float, default 3
             Relative width of the legend column.
         legend_pad : float, default 0
@@ -581,7 +470,14 @@ class OncoPlot(BasePlot):
 
         self.ax_heatmap = fig.add_subplot(self.gs[main_row, main_col])
         self.ax_legend = fig.add_subplot(self.gs[main_row, legend_col])
-        main_tracks[0].render(self.ax_heatmap)
+
+        main_track = main_tracks[0]
+        # A continuous main matrix has a colorbar, not categorical swatches: put
+        # it in the (otherwise empty) legend column instead of an inset.
+        numeric_main = isinstance(main_track, NumericMatrixTrack)
+        if numeric_main:
+            main_track.cbar = False
+        main_track.render(self.ax_heatmap)
 
         # sample-aligned tracks share the matrix column
         for i, track in enumerate(top):
@@ -599,7 +495,15 @@ class OncoPlot(BasePlot):
         for track in self.tracks:
             for name, color_dict in (track.legend_entries() or {}).items():
                 self.add_legend(name, color_dict)
-        self.plot_all_legends()
+
+        if numeric_main and not self.legend_manager.legend_dict:
+            cbar = main_track.draw_colorbar(self.ax_legend)
+            # The aspect-constrained colorbar is a thin bar; anchor it to the
+            # west (heatmap) side of the legend column so it hugs the matrix
+            # instead of floating in the column's centre.
+            cbar.ax.set_anchor("W")
+        else:
+            self.plot_all_legends()
         return self
 
     def plot_bar(
@@ -635,15 +539,15 @@ class OncoPlot(BasePlot):
         if bar_col not in self.sample_metadata.columns:
             raise ValueError(f"Column '{bar_col}' not found in sample metadata.")
 
-        track = BarTrack(
-            self.sample_metadata[bar_col].values,
-            bar_col,
-            bar_value=bar_value,
-            fontsize=fontsize,
-            ylabel_size=ylabel_size,
+        self.tracks.append(
+            BarTrack(
+                self.sample_metadata[bar_col].values,
+                bar_col,
+                bar_value=bar_value,
+                fontsize=fontsize,
+                ylabel_size=ylabel_size,
+            )
         )
-        self.tracks.append(track)
-        track.render(self.ax_bar)
         return self
 
     def plot_freq(
@@ -672,15 +576,15 @@ class OncoPlot(BasePlot):
         self : OncoPlot
             Returns self for method chaining
         """
-        track = FreqTrack(
-            self.feature_metadata[freq_columns],
-            line_color=self.line_color,
-            annot_fontsize=annot_fontsize,
-            linewidths=linewidths,
-            xtick_fontsize=xtick_fontsize,
+        self.tracks.append(
+            FreqTrack(
+                self.feature_metadata[freq_columns],
+                line_color=self.line_color,
+                annot_fontsize=annot_fontsize,
+                linewidths=linewidths,
+                xtick_fontsize=xtick_fontsize,
+            )
         )
-        self.tracks.append(track)
-        track.render(self.ax_freq)
         return self
 
     def plot_categorical_metadata(
@@ -729,7 +633,7 @@ class OncoPlot(BasePlot):
         self : OncoPlot
             Returns self for method chaining
         """
-        for col, ax in self.axs_categorical_columns.items():
+        for col in self.categorical_columns:
             data = self.sample_metadata[[col]].T  # Ensure you pass a DataFrame
 
             # Use ColorManager to generate color mapping
@@ -739,117 +643,23 @@ class OncoPlot(BasePlot):
                     data.iloc[0], default_palette=default_cmap
                 )
 
-            track = CategoricalTrack(
-                data,
-                column_cmap,
-                col,
-                line_color=self.line_color,
-                linewidths=linewidths,
-                alpha=alpha,
-                annotate=annotate,
-                annotation_font_size=annotation_font_size,
-                annotate_text_color=annotate_text_color,
-                ytick_fontsize=self.ytick_fontsize,
+            self.tracks.append(
+                CategoricalTrack(
+                    data,
+                    column_cmap,
+                    col,
+                    side="bottom",
+                    line_color=self.line_color,
+                    linewidths=linewidths,
+                    alpha=alpha,
+                    annotate=annotate,
+                    annotation_font_size=annotation_font_size,
+                    annotate_text_color=annotate_text_color,
+                    ytick_fontsize=self.ytick_fontsize,
+                )
             )
-            self.tracks.append(track)
-            track.render(ax)
-            for name, color_dict in track.legend_entries().items():
-                self.add_legend(name, color_dict)
 
         return self
-
-    @staticmethod
-    def plot_color_heatmap(
-        ax,
-        color_matrix: pd.DataFrame,
-        linecolor="white",
-        linewidths=1,
-        xticklabels=False,
-        yticklabels=True,
-        alpha=1.0,
-        width=1.0,
-        height=1.0,
-        ytick_fontsize=10,
-    ):
-        """
-        Plot a heatmap using colored rectangles based on a color matrix.
-
-        Parameters
-        ----------
-        ax : matplotlib.axes.Axes
-            The axes to plot on
-        color_matrix : pd.DataFrame
-            DataFrame containing hex color codes for each cell
-        linecolor : str, default 'white'
-            Color of lines between cells
-        linewidths : int, default 1
-            Width of lines between cells
-        xticklabels : bool, default False
-            Whether to show x-axis labels
-        yticklabels : bool, default True
-            Whether to show y-axis labels
-        alpha : float, default 1.0
-            Transparency level (0-1)
-        width : float, default 1.0
-            Width of rectangles (0-1)
-        height : float, default 1.0
-            Height of rectangles (0-1)
-        ytick_fontsize : int, default 10
-            Font size for y-axis tick labels
-
-        Returns
-        -------
-        ax : matplotlib.axes.Axes
-            The modified axes
-        """
-
-        ones_matrix = color_matrix.copy()
-        ones_matrix[:] = 0
-        ones_matrix = ones_matrix.astype(float)
-
-        # Plot background heatmap (using ones_matrix to hold size)
-        sns.heatmap(
-            ones_matrix,
-            cbar=False,
-            linewidths=linewidths,
-            linecolor=linecolor,
-            ax=ax,
-            xticklabels=xticklabels,
-            yticklabels=yticklabels,
-            cmap="Blues",
-            alpha=0,
-        )
-
-        for i in range(color_matrix.shape[0]):
-            for j in range(color_matrix.shape[1]):
-                face_color = color_matrix.iloc[i, j]
-                if face_color == "#ffffff":
-                    continue
-                ax.add_patch(
-                    Rectangle(
-                        (
-                            j + (1 - width) / 2,
-                            i + (1 - height) / 2,
-                        ),  # Adjust x and y to center the rectangle
-                        width,
-                        height,
-                        fill=True,
-                        facecolor=face_color,
-                        edgecolor=linecolor,
-                        lw=linewidths,
-                        alpha=alpha,
-                    )
-                )
-
-        ax.set_xticks([])
-        ax.set_xlabel("")
-        ax.set_yticks(
-            [i + 0.5 for i in range(len(color_matrix.index))]
-        )  # Shift the ticks by +0.5
-        ax.set_yticklabels(
-            color_matrix.index, rotation=0, fontsize=ytick_fontsize
-        )  # Set labels horizontally
-        return ax
 
     def add_xticklabel(
         self, fontsize: int | None = None, rotation: float = 90
@@ -943,41 +753,35 @@ class OncoPlot(BasePlot):
         if ytick_fontsize is None:
             ytick_fontsize = self.ytick_fontsize
 
-        # Thin wrapper: draw a NumericMatrixTrack onto the eager heatmap axis and
-        # keep the legacy freq-column colorbar / axis-closing behaviour exactly.
-        track = NumericMatrixTrack(
-            self.pivot_table,
-            cmap=cmap,
-            vmin=vmin,
-            vmax=vmax,
-            symmetric=symmetric,
-            yticklabels=yticklabels,
-            annot=annot,
-            fmt=fmt,
-            ytick_fontsize=ytick_fontsize,
-            linewidths=linewidths,
-            show_ylabel=show_ylabel,
-            cbar=False,  # colorbar drawn on ax_freq below (legacy layout)
+        # Register-only convenience over main(kind="cnv"); drawn on render(),
+        # where the NumericMatrixTrack renders its own inset colorbar.
+        self.tracks.append(
+            NumericMatrixTrack(
+                self.pivot_table,
+                cmap=cmap,
+                vmin=vmin,
+                vmax=vmax,
+                symmetric=symmetric,
+                yticklabels=yticklabels,
+                annot=annot,
+                fmt=fmt,
+                ytick_fontsize=ytick_fontsize,
+                linewidths=linewidths,
+                show_ylabel=show_ylabel,
+            )
         )
-        self.tracks.append(track)
-        track.render(self.ax_heatmap)
-        track.draw_colorbar(self.ax_freq)
-        self.ax_legend.axis("off")
-        self.ax_bar.axis("off")
         return self
 
     @staticmethod
     def default_oncoplot(
         pivot_table: "PivotTable",
         figsize: tuple[int, int] = (30, 15),
-        width_ratios: list[int] = [20, 1, 1, 2],
     ) -> OncoPlot:
         """
-        Create a default oncoplot with standard configuration.
+        Create a default oncoplot with standard components.
 
-        This is a convenience method that creates an OncoPlot with commonly used
-        settings and plots the main components (mutation heatmap, frequency plot,
-        TMB bar plot, and legends).
+        Convenience constructor that registers the main mutation heatmap, the
+        frequency column and the TMB bar, then renders.
 
         Parameters
         ----------
@@ -985,21 +789,17 @@ class OncoPlot(BasePlot):
             The PivotTable instance containing mutation data
         figsize : tuple, default (30, 15)
             Figure size (width, height)
-        width_ratios : list, default [20, 1, 1, 2]
-            Width ratios for subplot columns (must match the 4-column GridSpec
-            built by ``update_layout``)
 
         Returns
         -------
         oncoplot : OncoPlot
-            Configured and plotted OncoPlot instance
+            Configured and rendered OncoPlot instance
         """
-        oncoplot = OncoPlot(
-            pivot_table=pivot_table, figsize=figsize, width_ratios=width_ratios
+        return (
+            OncoPlot(pivot_table=pivot_table, figsize=figsize)
+            .main()
+            .add_bar("TMB", side="top")
+            .add_freq(side="right")
+            .render()
+            .add_xticklabel()
         )
-        oncoplot.mutation_heatmap()
-        oncoplot.plot_freq()
-        oncoplot.plot_bar()
-        oncoplot.plot_all_legends()  # Plot all legends
-        oncoplot.add_xticklabel()
-        return oncoplot
