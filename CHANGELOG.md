@@ -2,6 +2,38 @@
 
 ---
 
+## 🔖 Version 0.5.0 (June 2026)
+
+Track-based redesign of the plotting module (`OncoPlot`). The visualization is now
+composed of declarative **tracks** (a main matrix plus annotation strips), laid out
+by a single `render()` call. See `PLOTTING_REVIEW.md` for the full design.
+
+### ⚠️ Breaking Changes
+* **`render()` is now required.** The eager immediate-draw layout (`update_layout` and the fixed named axes) was removed. The convenience methods (`mutation_heatmap`, `numeric_heatmap`, `plot_freq`, `plot_bar`, `plot_categorical_metadata`, `plot_numeric_metadata`) now only *register* tracks; call `.render()` once before `save()` / `add_xticklabel()`. Migration: add `.render()` to existing chains.
+* **`PivotTablePlot` → `PivotStatsPlot`.** The class was renamed (it provides one-shot statistical plots — PCA, annotated boxplots — not the base for all pivot-table plotting). The old import path `from pymaftools.plot.PivotTablePlot import PivotTablePlot` still works via a shim.
+* **Removed** `OncoPlot.heatmap_rectangle` and `OncoPlot.plot_color_heatmap` (orphaned; relied on the eager axes).
+* **`OncoPlot.default_oncoplot`**: dropped the `width_ratios` argument; it now registers tracks and renders.
+
+### 🆕 New Features
+* **Feature-side annotations** (`add_feature_annotation`): `feature_metadata` columns (e.g. `pathway`) can finally be drawn as row-side strips — impossible under the old layout.
+* **Declarative track API**: `main()`, `add_bar()`, `add_freq()`, `add_sample_annotation()`, `add_feature_annotation()` register tracks; `render()` derives the GridSpec from each track's `side`/`size`. Numeric vs categorical is inferred from column dtype.
+* **Unified entry point**: oncoplots are reachable from the same accessor as the stats plots — `table.plot.oncoplot(...)`.
+* **`main(kind="cnv")`**: continuous (CNV) main matrices go through `render()` too.
+* **Numeric metadata colorbars** (`plot_numeric_metadata`, P1#3): numeric strips now carry a colorbar so the value scale is interpretable (toggle with `cbar=`).
+* **`render()` spacing knobs**: `legend_width`, `legend_pad` (a named spacer replacing the old phantom column), `wspace`, `hspace`.
+* **`add_xticklabel(fontsize=, rotation=)`**: was hardcoded to `rotation=90`.
+
+### 🐛 Fixes
+* **`default_oncoplot` crash** (P0#1): the convenience entry no longer raises `ValueError` from a width_ratios / column-count mismatch.
+* **Legend filtering** (P1#4): the mutation legend now lists only categories present in the data and non-wild-type, instead of the whole colormap plus `False`. Restore the full legend with `mutation_heatmap(show_all_categories=True)`.
+* **CNV colorbar** (P2#6): a continuous main matrix's colorbar no longer hijacks the freq column — it renders in the legend area.
+* Fixed a latent crash in the `plot_bar` value annotation (formatted the whole array).
+
+### ✅ Tests
+* First test coverage for `OncoPlot` (was previously untested): 23 smoke tests covering the track API, render layout derivation, legend filtering, and the convenience wrappers.
+
+---
+
 ## 🔖 Version 0.4.1 (May 2026)
 
 Bug-fix release targeting cases where pymaftools silently produced wrong output

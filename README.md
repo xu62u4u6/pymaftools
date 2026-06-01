@@ -113,14 +113,15 @@ pt = (pt
     .calculate_TMB(capture_size=50)
 )
 
-# Create oncoplot
-oncoplot = (OncoPlot(pt.head(50))
-    .set_config(figsize=(15, 10), width_ratios=[20, 2, 2])
+# Create oncoplot. The convenience methods register tracks; a single
+# render() draws the figure (required before save()).
+oncoplot = (OncoPlot(pt.head(50), figsize=(15, 10))
     .mutation_heatmap()
     .plot_freq()
     .plot_bar()
-    .save("oncoplot.png", dpi=300)
+    .render()
 )
+oncoplot.save("oncoplot.png", dpi=300)
 ```
 
 ### Advanced Filtering
@@ -176,17 +177,16 @@ table = (table.filter_by_freq(freq)
 categorical_columns = ["subtype", "sex", "smoke"]
 cmap_dict = {key: cm.get_cmap(key, alpha=0.7) for key in categorical_columns}
 
-oncoplot = (OncoPlot(table)
-    .set_config(categorical_columns=categorical_columns,
-                figsize=(30, 14),
-                width_ratios=[25, 3, 0, 2])
+oncoplot = (OncoPlot(table,
+                     categorical_columns=categorical_columns,
+                     figsize=(30, 14))
     .mutation_heatmap()
     .plot_freq(freq_columns=["freq", "LUAD_freq", "ASC_freq", "LUSC_freq"])
     .plot_bar()
     .plot_categorical_metadata(cmap_dict=cmap_dict)
-    .plot_all_legends()
-    .save("mutation_oncoplot.tiff", dpi=300)
+    .render()  # draws everything + all legends in one pass
 )
+oncoplot.save("mutation_oncoplot.tiff", dpi=300)
 ```
 ![image](img/1_subtype_oncoplot_freq_0.1.png)
 
@@ -196,19 +196,44 @@ oncoplot = (OncoPlot(table)
 categorical_columns = ["subtype", "sex", "smoke"]
 cmap_dict = {key: cm.get_cmap(key, alpha=0.7) for key in categorical_columns}
 
-oncoplot = (OncoPlot(CNV_gene_cosmic)
-    .set_config(categorical_columns=categorical_columns,
-                figsize=(30, 10),
-                width_ratios=[25, 1, 0, 3])
+oncoplot = (OncoPlot(CNV_gene_cosmic,
+                     categorical_columns=categorical_columns,
+                     figsize=(30, 10))
     .numeric_heatmap(yticklabels=False, cmap="coolwarm", vmin=-2, vmax=2)
     .plot_bar()
     .plot_categorical_metadata(cmap_dict=cmap_dict)
-    .plot_all_legends()
-    .save("cnv_oncoplot.tiff", dpi=600)
+    .render()
 )
+oncoplot.save("cnv_oncoplot.tiff", dpi=600)
 ```
 
 ![image](img/1_COSMIC_gene_level.png)
+
+### Declarative track API
+
+Oncoplots are composed of *tracks*: a main matrix plus annotation strips. The
+convenience methods above (`mutation_heatmap`, `plot_freq`, …) are thin wrappers
+that register tracks; `render()` derives the layout and draws everything in one
+pass. The full API gives explicit control over each track's side and, unlike the
+old layout, can draw **feature-side annotations** (row strips from
+`feature_metadata`). It is reachable from the same `table.plot` accessor as the
+statistical plots:
+
+```python
+op = (table.plot.oncoplot(figsize=(15, 10))
+    .main()                                       # mutation matrix
+    .add_bar("TMB", side="top")
+    .add_freq(side="right")
+    .add_sample_annotation(["subtype", "sex"], side="bottom")  # categorical
+    .add_sample_annotation(["age"], side="bottom")             # numeric (+ colorbar)
+    .add_feature_annotation(["pathway"], side="right")         # row-side strip
+    .render(legend_width=3, wspace=0.01)          # tune layout/spacing here
+)
+op.save("oncoplot.png", dpi=300)
+```
+
+`add_sample_annotation` / `add_feature_annotation` infer categorical vs numeric
+from the column dtype. For a continuous (CNV) main matrix use `.main(kind="cnv")`.
 
 ### Lollipop Plot
 
@@ -265,8 +290,8 @@ results = cross_validate_importance(model, X, y, n_seeds=10)
 ```python
 oncoplot = OncoPlot(pivot_table, ytick_fontsize=12)
 oncoplot.mutation_heatmap(ytick_fontsize=10)
-oncoplot.numeric_heatmap(ytick_fontsize=8)
 oncoplot.plot_freq(annot_fontsize=10)
+oncoplot.render()
 ```
 
 ### 2. How to customize color mappings?
