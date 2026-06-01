@@ -131,6 +131,26 @@ def demo_numeric(table: PivotTable) -> None:
     op.close()
 
 
+def demo_declarative(table: PivotTable) -> None:
+    """Figure 4: a full oncoplot built entirely through the declarative
+    ``render()`` path, including a feature-side annotation (``pathway``) that the
+    eager layout has no slot for.
+    """
+    op = (
+        OncoPlot(table, figsize=(13, 9))
+        .main()
+        .add_bar("TMB", side="top")
+        .add_freq(side="right")
+        .add_feature_annotation(["pathway"], side="right")
+        .add_sample_annotation(["subtype", "sex"], side="bottom")
+        .add_sample_annotation(["age"], side="bottom")
+    )
+    op.render()
+    op.add_xticklabel()
+    op.save(str(OUT_DIR / "demo_oncoplot_declarative.png"))
+    op.close()
+
+
 def main() -> None:
     OUT_DIR.mkdir(exist_ok=True)
     mutation = prepare(make_mutation_table())
@@ -139,6 +159,7 @@ def main() -> None:
     demo_default(mutation)
     demo_with_metadata(mutation)
     demo_numeric(cnv)
+    demo_declarative(mutation)
     print(f"[INFO] demo figures written to {OUT_DIR.resolve()}")
 
 

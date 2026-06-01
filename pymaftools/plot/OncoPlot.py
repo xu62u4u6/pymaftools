@@ -383,7 +383,7 @@ class OncoPlot(BasePlot):
         """
         if kind != "mutation":
             raise ValueError(
-                f"Stage 1 only supports kind='mutation', got {kind!r}."
+                f"Only kind='mutation' is supported, got {kind!r}."
             )
         if cmap_dict is None:
             cmap_dict = self.cmap
@@ -391,12 +391,107 @@ class OncoPlot(BasePlot):
         self.tracks.append(MainMatrixTrack(self.pivot_table, cmap_dict, **kwargs))
         return self
 
+    def add_bar(
+        self, bar_col: str = "TMB", side: str = "top", **kwargs
+    ) -> OncoPlot:
+        """Register a per-sample bar track (e.g. TMB) for ``render()``."""
+        if bar_col not in self.sample_metadata.columns:
+            hint = " Please do table.calculate_tmb() first." if bar_col == "TMB" else ""
+            raise ValueError(f"Column '{bar_col}' not found in sample metadata.{hint}")
+        track = BarTrack(self.sample_metadata[bar_col].values, bar_col, **kwargs)
+        track.side = side
+        self.tracks.append(track)
+        return self
+
+    def add_freq(
+        self, freq_columns: list[str] = ["freq"], side: str = "right", **kwargs
+    ) -> OncoPlot:
+        """Register a per-feature frequency track for ``render()``."""
+        track = FreqTrack(
+            self.feature_metadata[freq_columns], line_color=self.line_color, **kwargs
+        )
+        track.side = side
+        self.tracks.append(track)
+        return self
+
+    def _add_annotation(self, metadata, columns, side, cmap_dict, default_cmap, kwargs):
+        """Register one track per column, dtype-inferred (numeric vs categorical),
+        aligned to whichever axis ``metadata`` belongs to. ``transpose`` is keyed
+        off ``side``: sample annotations (top/bottom) are 1xN rows, feature
+        annotations (left/right) are Nx1 columns."""
+        horizontal = side in ("top", "bottom")
+        for col in columns:
+            series = metadata[col]
+            data = series.to_frame().T if horizontal else series.to_frame()
+            if pd.api.types.is_numeric_dtype(series):
+                track = NumericTrack(
+                    data,
+                    side=side,
+                    line_color=self.line_color,
+                    ytick_fontsize=self.ytick_fontsize,
+                    **kwargs,
+                )
+            else:
+                column_cmap = (cmap_dict or {}).get(col)
+                if not column_cmap:
+                    column_cmap = self.color_manager.generate_categorical_cmap(
+                        series, default_palette=default_cmap
+                    )
+                track = CategoricalTrack(
+                    data,
+                    column_cmap,
+                    col,
+                    side=side,
+                    line_color=self.line_color,
+                    ytick_fontsize=self.ytick_fontsize,
+                    **kwargs,
+                )
+            self.tracks.append(track)
+        return self
+
+    def add_sample_annotation(
+        self,
+        columns: list[str],
+        side: str = "bottom",
+        *,
+        cmap_dict: dict | None = None,
+        default_cmap: str = "pastel",
+        **kwargs,
+    ) -> OncoPlot:
+        """Register sample-aligned annotation tracks (one per column) for
+        ``render()``. Numeric columns become NumericTrack (with colorbar),
+        others CategoricalTrack."""
+        return self._add_annotation(
+            self.sample_metadata, columns, side, cmap_dict, default_cmap, kwargs
+        )
+
+    def add_feature_annotation(
+        self,
+        columns: list[str],
+        side: str = "right",
+        *,
+        cmap_dict: dict | None = None,
+        default_cmap: str = "pastel",
+        **kwargs,
+    ) -> OncoPlot:
+        """Register feature-aligned annotation tracks (one per column) for
+        ``render()`` — e.g. ``pathway`` / ``is_driver`` from feature_metadata
+        drawn as row-side strips. This is the feature-dimension gap (S3 / P1#2)
+        that the eager layout never had a slot for."""
+        return self._add_annotation(
+            self.feature_metadata, columns, side, cmap_dict, default_cmap, kwargs
+        )
+
     def render(self, fig=None) -> OncoPlot:
         """Derive the layout from registered tracks and draw them in one pass.
 
-        New declarative entry point: ``OncoPlot(table).main().render()``. Stage 1
-        handles the main matrix track plus a legend column; later stages add the
-        annotation tracks and retire the eager ``update_layout`` path.
+        Declarative entry point. Groups registered tracks by ``side`` and builds
+        a GridSpec whose rows are ``[top..] + main + [bottom..]`` and columns are
+        ``[left..] + main + [right..] + legend``; sample-aligned tracks (top/
+        bottom) share the matrix width, feature-aligned tracks (left/right) share
+        its height. Replaces the eager ``update_layout`` path and works for any
+        combination of registered tracks (this is what makes feature annotation,
+        unreachable from the eager layout, possible).
 
         Parameters
         ----------
@@ -413,25 +508,61 @@ class OncoPlot(BasePlot):
         if not main_tracks:
             raise ValueError("No main track registered; call .main() before render().")
 
+        top = [t for t in self.tracks if t.side == "top"]
+        bottom = [t for t in self.tracks if t.side == "bottom"]
+        left = [t for t in self.tracks if t.side == "left"]
+        right = [t for t in self.tracks if t.side == "right"]
+
+        main_row = len(top)
+        main_col = len(left)
+        nrows = len(top) + 1 + len(bottom)
+        ncols = len(left) + 1 + len(right) + 1  # trailing legend column
+        legend_col = ncols - 1
+
+        main_w, main_h, legend_w = self.width_ratios[0], self.height_ratios[-1], 3
+        height_ratios = (
+            [t.size for t in top] + [main_h] + [t.size for t in bottom]
+        )
+        width_ratios = (
+            [t.size for t in left]
+            + [main_w]
+            + [t.size for t in right]
+            + [legend_w]
+        )
+
         if fig is None:
             fig = plt.figure(figsize=self.figsize)
         self.fig = fig
-
         self.gs = GridSpec(
-            1,
-            2,
-            width_ratios=[self.width_ratios[0], self.width_ratios[-1]],
+            nrows,
+            ncols,
+            width_ratios=width_ratios,
+            height_ratios=height_ratios,
             wspace=self.wspace,
+            hspace=self.hspace,
             figure=fig,
         )
-        self.ax_heatmap = fig.add_subplot(self.gs[0, 0])
-        self.ax_legend = fig.add_subplot(self.gs[0, 1])
 
-        for track in main_tracks:
-            track.render(self.ax_heatmap)
+        self.ax_heatmap = fig.add_subplot(self.gs[main_row, main_col])
+        self.ax_legend = fig.add_subplot(self.gs[main_row, legend_col])
+        main_tracks[0].render(self.ax_heatmap)
+
+        # sample-aligned tracks share the matrix column
+        for i, track in enumerate(top):
+            track.render(fig.add_subplot(self.gs[i, main_col]))
+        for i, track in enumerate(bottom):
+            track.render(fig.add_subplot(self.gs[main_row + 1 + i, main_col]))
+        # feature-aligned tracks share the matrix row; registered outward from it
+        for i, track in enumerate(left):
+            track.render(fig.add_subplot(self.gs[main_row, main_col - 1 - i]))
+        for i, track in enumerate(right):
+            track.render(fig.add_subplot(self.gs[main_row, main_col + 1 + i]))
+
+        # legends: single source of truth, gathered from every track
+        self.clear_legends()
+        for track in self.tracks:
             for name, color_dict in (track.legend_entries() or {}).items():
                 self.add_legend(name, color_dict)
-
         self.plot_all_legends()
         return self
 

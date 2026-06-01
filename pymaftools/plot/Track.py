@@ -250,7 +250,17 @@ class FreqTrack(Track):
 
 
 class CategoricalTrack(Track):
-    """Single categorical sample-annotation strip drawn below the matrix."""
+    """Single categorical annotation strip.
+
+    Bound to either axis of the main matrix via ``side`` (S3 — feature and
+    sample annotations are the same kind of track):
+
+    - ``side`` in ``("top", "bottom")`` → sample-aligned, horizontal strip;
+      ``data`` is 1xN (the metadata field as a row), its name labels the y-axis.
+    - ``side`` in ``("left", "right")`` → feature-aligned, vertical strip;
+      ``data`` is Nx1 (the metadata field as a column), its name labels the
+      x-axis; feature ticks are left to the main heatmap.
+    """
 
     side = "bottom"
 
@@ -260,6 +270,7 @@ class CategoricalTrack(Track):
         column_cmap: dict,
         name: str,
         *,
+        side: str = "bottom",
         line_color: str = "white",
         linewidths: float = 1,
         alpha: float = 1.0,
@@ -268,9 +279,10 @@ class CategoricalTrack(Track):
         annotate_text_color: str = "black",
         ytick_fontsize: int = 10,
     ) -> None:
-        self.data = data  # 1xN DataFrame (one metadata column, transposed)
+        self.data = data  # 1xN (sample-aligned) or Nx1 (feature-aligned)
         self.column_cmap = column_cmap
         self.name = name
+        self.side = side
         self.line_color = line_color
         self.linewidths = linewidths
         self.alpha = alpha
@@ -280,6 +292,7 @@ class CategoricalTrack(Track):
         self.ytick_fontsize = ytick_fontsize
 
     def render(self, ax: Axes) -> Axes:
+        horizontal = self.side in ("top", "bottom")
         _fig, ax, _info = draw_categorical_heatmap(
             table=self.data,
             category_cmap=self.column_cmap,
@@ -287,7 +300,7 @@ class CategoricalTrack(Track):
             linecolor=self.line_color,
             linewidths=self.linewidths,
             xticklabels=False,
-            yticklabels=list(self.data.index),
+            yticklabels=list(self.data.index) if horizontal else False,
             alpha=self.alpha,
         )
 
@@ -304,11 +317,23 @@ class CategoricalTrack(Track):
                         color=self.annotate_text_color,
                     )
 
-        ax.set_xticks([])
-        ax.set_yticks([i + 0.5 for i in range(len(self.data.index))])
-        ax.set_yticklabels(self.data.index, rotation=0, fontsize=self.ytick_fontsize)
-        ax.set_xlabel("")
-        ax.tick_params(axis="x", which="both", bottom=False, top=False)
+        if horizontal:
+            ax.set_xticks([])
+            ax.set_yticks([i + 0.5 for i in range(len(self.data.index))])
+            ax.set_yticklabels(
+                self.data.index, rotation=0, fontsize=self.ytick_fontsize
+            )
+            ax.set_xlabel("")
+            ax.tick_params(axis="x", which="both", bottom=False, top=False)
+        else:
+            # feature-aligned: name on x, leave feature ticks to the heatmap
+            ax.set_yticks([])
+            ax.set_xticks([j + 0.5 for j in range(len(self.data.columns))])
+            ax.set_xticklabels(
+                self.data.columns, rotation=90, fontsize=self.ytick_fontsize
+            )
+            ax.set_ylabel("")
+            ax.tick_params(axis="y", which="both", left=False, right=False)
         return ax
 
     def legend_entries(self) -> dict[str, dict]:
@@ -328,6 +353,7 @@ class NumericTrack(Track):
         self,
         data: pd.DataFrame,
         *,
+        side: str = "bottom",
         cmap: str = "Blues",
         line_color: str = "white",
         linewidths: float = 1,
@@ -338,7 +364,8 @@ class NumericTrack(Track):
         ytick_fontsize: int = 10,
         cbar: bool = True,
     ) -> None:
-        self.data = data  # 1xN DataFrame (one metadata column, transposed)
+        self.data = data  # 1xN (sample-aligned) or Nx1 (feature-aligned)
+        self.side = side
         self.cmap = cmap
         self.line_color = line_color
         self.linewidths = linewidths
@@ -350,6 +377,7 @@ class NumericTrack(Track):
         self.cbar = cbar
 
     def render(self, ax: Axes) -> Axes:
+        horizontal = self.side in ("top", "bottom")
         # Color range: symmetric around 0 for the diverging "coolwarm" map,
         # otherwise span the data (matches legacy plot_numeric_metadata).
         if self.cmap == "coolwarm":
@@ -367,7 +395,7 @@ class NumericTrack(Track):
             linecolor=self.line_color,
             ax=ax,
             xticklabels=False,
-            yticklabels=list(self.data.index),
+            yticklabels=list(self.data.index) if horizontal else False,
             annot=self.annotate,
             fmt=self.fmt if self.annotate else "",
             annot_kws={"size": self.annotation_font_size} if self.annotate else None,
@@ -375,10 +403,20 @@ class NumericTrack(Track):
             vmin=vmin,
             vmax=vmax,
         )
-        ax.set_yticks([i + 0.5 for i in range(len(self.data.index))])
-        ax.set_yticklabels(self.data.index, rotation=0, fontsize=self.ytick_fontsize)
-        ax.set_xticks([])
-        ax.set_xlabel("")
+        if horizontal:
+            ax.set_yticks([i + 0.5 for i in range(len(self.data.index))])
+            ax.set_yticklabels(
+                self.data.index, rotation=0, fontsize=self.ytick_fontsize
+            )
+            ax.set_xticks([])
+            ax.set_xlabel("")
+        else:
+            ax.set_yticks([])
+            ax.set_xticks([j + 0.5 for j in range(len(self.data.columns))])
+            ax.set_xticklabels(
+                self.data.columns, rotation=90, fontsize=self.ytick_fontsize
+            )
+            ax.set_ylabel("")
 
         if self.cbar:
             self._draw_colorbar(ax, vmin, vmax)

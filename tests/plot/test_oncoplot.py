@@ -54,6 +54,7 @@ def mutation_table():
     table.sample_metadata["subtype"] = rng.choice(["LUAD", "LUSC"], len(samples))
     table.sample_metadata["sex"] = rng.choice(["M", "F"], len(samples))
     table.sample_metadata["age"] = rng.integers(45, 80, len(samples)).astype(float)
+    table.feature_metadata["pathway"] = rng.choice(["RTK-RAS", "TP53"], len(genes))
     return table.add_freq()
 
 
@@ -175,3 +176,85 @@ def test_plot_numeric_metadata_colorbar_opt_out(mutation_table):
     op.plot_numeric_metadata(cbar=False)
 
     assert len(op.axs_numeric_columns["age"].child_axes) == 0  # no colorbar
+
+
+# --- Stage 3: feature annotation + multi-side render() ----------------------
+
+
+def test_add_feature_annotation_builds_feature_aligned_track(mutation_table):
+    """The S3 headline: feature_metadata becomes a feature-aligned track.
+
+    Data must be Nx1 (one row per feature, aligned to the matrix rows), not the
+    1xN used for sample annotations."""
+    op = OncoPlot(mutation_table, figsize=(8, 6)).main()
+    op.add_feature_annotation(["pathway"], side="right")
+
+    feat_tracks = [t for t in op.tracks if isinstance(t, CategoricalTrack)]
+    assert len(feat_tracks) == 1
+    track = feat_tracks[0]
+    assert track.side == "right"
+    # Nx1: rows == number of features, single column
+    assert track.data.shape == (mutation_table.shape[0], 1)
+
+
+def test_render_derives_multi_side_layout(mutation_table):
+    """render() must size the GridSpec from the registered tracks' sides:
+    rows = top + main + bottom, cols = left + main + right + legend."""
+    op = (
+        OncoPlot(mutation_table, figsize=(10, 8))
+        .main()
+        .add_bar("TMB", side="top")  # 1 top
+        .add_freq(side="right")  # 1 right
+        .add_feature_annotation(["pathway"], side="right")  # +1 right
+        .add_sample_annotation(["subtype"], side="bottom")  # 1 bottom
+    )
+    op.render()
+
+    # rows: 1 top + main + 1 bottom = 3
+    assert op.gs.nrows == 3
+    # cols: 0 left + main + 2 right + 1 legend = 4
+    assert op.gs.ncols == 4
+
+
+def test_render_feature_annotation_legend_present(mutation_table):
+    """The feature track must contribute its legend through the single-source
+    legend gather in render()."""
+    op = (
+        OncoPlot(mutation_table, figsize=(8, 6))
+        .main()
+        .add_feature_annotation(["pathway"], side="right")
+    )
+    op.render()
+
+    assert op.has_legend("Mutation")
+    assert op.has_legend("pathway")
+
+
+def test_add_sample_annotation_dtype_inference(mutation_table):
+    """A numeric column must become a NumericTrack, a string column a
+    CategoricalTrack, both from one add_sample_annotation entry point."""
+    op = OncoPlot(mutation_table, figsize=(8, 6)).main()
+    op.add_sample_annotation(["age"], side="bottom")  # numeric
+    op.add_sample_annotation(["subtype"], side="bottom")  # categorical
+
+    assert any(isinstance(t, NumericTrack) for t in op.tracks)
+    assert any(isinstance(t, CategoricalTrack) for t in op.tracks)
+
+
+def test_full_declarative_render_smoke(mutation_table):
+    """End-to-end: a full oncoplot through render() draws every side without
+    error and yields a heatmap plus all expected legends."""
+    op = (
+        OncoPlot(mutation_table, figsize=(12, 8))
+        .main()
+        .add_bar("TMB", side="top")
+        .add_freq(side="right")
+        .add_feature_annotation(["pathway"], side="right")
+        .add_sample_annotation(["subtype", "sex"], side="bottom")
+        .add_sample_annotation(["age"], side="bottom")
+    )
+    op.render()
+
+    assert len(op.ax_heatmap.collections) >= 1
+    for name in ("Mutation", "pathway", "subtype", "sex"):
+        assert op.has_legend(name)
