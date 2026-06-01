@@ -17,8 +17,8 @@ Read a MAF file and create an OncoPlot:
 
    from pymaftools import MAF, OncoPlot
 
-   # Read MAF file
-   maf = MAF.read_maf("data/tcga_paad.maf")
+   # Read MAF file (sample_ID is required — see "Reading MAF Files" below)
+   maf = MAF.read_maf("data/tcga_paad.maf", sample_ID="TCGA-PAAD-01")
 
    # Create mutation table
    table = maf.to_pivot_table()
@@ -31,6 +31,63 @@ Read a MAF file and create an OncoPlot:
        .add_barplot()
        .add_legend()
    )
+
+Reading MAF Files
+-----------------
+
+``MAF.read_maf`` reads a tab-separated MAF file. Leading comment lines
+(``#``-prefixed, e.g. the GDC ``#version 2.4`` header) are detected and
+skipped automatically, so files with zero, one, or many comment lines all
+work.
+
+**Required columns.** These must be present:
+
+- ``Hugo_Symbol``
+- ``Start_Position``
+- ``End_Position``
+- ``Reference_Allele``
+- ``Tumor_Seq_Allele1``
+- ``Tumor_Seq_Allele2``
+- ``Variant_Classification``
+
+The first six build the per-mutation index; ``Variant_Classification`` is the
+value used by ``to_pivot_table``. (``Variant_Type`` and ``Protein_position``
+are only needed for base-change / lollipop analyses.)
+
+**Sample identity.** By default each row's sample comes from the
+``Tumor_Sample_Barcode`` column, so a standard multi-sample MAF keeps its
+samples distinct:
+
+.. code-block:: python
+
+   # Multi-sample MAF: samples taken from Tumor_Sample_Barcode
+   maf = MAF.read_maf("cohort.maf")
+
+   # Per-sample file: assign one sample_ID to every row (overrides the column)
+   maf_a = MAF.read_maf("sample_A.maf", sample_ID="sample_A")
+   maf_b = MAF.read_maf("sample_B.maf", sample_ID="sample_B")
+   maf = MAF.merge_mafs([maf_a, maf_b])
+
+.. note::
+
+   If ``sample_ID`` is not given and ``Tumor_Sample_Barcode`` is absent,
+   ``read_maf`` raises ``ValueError`` rather than silently mislabelling
+   samples. Use ``sample_col`` to point at a differently named column.
+
+Computing TMB
+-------------
+
+.. code-block:: python
+
+   table = maf.to_pivot_table()          # provides `mutations_count`, not TMB
+   table = table.calculate_TMB(default_capture_size=40)  # TMB = count / size (Mb)
+   table.sample_metadata["TMB"]
+
+.. note::
+
+   ``to_pivot_table`` does not compute TMB. ``calculate_TMB`` returns a **new**
+   table rather than modifying in place, so capture the return value
+   (``table = table.calculate_TMB(...)``) or the TMB column will not appear.
 
 Subsetting Data
 ---------------

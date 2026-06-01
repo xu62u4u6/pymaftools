@@ -993,7 +993,6 @@ class PivotTable(pd.DataFrame):
 
         if capture_size_dict is not None:
             for group, size in capture_size_dict.items():
-                print(group, size)
                 mask = table.sample_metadata[group_col] == group
                 table.sample_metadata.loc[mask, "capture_size"] = size
 
@@ -1137,6 +1136,10 @@ class PivotTable(pd.DataFrame):
         filter_by_freq : Filter features by frequency threshold
         sort_features : Sort features by metadata columns including frequency
         """
+        # Guard against the silent all-NaN trap: assigning freq by label join
+        # fails silently when feature_metadata.index has drifted from the data
+        # index (e.g. after a bare ``table.index = [...]``). Fail loud instead.
+        self._validate_metadata()
         pivot_table = self.copy()
         freq_data = pd.DataFrame(index=pivot_table.index)
 

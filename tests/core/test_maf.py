@@ -1,7 +1,53 @@
 import pandas as pd
+import pytest
 
 from pymaftools.core.MAF import MAF
 from pymaftools.core.PivotTable import PivotTable
+
+
+# Column header + a few data rows shared by every header-format variant below.
+# Only the leading comment lines differ between files, so a correct reader must
+# return identical content regardless of how many comment lines precede it.
+_MAF_HEADER = "\t".join(
+    [
+        "Hugo_Symbol",
+        "Chromosome",
+        "Start_Position",
+        "End_Position",
+        "Reference_Allele",
+        "Tumor_Seq_Allele1",
+        "Tumor_Seq_Allele2",
+        "Variant_Classification",
+        "Variant_Type",
+        "Protein_position",
+    ]
+)
+_MAF_ROWS = [
+    "TP53\tchr17\t7577120\t7577120\tC\tC\tT\tMissense_Mutation\tSNP\t273/393",
+    "TP53\tchr17\t7578406\t7578406\tG\tG\tA\tNonsense_Mutation\tSNP\t196/393",
+    "EGFR\tchr7\t55259515\t55259515\tT\tT\tG\tMissense_Mutation\tSNP\t858/1210",
+    "KRAS\tchr12\t25398284\t25398284\tC\tC\tA\tMissense_Mutation\tSNP\t12/189",
+]
+
+
+def _write_maf(path, comment_lines):
+    """Write the shared MAF body, prefixed with the given comment lines."""
+    lines = list(comment_lines) + [_MAF_HEADER] + _MAF_ROWS
+    path.write_text("\n".join(lines) + "\n")
+    return path
+
+
+# Header-format variants: (id, list of leading comment lines).
+# "multi_comment" reproduces the exact failure Allison reported
+# (ParserError: Expected 1 fields ..., saw N) on the old skiprows=1 reader.
+_HEADER_FORMATS = [
+    ("no_comment", []),
+    ("one_comment", ["#version 2.4"]),
+    (
+        "multi_comment",
+        ["#version 2.4", "#filedate 20240101", "#annotator vcf2maf"],
+    ),
+]
 
 
 def _build_maf_df() -> pd.DataFrame:
@@ -116,3 +162,159 @@ def test_get_protein_info_returns_mutation_summary():
     assert aa_length == 400
     assert isinstance(mutations, list)
     assert all({"position", "type", "count"}.issubset(m.keys()) for m in mutations)
+
+
+@pytest.mark.parametrize("fmt_id, comment_lines", _HEADER_FORMATS, ids=[f[0] for f in _HEADER_FORMATS])
+def test_read_maf_handles_varying_comment_lines(tmp_path, fmt_id, comment_lines):
+    """read_maf must parse files with 0, 1, or many leading comment lines."""
+    maf_path = _write_maf(tmp_path / f"{fmt_id}.maf", comment_lines)
+
+    maf = MAF.read_maf(maf_path, sample_ID="s1")
+
+    # All required columns present and correctly aligned (no header drift).
+    assert set(MAF.index_col).issubset(maf.columns)
+    assert "Variant_Classification" in maf.columns
+    # 4 data rows, every row tagged with the requested sample_ID.
+    assert len(maf) == 4
+    assert (maf["sample_ID"] == "s1").all()
+    # Composite index built from index_col.
+    assert "TP53|7577120|7577120|C|C|T" in maf.index
+
+
+def test_read_maf_is_identical_across_header_formats(tmp_path):
+    """Same body + different comment headers => identical parsed MAF."""
+    frames = []
+    for fmt_id, comment_lines in _HEADER_FORMATS:
+        path = _write_maf(tmp_path / f"{fmt_id}.maf", comment_lines)
+        maf = MAF.read_maf(path, sample_ID="s1")
+        frames.append(pd.DataFrame(maf).reset_index(drop=True))
+
+    for other in frames[1:]:
+        pd.testing.assert_frame_equal(frames[0], other)
+
+
+def test_read_maf_multi_comment_regression(tmp_path):
+    """Regression for the reported 'Expected 1 fields ... saw N' ParserError.
+
+    The old reader hardcoded skiprows=1, so multiple comment lines left a
+    '#'-comment as the header (1 field) and the real header (N fields) on a
+    later line, raising pandas.errors.ParserError. It must now read cleanly.
+    """
+    maf_path = _write_maf(
+        tmp_path / "multi.maf",
+        ["#version 2.4", "#filedate 20240101", "#annotator vcf2maf"],
+    )
+
+    maf = MAF.read_maf(maf_path, sample_ID="s1")
+
+    assert list(maf["Hugo_Symbol"]) == ["TP53", "TP53", "EGFR", "KRAS"]
+
+
+def test_count_leading_comment_lines(tmp_path):
+    for fmt_id, comment_lines in _HEADER_FORMATS:
+        path = _write_maf(tmp_path / f"{fmt_id}.maf", comment_lines)
+        assert MAF._count_leading_comment_lines(path) == len(comment_lines)
+
+
+def test_read_maf_to_pivot_table_and_tmb_end_to_end(tmp_path):
+    """Full flow: read two single-sample MAFs -> merge -> pivot -> TMB."""
+    path_a = _write_maf(tmp_path / "a.maf", ["#version 2.4"])
+    path_b = _write_maf(
+        tmp_path / "b.maf",
+        ["#version 2.4", "#filedate 20240101"],
+    )
+
+    maf = MAF.merge_mafs(
+        [
+            MAF.read_maf(path_a, sample_ID="sample_A"),
+            MAF.read_maf(path_b, sample_ID="sample_B"),
+        ]
+    )
+    pivot = maf.to_pivot_table()
+
+    # to_pivot_table provides mutations_count but NOT TMB.
+    assert "mutations_count" in pivot.sample_metadata.columns
+    assert "TMB" not in pivot.sample_metadata.columns
+
+    # calculate_TMB returns a NEW table; the original is left untouched.
+    with_tmb = pivot.calculate_TMB(default_capture_size=40)
+    assert "TMB" not in pivot.sample_metadata.columns
+    assert "TMB" in with_tmb.sample_metadata.columns
+
+    expected = (
+        with_tmb.sample_metadata["mutations_count"] / 40
+    )
+    pd.testing.assert_series_equal(
+        with_tmb.sample_metadata["TMB"], expected, check_names=False
+    )
+
+
+# --- sample_ID resolution ---------------------------------------------------
+# A standard multi-sample MAF carries per-row sample identity in
+# Tumor_Sample_Barcode. read_maf must preserve those samples by default,
+# instead of collapsing the whole file into one sample.
+_MULTI_SAMPLE_HEADER = "\t".join(
+    [
+        "Hugo_Symbol",
+        "Start_Position",
+        "End_Position",
+        "Reference_Allele",
+        "Tumor_Seq_Allele1",
+        "Tumor_Seq_Allele2",
+        "Variant_Classification",
+        "Tumor_Sample_Barcode",
+    ]
+)
+_MULTI_SAMPLE_ROWS = [
+    "TP53\t1\t1\tC\tC\tT\tMissense_Mutation\tpatient_1",
+    "EGFR\t2\t2\tA\tA\tG\tMissense_Mutation\tpatient_1",
+    "KRAS\t3\t3\tG\tG\tA\tMissense_Mutation\tpatient_2",
+]
+
+
+def _write_multi_sample_maf(path):
+    path.write_text(
+        "#version 2.4\n"
+        + _MULTI_SAMPLE_HEADER
+        + "\n"
+        + "\n".join(_MULTI_SAMPLE_ROWS)
+        + "\n"
+    )
+    return path
+
+
+def test_read_maf_defaults_sample_id_to_tumor_sample_barcode(tmp_path):
+    """Without sample_ID, per-row Tumor_Sample_Barcode keeps samples distinct."""
+    maf_path = _write_multi_sample_maf(tmp_path / "cohort.maf")
+
+    maf = MAF.read_maf(maf_path)
+
+    assert list(maf["sample_ID"]) == ["patient_1", "patient_1", "patient_2"]
+    # The whole point: a multi-sample MAF yields multiple pivot columns.
+    pivot = maf.to_pivot_table()
+    assert set(pivot.columns) == {"patient_1", "patient_2"}
+
+
+def test_read_maf_explicit_sample_id_overrides_barcode(tmp_path):
+    """Explicit sample_ID still collapses the file to one sample (back-compat)."""
+    maf_path = _write_multi_sample_maf(tmp_path / "cohort.maf")
+
+    maf = MAF.read_maf(maf_path, sample_ID="s1")
+
+    assert (maf["sample_ID"] == "s1").all()
+
+
+def test_read_maf_prefix_suffix_applied_per_row(tmp_path):
+    maf_path = _write_multi_sample_maf(tmp_path / "cohort.maf")
+
+    maf = MAF.read_maf(maf_path, preffix="C_", suffix="_T")
+
+    assert list(maf["sample_ID"]) == ["C_patient_1_T", "C_patient_1_T", "C_patient_2_T"]
+
+
+def test_read_maf_raises_when_no_sample_id_and_no_barcode(tmp_path):
+    """Fail loud rather than silently mislabel when sample identity is unknown."""
+    maf_path = _write_maf(tmp_path / "no_barcode.maf", ["#version 2.4"])
+
+    with pytest.raises(ValueError, match="Tumor_Sample_Barcode"):
+        MAF.read_maf(maf_path)

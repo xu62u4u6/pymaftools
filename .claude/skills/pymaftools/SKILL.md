@@ -18,7 +18,8 @@ pymaftools provides tools for loading, analyzing, and visualizing Mutation Annot
 ```python
 from pymaftools import MAF
 
-maf = MAF.read_maf("path/to/file.maf", sample_id="SampleA")
+maf = MAF.read_maf("path/to/file.maf")                  # samples from Tumor_Sample_Barcode
+maf = MAF.read_maf("path/to/file.maf", sample_ID="SampleA")  # or force one sample_ID
 # Filter to nonsynonymous mutations
 filtered = maf.filter_maf(filter_type="nonsynonymous")
 # Convert to PivotTable (gene x sample matrix)

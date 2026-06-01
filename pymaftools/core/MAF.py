@@ -72,35 +72,100 @@ class MAF(pd.DataFrame):
         "Nonstop_Mutation",
     ]
 
-    @classmethod
-    def read_maf(
-        cls,
+    @staticmethod
+    def _count_leading_comment_lines(
         maf_path: str | os.PathLike,
-        sample_ID: str,
-        preffix: str = "",
-        suffix: str = "",
-    ) -> MAF:
+        comment: str = "#",
+    ) -> int:
         """
-        Read a MAF file and return a MAF object.
+        Count the consecutive comment lines at the top of a MAF file.
+
+        MAF files may begin with zero, one (e.g. the GDC ``#version 2.4``
+        line), or several ``#``-prefixed comment lines before the column
+        header.  This helper reports how many such lines to skip so the
+        header row is parsed correctly regardless of file flavour.
 
         Parameters
         ----------
         maf_path : str or os.PathLike
-            Path to the MAF file (first row is skipped as a comment line).
-        sample_ID : str
-            Sample identifier to assign to all rows.
+            Path to the MAF file.
+        comment : str, default "#"
+            Prefix that marks a comment line.
+
+        Returns
+        -------
+        int
+            Number of leading comment lines to skip.
+        """
+        n = 0
+        with open(maf_path) as handle:
+            for line in handle:
+                if line.startswith(comment):
+                    n += 1
+                else:
+                    break
+        return n
+
+    @classmethod
+    def read_maf(
+        cls,
+        maf_path: str | os.PathLike,
+        sample_ID: str | None = None,
+        preffix: str = "",
+        suffix: str = "",
+        sample_col: str = "Tumor_Sample_Barcode",
+    ) -> MAF:
+        """
+        Read a MAF file and return a MAF object.
+
+        Leading comment lines (``#``-prefixed, such as the GDC
+        ``#version 2.4`` header) are detected and skipped automatically, so
+        files with zero, one, or many comment lines are all read correctly.
+
+        Sample identity is resolved as follows:
+
+        - If ``sample_ID`` is given, every row is assigned that single value
+          (treats the whole file as one sample).
+        - Otherwise the per-row value of ``sample_col``
+          (``Tumor_Sample_Barcode`` by default) is used, so a standard
+          multi-sample MAF keeps its samples distinct.
+
+        Parameters
+        ----------
+        maf_path : str or os.PathLike
+            Path to the MAF file.
+        sample_ID : str or None, default None
+            Sample identifier to assign to all rows.  When ``None`` the
+            ``sample_col`` column is used instead.
         preffix : str, default ""
-            Prefix prepended to the sample ID.
+            Prefix prepended to each sample ID.
         suffix : str, default ""
-            Suffix appended to the sample ID.
+            Suffix appended to each sample ID.
+        sample_col : str, default "Tumor_Sample_Barcode"
+            Column holding the per-row sample identifier, used when
+            ``sample_ID`` is ``None``.
 
         Returns
         -------
         MAF
             A MAF DataFrame with a composite index built from ``index_col``.
+
+        Raises
+        ------
+        ValueError
+            If ``sample_ID`` is ``None`` and ``sample_col`` is not present.
         """
-        maf = cls(pd.read_csv(maf_path, skiprows=1, sep="\t"))
-        maf["sample_ID"] = f"{preffix}{sample_ID}{suffix}"
+        skiprows = cls._count_leading_comment_lines(maf_path)
+        maf = cls(pd.read_csv(maf_path, skiprows=skiprows, sep="\t"))
+        if sample_ID is not None:
+            maf["sample_ID"] = f"{preffix}{sample_ID}{suffix}"
+        elif sample_col in maf.columns:
+            maf["sample_ID"] = preffix + maf[sample_col].astype(str) + suffix
+        else:
+            raise ValueError(
+                f"sample_ID not provided and column '{sample_col}' not found "
+                f"in {maf_path}; pass sample_ID explicitly or set sample_col."
+            )
         maf.index = maf.loc[:, cls.index_col].apply(
             lambda row: "|".join(row.astype(str)), axis=1
         )  # concat column

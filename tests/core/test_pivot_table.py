@@ -117,7 +117,20 @@ class TestPivotTableFrequencyCalculations:
         assert 'LUAD_freq' in table_with_group_freq.feature_metadata.columns
         assert 'LUSC_freq' in table_with_group_freq.feature_metadata.columns
         assert 'freq' in table_with_group_freq.feature_metadata.columns
-    
+
+    def test_add_freq_raises_on_drifted_feature_metadata_index(self, sample_pivot_table):
+        """add_freq must fail loud, not produce a silently all-NaN freq column.
+
+        Setting ``table.index`` directly relabels the data but leaves
+        feature_metadata.index stale; the old label-aligned assignment then
+        wrote freq as all-NaN with no error (the Fig5A freq-disappears bug).
+        """
+        table = sample_pivot_table
+        table.index = [f"renamed_{g}" for g in table.index]  # drift only data index
+
+        with pytest.raises(ValueError, match="feature_metadata index"):
+            table.add_freq()
+
     def test_filter_by_freq(self, sample_pivot_table):
         """Test frequency-based filtering"""
         table = sample_pivot_table.add_freq()

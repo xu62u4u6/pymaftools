@@ -2,6 +2,19 @@
 
 ---
 
+## 🔖 Version 0.4.1 (May 2026)
+
+Bug-fix release targeting cases where pymaftools silently produced wrong output
+on valid input. All changes are backward compatible.
+
+### 🐛 Fixes
+* **`MAF.read_maf` — comment lines**: leading `#` comment lines are now detected and skipped automatically (0, 1, or many). Previously a hardcoded `skiprows=1` caused `ParserError` on files with multiple comment lines and silently dropped the header on files with none.
+* **`MAF.read_maf` — sample identity**: `sample_ID` is now optional and defaults to the per-row `Tumor_Sample_Barcode` column, so a standard multi-sample MAF keeps its samples distinct instead of collapsing into one. Passing `sample_ID` explicitly preserves the previous one-file-one-sample behavior. Raises `ValueError` when neither is available. Added `sample_col` parameter.
+* **`PivotTable.add_freq` — silent NaN**: now validates that `feature_metadata.index` matches the data index and raises `ValueError` instead of writing an all-NaN frequency column when the indices have drifted.
+* **`PivotTable.calculate_TMB`**: removed a stray debug `print`.
+
+---
+
 ## 🔖 Version 0.4.0 (March 2026)
 
 ### 🆕 New Features
