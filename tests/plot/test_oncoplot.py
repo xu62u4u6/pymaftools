@@ -309,3 +309,23 @@ def test_render_legend_pad_adds_named_spacer_column(mutation_table):
     op_pad.render(legend_pad=2)
 
     assert op_pad.gs.ncols == op_no_pad.gs.ncols + 1
+
+
+# --- S6: unified entry + PivotTablePlot rename backward-compat --------------
+
+
+def test_table_plot_oncoplot_entry(mutation_table):
+    """oncoplot is reachable from the same table.plot accessor as the stats
+    plots (unified entry, S6)."""
+    op = mutation_table.plot.oncoplot(figsize=(8, 6))
+    assert isinstance(op, OncoPlot)
+    assert op.pivot_table is mutation_table
+
+
+def test_pivottableplot_rename_backward_compat():
+    """The old PivotTablePlot import path still resolves to the renamed
+    PivotStatsPlot class (S6)."""
+    from pymaftools.plot.PivotTablePlot import PivotTablePlot
+    from pymaftools.plot.PivotStatsPlot import PivotStatsPlot
+
+    assert PivotTablePlot is PivotStatsPlot

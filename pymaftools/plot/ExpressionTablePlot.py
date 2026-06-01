@@ -15,14 +15,14 @@ import pandas as pd
 import seaborn as sns
 from matplotlib.axes import Axes
 
-from .PivotTablePlot import PivotTablePlot
+from .PivotStatsPlot import PivotStatsPlot
 
 
-class ExpressionTablePlot(PivotTablePlot):
+class ExpressionTablePlot(PivotStatsPlot):
     """
     Plotting functionality for ExpressionTable objects.
 
-    Inherits all PivotTablePlot methods (PCA, boxplot, etc.) and adds
+    Inherits all PivotStatsPlot methods (PCA, boxplot, etc.) and adds
     expression-specific visualisations such as volcano plots.
 
     Parameters

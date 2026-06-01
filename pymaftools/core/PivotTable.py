@@ -35,7 +35,7 @@ from .PairwiseMatrix import CooccurrenceMatrix, SimilarityMatrix
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ..plot.PivotTablePlot import PivotTablePlot
+    from ..plot.PivotStatsPlot import PivotStatsPlot
     from .MAF import MAF
 
 
@@ -183,14 +183,15 @@ class PivotTable(pd.DataFrame):
                         setattr(self, attr, source_val.copy())
 
     @property
-    def plot(self) -> "PivotTablePlot":
+    def plot(self) -> "PivotStatsPlot":
         """
         Access plotting functionality for the PivotTable.
 
         Returns
         -------
-        PivotTablePlot
-            Plotting interface providing various visualization methods.
+        PivotStatsPlot
+            Plotting interface: statistical plots (PCA, boxplots) plus an
+            ``oncoplot()`` entry point for the composite oncoplot.
 
         Examples
         --------
@@ -202,11 +203,14 @@ class PivotTable(pd.DataFrame):
         ...     test_col="TMB",
         ...     group_col="subtype"
         ... )
+
+        >>> # Composite oncoplot via the same accessor
+        >>> pivot_table.plot.oncoplot(figsize=(15, 10)).main().add_freq().render()
         """
         # Lazy import to avoid circular dependencies
-        from ..plot.PivotTablePlot import PivotTablePlot
+        from ..plot.PivotStatsPlot import PivotStatsPlot
 
-        return PivotTablePlot(self)
+        return PivotStatsPlot(self)
 
     def _validate_metadata(self) -> None:
         """Validate that metadata indices match DataFrame structure."""

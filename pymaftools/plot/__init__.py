@@ -18,7 +18,12 @@ from .Track import (
     CategoricalTrack,
     NumericTrack,
 )
-from .PivotTablePlot import PivotTablePlot
+from .PivotStatsPlot import PivotStatsPlot
+
+# Backward compatibility: the old name remains importable via its original module
+# path, ``from pymaftools.plot.PivotTablePlot import PivotTablePlot`` (the shim in
+# PivotTablePlot.py). We deliberately do NOT alias ``PivotTablePlot`` at the
+# package top level, because the same-named shim submodule would shadow it.
 from .MethodsPlot import MethodsPlot
 from .ModelPlot import ModelPlot
 
@@ -35,7 +40,7 @@ __all__ = [
     "FreqTrack",
     "CategoricalTrack",
     "NumericTrack",
-    "PivotTablePlot",
+    "PivotStatsPlot",
     "MethodsPlot",
     "ModelPlot",
 ]
