@@ -258,3 +258,54 @@ def test_full_declarative_render_smoke(mutation_table):
     assert len(op.ax_heatmap.collections) >= 1
     for name in ("Mutation", "pathway", "subtype", "sex"):
         assert op.has_legend(name)
+
+
+# --- Stage 4: legend filter / xticklabel params / render spacing -----------
+
+
+def test_mutation_legend_filters_wildtype_and_absent(mutation_table):
+    """P1#4: by default the legend drops wild-type ('False') and any colormap
+    category that does not occur in this cohort."""
+    op = OncoPlot(mutation_table, figsize=(8, 6))
+    op.mutation_heatmap()
+
+    legend = op.legend_manager.legend_dict["Mutation"]
+    assert "False" not in legend  # wild-type sentinel gone
+    assert "Multi_Hit" not in legend  # in the cmap but absent from the data
+    # only variant types actually present remain
+    assert set(legend).issubset(set(VARIANT_TYPES))
+    assert len(legend) >= 1
+
+
+def test_show_all_categories_restores_full_legend(mutation_table):
+    """The escape hatch must bring back the full colormap (minus Unknown)."""
+    op = OncoPlot(mutation_table, figsize=(8, 6))
+    op.mutation_heatmap(show_all_categories=True)
+
+    legend = op.legend_manager.legend_dict["Mutation"]
+    assert "False" in legend  # full colormap includes the wild-type key
+    assert "Multi_Hit" in legend  # and categories absent from the data
+
+
+def test_add_xticklabel_rotation_and_fontsize(mutation_table):
+    """P2#5: add_xticklabel must honour rotation and fontsize instead of a
+    hardcoded rotation=90."""
+    op = OncoPlot(mutation_table, figsize=(8, 6))
+    op.mutation_heatmap()
+    op.add_xticklabel(rotation=45, fontsize=7)
+
+    label = op.ax_heatmap.get_xticklabels()[0]
+    assert label.get_rotation() == 45
+    assert label.get_fontsize() == 7
+
+
+def test_render_legend_pad_adds_named_spacer_column(mutation_table):
+    """legend_pad inserts one explicit spacer column (the named replacement for
+    the old phantom column); without it there is none."""
+    op_no_pad = OncoPlot(mutation_table, figsize=(8, 6)).main().add_freq(side="right")
+    op_no_pad.render(legend_pad=0)
+
+    op_pad = OncoPlot(mutation_table, figsize=(8, 6)).main().add_freq(side="right")
+    op_pad.render(legend_pad=2)
+
+    assert op_pad.gs.ncols == op_no_pad.gs.ncols + 1

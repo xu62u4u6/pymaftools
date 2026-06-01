@@ -110,6 +110,7 @@ class MainMatrixTrack(Track):
         yticklabels: bool = True,
         ytick_fontsize: int = 10,
         show_ylabel: bool = False,
+        show_all_categories: bool = False,
     ) -> None:
         self.table = table
         self.cmap_dict = cmap_dict
@@ -120,6 +121,7 @@ class MainMatrixTrack(Track):
         self.yticklabels = yticklabels
         self.ytick_fontsize = ytick_fontsize
         self.show_ylabel = show_ylabel
+        self.show_all_categories = show_all_categories
 
     def render(self, ax: Axes) -> Axes:
         _fig, ax, _legend_info = draw_categorical_heatmap(
@@ -158,13 +160,27 @@ class MainMatrixTrack(Track):
                 ax.add_patch(rect)
         return ax
 
+    # wild-type / no-mutation sentinels never worth a legend entry. Note the
+    # matrix stores boolean ``False`` for wild-type while the cmap keys it as the
+    # string ``"False"`` — exclude both. (PLOTTING_REVIEW P1#4)
+    _WILDTYPE = frozenset({False, "False", "", None})
+
     def legend_entries(self) -> dict[str, dict]:
-        mutation_legend = {
-            key: self.cmap_dict[key]
-            for key in self.cmap_dict.keys()
-            if key != "Unknown"
+        if self.show_all_categories:
+            legend = {k: v for k, v in self.cmap_dict.items() if k != "Unknown"}
+            return {"Mutation": legend}
+
+        # Default: only categories that actually occur in the matrix and are not
+        # wild-type. Because the matrix uses boolean False (not the string
+        # "False"), "key present in data" already drops wild-type and every cmap
+        # category absent from this cohort; the sentinel set is a belt-and-braces.
+        present = set(pd.unique(self.table.values.ravel()))
+        legend = {
+            k: v
+            for k, v in self.cmap_dict.items()
+            if k != "Unknown" and k in present and k not in self._WILDTYPE
         }
-        return {"Mutation": mutation_legend}
+        return {"Mutation": legend}
 
 
 class BarTrack(Track):

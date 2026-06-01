@@ -317,6 +317,7 @@ class OncoPlot(BasePlot):
         yticklabels: bool = True,
         ytick_fontsize: int | None = None,
         show_ylabel: bool = False,
+        show_all_categories: bool = False,
     ) -> OncoPlot:
         """
         Plot the main mutation heatmap using categorical color coding.
@@ -339,6 +340,10 @@ class OncoPlot(BasePlot):
             Font size for y-axis tick labels (defaults to self.ytick_fontsize)
         show_ylabel : bool, default False
             Whether to show y-axis label
+        show_all_categories : bool, default False
+            If False (default), the legend lists only mutation categories that
+            occur in the data and are not wild-type; set True to force the full
+            colormap (PLOTTING_REVIEW P1#4).
         Returns
         -------
         self : OncoPlot
@@ -361,6 +366,7 @@ class OncoPlot(BasePlot):
             yticklabels=yticklabels,
             ytick_fontsize=ytick_fontsize,
             show_ylabel=show_ylabel,
+            show_all_categories=show_all_categories,
         )
         self.tracks.append(track)
         track.render(self.ax_heatmap)
@@ -482,7 +488,15 @@ class OncoPlot(BasePlot):
             self.feature_metadata, columns, side, cmap_dict, default_cmap, kwargs
         )
 
-    def render(self, fig=None) -> OncoPlot:
+    def render(
+        self,
+        fig=None,
+        *,
+        legend_width: float = 3,
+        legend_pad: float = 0,
+        wspace: float | None = None,
+        hspace: float | None = None,
+    ) -> OncoPlot:
         """Derive the layout from registered tracks and draw them in one pass.
 
         Declarative entry point. Groups registered tracks by ``side`` and builds
@@ -497,7 +511,17 @@ class OncoPlot(BasePlot):
         ----------
         fig : matplotlib.figure.Figure, optional
             Existing figure to draw into. If *None*, a new figure is created.
-            (Stage 4 removes the remaining global-pyplot dependency.)
+            (Retiring the eager ``update_layout``'s global ``plt.close`` is left
+            to the v0.5.0 eager-path removal.)
+        legend_width : float, default 3
+            Relative width of the legend column.
+        legend_pad : float, default 0
+            Relative width of an explicit empty spacer column inserted between the
+            right-side tracks and the legend. This is the named, opt-in
+            replacement for the old hardcoded "phantom column"; 0 means none.
+        wspace, hspace : float, optional
+            Inter-axis spacing; default to the configured ``self.wspace`` /
+            ``self.hspace``.
 
         Returns
         -------
@@ -516,10 +540,12 @@ class OncoPlot(BasePlot):
         main_row = len(top)
         main_col = len(left)
         nrows = len(top) + 1 + len(bottom)
-        ncols = len(left) + 1 + len(right) + 1  # trailing legend column
+        has_pad = legend_pad > 0
+        # cols: left.. + main + right.. + [optional pad spacer] + legend
+        ncols = len(left) + 1 + len(right) + (1 if has_pad else 0) + 1
         legend_col = ncols - 1
 
-        main_w, main_h, legend_w = self.width_ratios[0], self.height_ratios[-1], 3
+        main_w, main_h = self.width_ratios[0], self.height_ratios[-1]
         height_ratios = (
             [t.size for t in top] + [main_h] + [t.size for t in bottom]
         )
@@ -527,7 +553,8 @@ class OncoPlot(BasePlot):
             [t.size for t in left]
             + [main_w]
             + [t.size for t in right]
-            + [legend_w]
+            + ([legend_pad] if has_pad else [])
+            + [legend_width]
         )
 
         if fig is None:
@@ -538,8 +565,8 @@ class OncoPlot(BasePlot):
             ncols,
             width_ratios=width_ratios,
             height_ratios=height_ratios,
-            wspace=self.wspace,
-            hspace=self.hspace,
+            wspace=self.wspace if wspace is None else wspace,
+            hspace=self.hspace if hspace is None else hspace,
             figure=fig,
         )
 
@@ -815,12 +842,21 @@ class OncoPlot(BasePlot):
         )  # Set labels horizontally
         return ax
 
-    def add_xticklabel(self) -> OncoPlot:
+    def add_xticklabel(
+        self, fontsize: int | None = None, rotation: float = 90
+    ) -> OncoPlot:
         """
-        Add x-axis tick labels to the bottom-most subplot.
+        Add x-axis tick labels (sample names) to the bottom-most subplot.
 
         Finds the subplot in the bottom row and first column, then adds
-        sample names as x-axis tick labels with 90-degree rotation.
+        sample names as x-axis tick labels.
+
+        Parameters
+        ----------
+        fontsize : int, optional
+            Font size for the sample labels (matplotlib default if None).
+        rotation : float, default 90
+            Rotation angle of the sample labels.
 
         Returns
         -------
@@ -848,7 +884,9 @@ class OncoPlot(BasePlot):
         # Add xtick labels and xticks
         if target_ax:
             target_ax.set_xticks([i + 0.5 for i in range(len(self.sample_metadata))])
-            target_ax.set_xticklabels(self.sample_metadata.index, rotation=90)
+            target_ax.set_xticklabels(
+                self.sample_metadata.index, rotation=rotation, fontsize=fontsize
+            )
         return self
 
     def numeric_heatmap(
