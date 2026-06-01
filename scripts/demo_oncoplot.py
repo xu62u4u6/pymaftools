@@ -64,16 +64,20 @@ def make_mutation_table(n_genes: int = 15, n_samples: int = 30) -> PivotTable:
     )
     table.feature_metadata["is_driver"] = RNG.choice([True, False], n_genes)
 
+    # drawn last so adding it doesn't perturb the other columns' RNG draws
+    table.sample_metadata["purity"] = RNG.uniform(0.2, 0.95, n_samples)
+
     return table
 
 
 def make_cnv_table(n_genes: int = 15, n_samples: int = 30) -> PivotTable:
     """Build a synthetic numeric (log2 ratio) CNV PivotTable."""
+    rng = np.random.default_rng(1)  # independent of the mutation-table RNG draws
     genes = [f"GENE{i:02d}" for i in range(n_genes)]
     samples = [f"S{i:02d}" for i in range(n_samples)]
-    values = RNG.normal(0.0, 0.8, size=(n_genes, n_samples))
+    values = rng.normal(0.0, 0.8, size=(n_genes, n_samples))
     table = PivotTable(pd.DataFrame(values, index=genes, columns=samples))
-    table.feature_metadata["freq"] = RNG.random(n_genes)
+    table.feature_metadata["freq"] = rng.random(n_genes)
     return table
 
 
@@ -103,18 +107,23 @@ def demo_default(table: PivotTable) -> None:
 
 
 def demo_with_metadata(table: PivotTable) -> None:
-    """Figure 2: oncoplot with categorical + numeric sample-metadata strips."""
+    """Figure 2: oncoplot with categorical + numeric sample-metadata strips.
+
+    Two numeric columns with different cmaps; their colorbars are collected in
+    the legend area (``colorbar="legend"``, the default) so they stay readable
+    instead of cramped insets on the thin strips.
+    """
     op = OncoPlot(
         table,
         figsize=(12, 9),
         categorical_columns=["subtype", "sex"],
-        numeric_columns=["age"],
+        numeric_columns=["age", "purity"],
     )
     op.mutation_heatmap()
     op.plot_freq()
     op.plot_bar()
     op.plot_categorical_metadata()
-    op.plot_numeric_metadata()
+    op.plot_numeric_metadata(cmap_dict={"age": "Blues", "purity": "viridis"})
     op.render()
     op.add_xticklabel()
     op.save(str(OUT_DIR / "demo_oncoplot_metadata.png"))

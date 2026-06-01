@@ -23,6 +23,22 @@ from matplotlib.colors import ListedColormap, Normalize
 from matplotlib.patches import Rectangle
 
 
+def _normalize_colorbar(value: str | bool) -> str:
+    """Coerce a colorbar placement to ``"inset"`` / ``"legend"`` / ``"off"``.
+
+    Accepts the legacy bool (``True`` → ``"inset"``, ``False`` → ``"off"``).
+    """
+    if value is True:
+        return "inset"
+    if value is False:
+        return "off"
+    if value not in ("inset", "legend", "off"):
+        raise ValueError(
+            f"colorbar must be 'inset', 'legend', 'off' or bool; got {value!r}"
+        )
+    return value
+
+
 def draw_categorical_heatmap(
     table,
     category_cmap,
@@ -474,10 +490,15 @@ class CategoricalTrack(Track):
 
 
 class NumericTrack(Track):
-    """Single numeric sample-annotation strip drawn below the matrix.
+    """Single numeric annotation strip with a configurable colorbar.
 
-    Unlike the legacy ``plot_numeric_metadata`` it carries its own colorbar
-    (an inset axis), so the value scale is interpretable (PLOTTING_REVIEW P1#3).
+    The value scale (a colorbar) can be placed in three ways via ``colorbar``:
+
+    - ``"legend"`` (default): contributed to the shared legend area as a stacked
+      colorbar — readable even with several numeric columns (the inset bars get
+      cramped when stacked on thin strips, PLOTTING_REVIEW P1#3).
+    - ``"inset"``: a small colorbar beside the strip itself.
+    - ``"off"``: no colorbar.
     """
 
     side = "bottom"
@@ -488,6 +509,7 @@ class NumericTrack(Track):
         *,
         side: str = "bottom",
         cmap: str = "Blues",
+        name: str | None = None,
         line_color: str = "white",
         linewidths: float = 1,
         alpha: float = 1,
@@ -495,11 +517,13 @@ class NumericTrack(Track):
         annotation_font_size: int = 10,
         fmt: str = ".2f",
         ytick_fontsize: int = 10,
-        cbar: bool = True,
+        colorbar: str | bool = "legend",
     ) -> None:
         self.data = data  # 1xN (sample-aligned) or Nx1 (feature-aligned)
         self.side = side
         self.cmap = cmap
+        # default label: the metadata column name (row for sample, col for feature)
+        self.name = name
         self.line_color = line_color
         self.linewidths = linewidths
         self.alpha = alpha
@@ -507,7 +531,16 @@ class NumericTrack(Track):
         self.annotation_font_size = annotation_font_size
         self.fmt = fmt
         self.ytick_fontsize = ytick_fontsize
-        self.cbar = cbar
+        self.colorbar = _normalize_colorbar(colorbar)
+        self._vmin: float | None = None
+        self._vmax: float | None = None
+
+    @property
+    def label(self) -> str:
+        if self.name is not None:
+            return self.name
+        horizontal = self.side in ("top", "bottom")
+        return str(self.data.index[0] if horizontal else self.data.columns[0])
 
     def render(self, ax: Axes) -> Axes:
         horizontal = self.side in ("top", "bottom")
@@ -519,6 +552,7 @@ class NumericTrack(Track):
         else:
             vmin = float(self.data.min().min())
             vmax = float(self.data.max().max())
+        self._vmin, self._vmax = vmin, vmax
 
         sns.heatmap(
             self.data,
@@ -551,9 +585,21 @@ class NumericTrack(Track):
             )
             ax.set_ylabel("")
 
-        if self.cbar:
+        if self.colorbar == "inset":
             self._draw_colorbar(ax, vmin, vmax)
         return ax
+
+    def colorbar_legend(self) -> dict | None:
+        """Colorbar spec for the shared legend area, or None unless
+        ``colorbar="legend"`` and the track has been rendered (vmin/vmax known)."""
+        if self.colorbar != "legend" or self._vmin is None:
+            return None
+        return {
+            "label": self.label,
+            "colormap": self.cmap,
+            "vmin": self._vmin,
+            "vmax": self._vmax,
+        }
 
     def _draw_colorbar(self, ax: Axes, vmin: float, vmax: float) -> None:
         """Draw a compact colorbar in an inset axis just right of the strip."""

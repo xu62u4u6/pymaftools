@@ -185,23 +185,48 @@ def _total_child_axes(op):
     return sum(len(ax.child_axes) for ax in op.fig.axes)
 
 
-def test_plot_numeric_metadata_colorbar_default_on(mutation_table):
-    """P1#3: a numeric strip carries a colorbar by default, drawn as an inset
-    (child) axis, so the value scale is interpretable."""
+def test_numeric_colorbar_legend_mode_default(mutation_table):
+    """P1#3: by default a numeric column's colorbar goes to the shared legend
+    area (a numeric_legend), readable even with several columns."""
     op = OncoPlot(mutation_table, figsize=(8, 6), numeric_columns=["age"])
-    op.main().plot_numeric_metadata().render()  # cbar defaults True
+    op.main().plot_numeric_metadata().render()  # colorbar defaults "legend"
 
-    num_tracks = [t for t in op.tracks if isinstance(t, NumericTrack)]
-    assert len(num_tracks) == 1
-    assert _total_child_axes(op) == 1  # the inset colorbar
+    assert [t for t in op.tracks if isinstance(t, NumericTrack)]
+    assert "age" in op.legend_manager.numeric_legends
 
 
-def test_plot_numeric_metadata_colorbar_opt_out(mutation_table):
-    """cbar=False must draw no colorbar."""
+def test_numeric_colorbar_inset_mode(mutation_table):
+    """colorbar='inset' draws a small colorbar on the strip itself, not in the
+    legend area."""
     op = OncoPlot(mutation_table, figsize=(8, 6), numeric_columns=["age"])
-    op.main().plot_numeric_metadata(cbar=False).render()
+    op.main().plot_numeric_metadata(colorbar="inset").render()
 
-    assert _total_child_axes(op) == 0  # no colorbar
+    assert "age" not in op.legend_manager.numeric_legends
+    assert _total_child_axes(op) >= 1  # an inset colorbar exists somewhere
+
+
+def test_numeric_colorbar_off(mutation_table):
+    """colorbar='off' (or False) draws no colorbar at all."""
+    op = OncoPlot(mutation_table, figsize=(8, 6), numeric_columns=["age"])
+    op.main().plot_numeric_metadata(colorbar="off").render()
+
+    assert "age" not in op.legend_manager.numeric_legends
+    assert _total_child_axes(op) == 0
+
+
+def test_numeric_colorbar_per_column_cmaps(mutation_table):
+    """Different cmaps per numeric column are honoured (each track keeps its own
+    cmap and contributes its own legend colorbar)."""
+    mutation_table.sample_metadata["score"] = np.linspace(0, 1, mutation_table.shape[1])
+    op = OncoPlot(mutation_table, figsize=(9, 6), numeric_columns=["age", "score"])
+    op.main().plot_numeric_metadata(
+        cmap_dict={"age": "Blues", "score": "coolwarm"}
+    ).render()
+
+    tracks = {t.label: t for t in op.tracks if isinstance(t, NumericTrack)}
+    assert tracks["age"].cmap == "Blues"
+    assert tracks["score"].cmap == "coolwarm"
+    assert {"age", "score"} <= set(op.legend_manager.numeric_legends)
 
 
 # --- Stage 3: feature annotation + multi-side render() ----------------------

@@ -61,6 +61,7 @@ class BasePlot:
         title_fontsize: int = 10,
         legend_spacing: float = 0.08,
         item_spacing: float = 0.02,
+        **kwargs: Any,
     ) -> BasePlot:
         """
         Plot all legends on the specified axis.
@@ -96,6 +97,7 @@ class BasePlot:
             title_fontsize=title_fontsize,
             legend_spacing=legend_spacing,
             item_spacing=item_spacing,
+            **kwargs,
         )
         return self
 

@@ -19,8 +19,8 @@ by a single `render()` call. See `PLOTTING_REVIEW.md` for the full design.
 * **Declarative track API**: `main()`, `add_bar()`, `add_freq()`, `add_sample_annotation()`, `add_feature_annotation()` register tracks; `render()` derives the GridSpec from each track's `side`/`size`. Numeric vs categorical is inferred from column dtype.
 * **Unified entry point**: oncoplots are reachable from the same accessor as the stats plots — `table.plot.oncoplot(...)`.
 * **`main(kind="cnv")`**: continuous (CNV) main matrices go through `render()` too.
-* **Numeric metadata colorbars** (`plot_numeric_metadata`, P1#3): numeric strips now carry a colorbar so the value scale is interpretable (toggle with `cbar=`).
-* **`render()` spacing knobs**: `legend_width`, `legend_pad` (a named spacer replacing the old phantom column), `wspace`, `hspace`.
+* **Numeric metadata colorbars** (`plot_numeric_metadata`, P1#3): numeric strips carry a colorbar so the value scale is interpretable. Placement is a mode — `colorbar="legend"` (default; stacked in the legend area, readable with several numeric columns), `"inset"` (small bar beside the strip), or `"off"`. Per-column cmaps via `cmap_dict=`.
+* **`render()` layout knobs**: `main_width`, `main_height`, `legend_width`, `legend_pad` (a named spacer replacing the old phantom column), `colorbar_width`, `wspace`, `hspace`.
 * **`add_xticklabel(fontsize=, rotation=)`**: was hardcoded to `rotation=90`.
 
 ### 🐛 Fixes

@@ -125,7 +125,7 @@ class OncoPlot(BasePlot):
         cmap_dict: dict | None = None,
         alpha: float = 1,
         linewidths: float = 1,
-        cbar: bool = True,
+        colorbar: str | bool = "legend",
     ) -> OncoPlot:
         """
         Register one numeric sample-annotation track per ``numeric_columns``.
@@ -150,9 +150,11 @@ class OncoPlot(BasePlot):
             Transparency level (0-1)
         linewidths : float, default 1
             Width of lines between cells
-        cbar : bool, default True
-            Whether to draw a per-column colorbar (an inset axis) so the value
-            scale is interpretable (PLOTTING_REVIEW P1#3).
+        colorbar : {"legend", "inset", "off"}, default "legend"
+            Where to draw each column's colorbar: ``"legend"`` stacks them in the
+            shared legend area (best with several numeric columns), ``"inset"``
+            puts a small one beside each strip, ``"off"`` none. Accepts a bool
+            (True→inset, False→off). (PLOTTING_REVIEW P1#3.)
         Returns
         -------
         self : OncoPlot
@@ -165,6 +167,7 @@ class OncoPlot(BasePlot):
                     self.sample_metadata[[col]].T,
                     side="bottom",
                     cmap=col_cmap,
+                    name=col,
                     line_color=self.line_color,
                     linewidths=linewidths,
                     alpha=alpha,
@@ -172,7 +175,7 @@ class OncoPlot(BasePlot):
                     annotation_font_size=annotation_font_size,
                     fmt=fmt,
                     ytick_fontsize=self.ytick_fontsize,
-                    cbar=cbar,
+                    colorbar=colorbar,
                 )
             )
         return self
@@ -331,6 +334,7 @@ class OncoPlot(BasePlot):
                 track = NumericTrack(
                     data,
                     side=side,
+                    name=col,
                     line_color=self.line_color,
                     ytick_fontsize=self.ytick_fontsize,
                     **kwargs,
@@ -390,8 +394,11 @@ class OncoPlot(BasePlot):
         self,
         fig=None,
         *,
+        main_width: float | None = None,
+        main_height: float | None = None,
         legend_width: float = 3,
         legend_pad: float = 0,
+        colorbar_width: float = 0.55,
         wspace: float | None = None,
         hspace: float | None = None,
     ) -> OncoPlot:
@@ -411,12 +418,18 @@ class OncoPlot(BasePlot):
             Existing figure to draw into. If *None*, a new figure is created via
             ``plt.figure`` (the only remaining global-pyplot touch; pass ``fig``
             to embed the oncoplot in a larger figure).
+        main_width, main_height : float, optional
+            Relative size of the main matrix column / row. Default to
+            ``width_ratios[0]`` / ``height_ratios[-1]`` from ``set_config``.
         legend_width : float, default 3
             Relative width of the legend column.
         legend_pad : float, default 0
             Relative width of an explicit empty spacer column inserted between the
             right-side tracks and the legend. This is the named, opt-in
             replacement for the old hardcoded "phantom column"; 0 means none.
+        colorbar_width : float, default 0.55
+            Width (axes fraction) of the stacked numeric colorbars drawn in the
+            legend area for tracks with ``colorbar="legend"``.
         wspace, hspace : float, optional
             Inter-axis spacing; default to the configured ``self.wspace`` /
             ``self.hspace``.
@@ -443,7 +456,8 @@ class OncoPlot(BasePlot):
         ncols = len(left) + 1 + len(right) + (1 if has_pad else 0) + 1
         legend_col = ncols - 1
 
-        main_w, main_h = self.width_ratios[0], self.height_ratios[-1]
+        main_w = self.width_ratios[0] if main_width is None else main_width
+        main_h = self.height_ratios[-1] if main_height is None else main_height
         height_ratios = (
             [t.size for t in top] + [main_h] + [t.size for t in bottom]
         )
@@ -490,20 +504,31 @@ class OncoPlot(BasePlot):
         for i, track in enumerate(right):
             track.render(fig.add_subplot(self.gs[main_row, main_col + 1 + i]))
 
-        # legends: single source of truth, gathered from every track
+        # legends: single source of truth, gathered from every track —
+        # categorical swatches plus any numeric tracks set to colorbar="legend".
         self.clear_legends()
         for track in self.tracks:
             for name, color_dict in (track.legend_entries() or {}).items():
                 self.add_legend(name, color_dict)
+            spec = track.colorbar_legend() if hasattr(track, "colorbar_legend") else None
+            if spec:
+                self.legend_manager.add_numeric_legend(
+                    spec["label"], spec["colormap"], spec["vmin"], spec["vmax"]
+                )
 
-        if numeric_main and not self.legend_manager.legend_dict:
+        lm = self.legend_manager
+        if numeric_main and not lm.legend_dict and not lm.numeric_legends:
+            # CNV-only oncoplot: a full colorbar fills the empty legend column,
+            # anchored west so the thin (aspect-constrained) bar hugs the matrix.
             cbar = main_track.draw_colorbar(self.ax_legend)
-            # The aspect-constrained colorbar is a thin bar; anchor it to the
-            # west (heatmap) side of the legend column so it hugs the matrix
-            # instead of floating in the column's centre.
             cbar.ax.set_anchor("W")
         else:
-            self.plot_all_legends()
+            if numeric_main:
+                # combined plot: the matrix scale joins the stacked legend colorbars
+                lm.add_numeric_legend(
+                    "value", main_track.cmap, main_track._vmin, main_track._vmax
+                )
+            self.plot_all_legends(colorbar_width=colorbar_width)
         return self
 
     def plot_bar(
