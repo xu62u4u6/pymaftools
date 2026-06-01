@@ -11,6 +11,7 @@ sample/feature annotation tracks come in later stages.
 
 from __future__ import annotations
 
+import copy
 from abc import ABC, abstractmethod
 
 import matplotlib.pyplot as plt
@@ -103,6 +104,13 @@ class Track(ABC):
         """Return ``{legend_name: {category: color}}`` contributed to the
         shared legend, or ``None`` if this track has no legend."""
         return None
+
+    def subset(self, feat=None, samp=None) -> "Track":
+        """Return a copy restricted to the given feature / sample integer
+        positions, for grouped (sectioned) rendering. ``feat``/``samp`` are
+        position arrays over the matrix rows / columns, or None for all.
+        Overridden by tracks that hold axis-aligned data."""
+        return self
 
 
 class MainMatrixTrack(Track):
@@ -197,6 +205,16 @@ class MainMatrixTrack(Track):
             if k != "Unknown" and k in present and k not in self._WILDTYPE
         }
         return {"Mutation": legend}
+
+    def subset(self, feat=None, samp=None) -> "MainMatrixTrack":
+        new = copy.copy(self)
+        table = self.table
+        if feat is not None:
+            table = table.iloc[feat]
+        if samp is not None:
+            table = table.iloc[:, samp]
+        new.table = table
+        return new
 
 
 class NumericMatrixTrack(Track):
@@ -315,6 +333,16 @@ class NumericMatrixTrack(Track):
                 cbar.ax.yaxis.set_major_formatter(ticker.FormatStrFormatter("%.2f"))
         return cbar
 
+    def subset(self, feat=None, samp=None) -> "NumericMatrixTrack":
+        new = copy.copy(self)
+        table = self.table
+        if feat is not None:
+            table = table.iloc[feat]
+        if samp is not None:
+            table = table.iloc[:, samp]
+        new.table = table
+        return new
+
 
 class BarTrack(Track):
     """Per-sample bar strip (e.g. TMB) drawn above the matrix."""
@@ -357,6 +385,12 @@ class BarTrack(Track):
         ax.set_ylabel(self.label, fontsize=self.ylabel_size)
         return ax
 
+    def subset(self, feat=None, samp=None) -> "BarTrack":
+        new = copy.copy(self)
+        if samp is not None:
+            new.values = self.values[samp]
+        return new
+
 
 class FreqTrack(Track):
     """Per-feature frequency annotation column drawn right of the matrix."""
@@ -371,12 +405,17 @@ class FreqTrack(Track):
         annot_fontsize: int = 9,
         linewidths: float = 1,
         xtick_fontsize: int = 9,
+        vmin: float | None = None,
+        vmax: float | None = None,
     ) -> None:
         self.freq_data = freq_data
         self.line_color = line_color
         self.annot_fontsize = annot_fontsize
         self.linewidths = linewidths
         self.xtick_fontsize = xtick_fontsize
+        # explicit range keeps the blue scale consistent across grouped sections
+        self.vmin = vmin
+        self.vmax = vmax
 
     def render(self, ax: Axes) -> Axes:
         sns.heatmap(
@@ -391,11 +430,19 @@ class FreqTrack(Track):
             fmt=".2f",
             annot_kws={"size": self.annot_fontsize},
             cmap="Blues",
+            vmin=self.vmin,
+            vmax=self.vmax,
         )
         ax.tick_params(axis="x", labelsize=self.xtick_fontsize)
         ax.set_ylabel("")
         ax.set_yticks([])  # hide y-axis
         return ax
+
+    def subset(self, feat=None, samp=None) -> "FreqTrack":
+        new = copy.copy(self)
+        if feat is not None:
+            new.freq_data = self.freq_data.iloc[feat]
+        return new
 
 
 class CategoricalTrack(Track):
@@ -488,6 +535,17 @@ class CategoricalTrack(Track):
     def legend_entries(self) -> dict[str, dict]:
         return {self.name: self.column_cmap}
 
+    def subset(self, feat=None, samp=None) -> "CategoricalTrack":
+        new = copy.copy(self)
+        data = self.data
+        if self.side in ("top", "bottom"):
+            if samp is not None:
+                data = data.iloc[:, samp]
+        elif feat is not None:
+            data = data.iloc[feat]
+        new.data = data
+        return new
+
 
 class NumericTrack(Track):
     """Single numeric annotation strip with a configurable colorbar.
@@ -518,6 +576,8 @@ class NumericTrack(Track):
         fmt: str = ".2f",
         ytick_fontsize: int = 10,
         colorbar: str | bool = "legend",
+        vmin: float | None = None,
+        vmax: float | None = None,
     ) -> None:
         self.data = data  # 1xN (sample-aligned) or Nx1 (feature-aligned)
         self.side = side
@@ -532,6 +592,9 @@ class NumericTrack(Track):
         self.fmt = fmt
         self.ytick_fontsize = ytick_fontsize
         self.colorbar = _normalize_colorbar(colorbar)
+        # explicit range overrides data-derived range (shared across sections)
+        self.vmin = vmin
+        self.vmax = vmax
         self._vmin: float | None = None
         self._vmax: float | None = None
 
@@ -544,9 +607,11 @@ class NumericTrack(Track):
 
     def render(self, ax: Axes) -> Axes:
         horizontal = self.side in ("top", "bottom")
-        # Color range: symmetric around 0 for the diverging "coolwarm" map,
-        # otherwise span the data (matches legacy plot_numeric_metadata).
-        if self.cmap == "coolwarm":
+        # Color range: explicit if given (shared across grouped sections), else
+        # symmetric around 0 for the diverging "coolwarm" map, otherwise data span.
+        if self.vmin is not None and self.vmax is not None:
+            vmin, vmax = self.vmin, self.vmax
+        elif self.cmap == "coolwarm":
             vextreme = max(abs(self.data.min().min()), abs(self.data.max().max()))
             vmin, vmax = -vextreme, vextreme
         else:
@@ -591,14 +656,20 @@ class NumericTrack(Track):
 
     def colorbar_legend(self) -> dict | None:
         """Colorbar spec for the shared legend area, or None unless
-        ``colorbar="legend"`` and the track has been rendered (vmin/vmax known)."""
-        if self.colorbar != "legend" or self._vmin is None:
+        ``colorbar="legend"`` and a range is known (explicit, or set by render).
+        Explicit range is preferred so grouped rendering — which renders sliced
+        copies, not this instance — still contributes the legend."""
+        if self.colorbar != "legend":
+            return None
+        vmin = self.vmin if self.vmin is not None else self._vmin
+        vmax = self.vmax if self.vmax is not None else self._vmax
+        if vmin is None:
             return None
         return {
             "label": self.label,
             "colormap": self.cmap,
-            "vmin": self._vmin,
-            "vmax": self._vmax,
+            "vmin": vmin,
+            "vmax": vmax,
         }
 
     def _draw_colorbar(self, ax: Axes, vmin: float, vmax: float) -> None:
@@ -612,3 +683,14 @@ class NumericTrack(Track):
         cbar.ax.tick_params(labelsize=7, length=2, width=0.5)
         for spine in cbar.ax.spines.values():
             spine.set_visible(False)
+
+    def subset(self, feat=None, samp=None) -> "NumericTrack":
+        new = copy.copy(self)
+        data = self.data
+        if self.side in ("top", "bottom"):
+            if samp is not None:
+                data = data.iloc[:, samp]
+        elif feat is not None:
+            data = data.iloc[feat]
+        new.data = data
+        return new

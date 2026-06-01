@@ -175,12 +175,10 @@ def demo_grouped(table: PivotTable) -> None:
         .main()
         .add_bar("TMB", side="top")
         .add_freq(side="right")
-        .add_sample_annotation(["sex"], side="bottom")
         .group_features(by="pathway")
         .group_samples(by="subtype")
         .render()
     )
-    op.add_xticklabel()
     op.save(str(OUT_DIR / "demo_oncoplot_grouped.png"))
     op.close()
 

@@ -371,57 +371,56 @@ def test_table_plot_oncoplot_entry(mutation_table):
     assert op.pivot_table is mutation_table
 
 
-def test_grouping_draws_separators_and_titles():
-    """group_features/group_samples draw an internal separator per group
-    boundary (on the matrix) and a title per group, in both directions."""
+def _grouped_table():
     rng = np.random.default_rng(2)
     genes = [f"g{i}" for i in range(6)]
     samples = [f"s{i}" for i in range(8)]
     m = np.full((6, 8), False, dtype=object)
-    mut = rng.random((6, 8)) < 0.4
-    m[mut] = "Missense_Mutation"
+    m[rng.random((6, 8)) < 0.4] = "Missense_Mutation"
     t = PivotTable(pd.DataFrame(m, index=genes, columns=samples))
     t.feature_metadata["pathway"] = ["A", "A", "B", "B", "C", "C"]  # 3 groups
     t.sample_metadata["grp"] = ["X", "X", "X", "X", "Y", "Y", "Y", "Y"]  # 2 groups
+    t.sample_metadata["TMB"] = rng.gamma(2, 1, 8)
+    return t
 
+
+def test_grouping_sections_matrix_and_titles():
+    """group_features/group_samples split the matrix into Gf x Gs section axes
+    (real gaps) and draw a title per group in both directions."""
     op = (
-        OncoPlot(t, figsize=(7, 5))
+        OncoPlot(_grouped_table(), figsize=(7, 5))
         .main()
         .group_features(by="pathway")
         .group_samples(by="grp")
         .render()
     )
 
-    # internal boundaries: 3 feature groups -> 2 hlines; 2 sample groups -> 1 vline
-    assert len(op.ax_heatmap.lines) == (3 - 1) + (2 - 1)
-    titles = {txt.get_text() for txt in op.ax_heatmap.texts}
+    # 3 feature groups x 2 sample groups = 6 heatmap sub-axes (each a QuadMesh)
+    heatmap_axes = [ax for ax in op.fig.axes if ax.collections]
+    assert len(heatmap_axes) == 3 * 2
+    titles = {txt.get_text() for ax in op.fig.axes for txt in ax.texts}
     assert {"A", "B", "C", "X", "Y"} <= titles
 
 
-def test_group_separators_span_aligned_tracks():
-    """A sample-group separator is drawn on every sample-aligned axis (matrix +
-    bar + bottom strips), not just the matrix."""
-    rng = np.random.default_rng(3)
-    genes = [f"g{i}" for i in range(4)]
-    samples = [f"s{i}" for i in range(6)]
-    m = np.full((4, 6), False, dtype=object)
-    m[rng.random((4, 6)) < 0.4] = "Missense_Mutation"
-    t = PivotTable(pd.DataFrame(m, index=genes, columns=samples))
-    t.sample_metadata["grp"] = ["X", "X", "X", "Y", "Y", "Y"]
-    t.sample_metadata["TMB"] = rng.gamma(2, 1, 6)
-
+def test_grouping_sections_aligned_tracks_with_shared_scale():
+    """A sample-aligned track (TMB bar) is split per sample group, and the bar's
+    y-range is pinned (shared) before slicing so the sections stay comparable."""
     op = (
-        OncoPlot(t, figsize=(7, 5))
+        OncoPlot(_grouped_table(), figsize=(7, 5))
         .main()
         .add_bar("TMB", side="top")
         .group_samples(by="grp")
         .render()
     )
 
-    # one internal boundary -> one vline on the heatmap AND on the bar axis
-    assert len(op.ax_heatmap.lines) == 1
-    bar_ax = next(a for a in op.fig.axes if a.get_ylabel() == "TMB")
-    assert len(bar_ax.lines) == 1
+    # no feature grouping -> 1 row; 2 sample groups -> 2 matrix sections
+    heatmap_axes = [ax for ax in op.fig.axes if ax.collections]
+    assert len(heatmap_axes) == 2
+    # the bar got a shared y-range fixed before the per-section slicing
+    bar = next(tr for tr in op.tracks if isinstance(tr, BarTrack))
+    assert getattr(bar, "_shared_ymax", None) is not None
+    # only the first bar section keeps the y-label
+    assert sum(a.get_ylabel() == "TMB" for a in op.fig.axes) == 1
 
 
 def test_pivottableplot_rename_backward_compat():

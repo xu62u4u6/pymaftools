@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
@@ -398,24 +399,25 @@ class OncoPlot(BasePlot):
         self,
         by: str,
         *,
+        gap: float = 0.5,
         show_titles: bool = True,
         title_fontsize: int = 11,
-        line_color: str = "black",
-        line_width: float = 1.5,
+        title_align: str = "start",
     ) -> OncoPlot:
-        """Mark row (feature) groups from a ``feature_metadata`` column.
+        """Split rows (features) into groups from a ``feature_metadata`` column.
 
-        ``render()`` then draws a separator line between consecutive groups (on
-        the matrix and every feature-aligned track) and, if ``show_titles``, a
-        rotated group label on the left. Features must already be contiguous by
+        ``render()`` draws each group as its own section with a whitespace
+        ``gap`` (in matrix-cell units) between them and, if ``show_titles``, a
+        rotated group label on the left (``title_align`` = ``"start"`` top /
+        ``"center"`` / ``"end"`` bottom). Features must already be contiguous by
         group — sort first, e.g. ``table.sort_features(by="pathway")``.
         """
         self._feature_groups = {
             "by": by,
+            "gap": gap,
             "show_titles": show_titles,
             "title_fontsize": title_fontsize,
-            "line_color": line_color,
-            "line_width": line_width,
+            "title_align": title_align,
         }
         return self
 
@@ -423,24 +425,25 @@ class OncoPlot(BasePlot):
         self,
         by: str,
         *,
+        gap: float = 0.5,
         show_titles: bool = True,
         title_fontsize: int = 11,
-        line_color: str = "black",
-        line_width: float = 1.5,
+        title_align: str = "start",
     ) -> OncoPlot:
-        """Mark column (sample) groups from a ``sample_metadata`` column.
+        """Split columns (samples) into groups from a ``sample_metadata`` column.
 
-        ``render()`` draws a separator line between consecutive groups (on the
-        matrix and every sample-aligned track) and, if ``show_titles``, a group
-        label on top. Samples must already be contiguous by group — sort first,
-        e.g. ``table.sort_samples_by_group(group_col="subtype", ...)``.
+        ``render()`` draws each group as its own section with a whitespace
+        ``gap`` (in matrix-cell units) between them and, if ``show_titles``, a
+        group label on top (``title_align`` = ``"start"`` left / ``"center"`` /
+        ``"end"`` right). Samples must already be contiguous by group — sort
+        first, e.g. ``table.sort_samples_by_group(group_col="subtype", ...)``.
         """
         self._sample_groups = {
             "by": by,
+            "gap": gap,
             "show_titles": show_titles,
             "title_fontsize": title_fontsize,
-            "line_color": line_color,
-            "line_width": line_width,
+            "title_align": title_align,
         }
         return self
 
@@ -456,57 +459,30 @@ class OncoPlot(BasePlot):
                 start = i
         return runs
 
-    def _draw_axis_groups(self, axis, cfg, aligned_axes, title_axes) -> None:
-        """Draw group separator lines (across the matrix + aligned tracks) and
-        group titles for one axis. ``axis`` is ``"sample"`` or ``"feature"``."""
-        by = cfg["by"]
+    def _axis_sections(self, axis: str) -> list[tuple]:
+        """Contiguous group sections along an axis → list of (label, positions).
+
+        ``positions`` are integer positions into the matrix rows (feature) or
+        columns (sample) in their current order. A single ``(None, all)`` section
+        when that axis is not grouped."""
         if axis == "sample":
-            labels = self.sample_metadata.loc[list(self.pivot_table.columns), by].tolist()
+            cfg = self._sample_groups
+            order = list(self.pivot_table.columns)
+            n = len(order)
+            if not cfg:
+                return [(None, np.arange(n))]
+            labels = self.sample_metadata.loc[order, cfg["by"]].tolist()
         else:
-            labels = self.feature_metadata.loc[list(self.pivot_table.index), by].tolist()
-
-        runs = self._group_runs(labels)
-        boundaries = [end for _label, _start, end in runs[:-1]]  # internal only
-
-        for ax in aligned_axes:
-            for b in boundaries:
-                if axis == "sample":
-                    ax.axvline(b, color=cfg["line_color"], lw=cfg["line_width"])
-                else:
-                    ax.axhline(b, color=cfg["line_color"], lw=cfg["line_width"])
-
-        if not cfg["show_titles"]:
-            return
-        title_ax = title_axes[0] if axis == "sample" else title_axes[-1]
-        for label, start, end in runs:
-            center = (start + end) / 2
-            if axis == "sample":
-                title_ax.annotate(
-                    str(label),
-                    xy=(center, 1.0),
-                    xycoords=("data", "axes fraction"),
-                    xytext=(0, 5),
-                    textcoords="offset points",
-                    ha="center",
-                    va="bottom",
-                    fontsize=cfg["title_fontsize"],
-                    fontweight="bold",
-                    annotation_clip=False,
-                )
-            else:
-                title_ax.annotate(
-                    str(label),
-                    xy=(0.0, center),
-                    xycoords=("axes fraction", "data"),
-                    xytext=(-40, 0),
-                    textcoords="offset points",
-                    ha="right",
-                    va="center",
-                    rotation=90,
-                    fontsize=cfg["title_fontsize"],
-                    fontweight="bold",
-                    annotation_clip=False,
-                )
+            cfg = self._feature_groups
+            order = list(self.pivot_table.index)
+            n = len(order)
+            if not cfg:
+                return [(None, np.arange(n))]
+            labels = self.feature_metadata.loc[order, cfg["by"]].tolist()
+        return [
+            (label, np.arange(start, end))
+            for label, start, end in self._group_runs(labels)
+        ]
 
     def render(
         self,
@@ -566,88 +542,29 @@ class OncoPlot(BasePlot):
         left = [t for t in self.tracks if t.side == "left"]
         right = [t for t in self.tracks if t.side == "right"]
 
-        main_row = len(top)
-        main_col = len(left)
-        nrows = len(top) + 1 + len(bottom)
-        has_pad = legend_pad > 0
-        # cols: left.. + main + right.. + [optional pad spacer] + legend
-        ncols = len(left) + 1 + len(right) + (1 if has_pad else 0) + 1
-        legend_col = ncols - 1
-
-        main_w = self.width_ratios[0] if main_width is None else main_width
-        main_h = self.height_ratios[-1] if main_height is None else main_height
-        height_ratios = (
-            [t.size for t in top] + [main_h] + [t.size for t in bottom]
-        )
-        width_ratios = (
-            [t.size for t in left]
-            + [main_w]
-            + [t.size for t in right]
-            + ([legend_pad] if has_pad else [])
-            + [legend_width]
-        )
-
-        if fig is None:
-            fig = plt.figure(figsize=self.figsize)
-        self.fig = fig
-        self.gs = GridSpec(
-            nrows,
-            ncols,
-            width_ratios=width_ratios,
-            height_ratios=height_ratios,
-            wspace=self.wspace if wspace is None else wspace,
-            hspace=self.hspace if hspace is None else hspace,
-            figure=fig,
-        )
-
-        self.ax_heatmap = fig.add_subplot(self.gs[main_row, main_col])
-        self.ax_legend = fig.add_subplot(self.gs[main_row, legend_col])
-
         main_track = main_tracks[0]
         # A continuous main matrix has a colorbar, not categorical swatches: put
         # it in the (otherwise empty) legend column instead of an inset.
         numeric_main = isinstance(main_track, NumericMatrixTrack)
         if numeric_main:
             main_track.cbar = False
-        main_track.render(self.ax_heatmap)
 
-        # sample-aligned tracks share the matrix column; collect axes so group
-        # separators can be drawn across the matrix and every aligned track.
-        top_axes, bottom_axes, left_axes, right_axes = [], [], [], []
-        for i, track in enumerate(top):
-            ax = fig.add_subplot(self.gs[i, main_col])
-            track.render(ax)
-            top_axes.append(ax)
-        for i, track in enumerate(bottom):
-            ax = fig.add_subplot(self.gs[main_row + 1 + i, main_col])
-            track.render(ax)
-            bottom_axes.append(ax)
-        # feature-aligned tracks share the matrix row; registered outward from it
-        for i, track in enumerate(left):
-            ax = fig.add_subplot(self.gs[main_row, main_col - 1 - i])
-            track.render(ax)
-            left_axes.append(ax)
-        for i, track in enumerate(right):
-            ax = fig.add_subplot(self.gs[main_row, main_col + 1 + i])
-            track.render(ax)
-            right_axes.append(ax)
+        main_w = self.width_ratios[0] if main_width is None else main_width
+        main_h = self.height_ratios[-1] if main_height is None else main_height
+        if fig is None:
+            fig = plt.figure(figsize=self.figsize)
+        self.fig = fig
+        wspace = self.wspace if wspace is None else wspace
+        hspace = self.hspace if hspace is None else hspace
 
-        # Group separators + titles (light: overlay lines on aligned axes; no
-        # physical gaps / no per-track sectioning).
-        if self._sample_groups:
-            self._draw_axis_groups(
-                "sample",
-                self._sample_groups,
-                aligned_axes=[self.ax_heatmap, *top_axes, *bottom_axes],
-                title_axes=top_axes or [self.ax_heatmap],
-            )
-        if self._feature_groups:
-            self._draw_axis_groups(
-                "feature",
-                self._feature_groups,
-                aligned_axes=[self.ax_heatmap, *left_axes, *right_axes],
-                title_axes=left_axes or [self.ax_heatmap],
-            )
+        layout = self._render_sectioned if (
+            self._feature_groups or self._sample_groups
+        ) else self._render_simple
+        layout(
+            fig, main_track, top, bottom, left, right,
+            main_w=main_w, main_h=main_h, legend_width=legend_width,
+            legend_pad=legend_pad, wspace=wspace, hspace=hspace,
+        )
 
         # legends: single source of truth, gathered from every track —
         # categorical swatches plus any numeric tracks set to colorbar="legend".
@@ -675,6 +592,199 @@ class OncoPlot(BasePlot):
                 )
             self.plot_all_legends(colorbar_width=colorbar_width)
         return self
+
+    def _render_simple(
+        self, fig, main_track, top, bottom, left, right, *,
+        main_w, main_h, legend_width, legend_pad, wspace, hspace,
+    ) -> None:
+        """Ungrouped layout: one cell per track along each axis."""
+        main_row, main_col = len(top), len(left)
+        has_pad = legend_pad > 0
+        ncols = len(left) + 1 + len(right) + (1 if has_pad else 0) + 1
+        legend_col = ncols - 1
+        height_ratios = [t.size for t in top] + [main_h] + [t.size for t in bottom]
+        width_ratios = (
+            [t.size for t in left] + [main_w] + [t.size for t in right]
+            + ([legend_pad] if has_pad else []) + [legend_width]
+        )
+        self.gs = GridSpec(
+            len(top) + 1 + len(bottom), ncols, width_ratios=width_ratios,
+            height_ratios=height_ratios, wspace=wspace, hspace=hspace, figure=fig,
+        )
+        self.ax_heatmap = fig.add_subplot(self.gs[main_row, main_col])
+        self.ax_legend = fig.add_subplot(self.gs[main_row, legend_col])
+        main_track.render(self.ax_heatmap)
+        for i, t in enumerate(top):
+            t.render(fig.add_subplot(self.gs[i, main_col]))
+        for i, t in enumerate(bottom):
+            t.render(fig.add_subplot(self.gs[main_row + 1 + i, main_col]))
+        for i, t in enumerate(left):
+            t.render(fig.add_subplot(self.gs[main_row, main_col - 1 - i]))
+        for i, t in enumerate(right):
+            t.render(fig.add_subplot(self.gs[main_row, main_col + 1 + i]))
+
+    @staticmethod
+    def _fix_shared_scales(main_track, top, bottom, right) -> None:
+        """Pin each non-categorical track's value range to its full data so the
+        sections (which render sliced copies) stay on one consistent scale."""
+        if isinstance(main_track, NumericMatrixTrack) and main_track.vmin is None:
+            tbl = main_track.table
+            if main_track.symmetric:
+                ext = max(abs(tbl.min().min()), abs(tbl.max().max()))
+                main_track.vmin, main_track.vmax = -ext, ext
+            else:
+                main_track.vmin = float(tbl.min().min())
+                main_track.vmax = float(tbl.max().max())
+            main_track._vmin, main_track._vmax = main_track.vmin, main_track.vmax
+        for t in [*top, *bottom, *right]:
+            if isinstance(t, NumericTrack) and t.vmin is None:
+                d = t.data
+                if t.cmap == "coolwarm":
+                    ext = max(abs(d.min().min()), abs(d.max().max()))
+                    t.vmin, t.vmax = -ext, ext
+                else:
+                    t.vmin, t.vmax = float(d.min().min()), float(d.max().max())
+            elif isinstance(t, FreqTrack) and t.vmin is None:
+                d = t.freq_data
+                t.vmin, t.vmax = float(d.min().min()), float(d.max().max())
+            elif isinstance(t, BarTrack):
+                t._shared_ymax = float(max(t.values)) if len(t.values) else 1.0
+
+    def _render_sectioned(
+        self, fig, main_track, top, bottom, left, right, *,
+        main_w, main_h, legend_width, legend_pad, wspace, hspace,
+    ) -> None:
+        """Grouped layout: split the matrix into sections with whitespace gaps,
+        rendering a sliced copy of each track per section, plus group titles."""
+        fsecs = self._axis_sections("feature")
+        ssecs = self._axis_sections("sample")
+        gf, gs_ = len(fsecs), len(ssecs)
+        fcfg, scfg = self._feature_groups, self._sample_groups
+        feat_gap = fcfg["gap"] if fcfg else 0.0
+        samp_gap = scfg["gap"] if scfg else 0.0
+        show_ft = bool(fcfg and fcfg["show_titles"])
+        show_st = bool(scfg and scfg["show_titles"])
+        n_feat, n_samp = self.pivot_table.shape
+
+        self._fix_shared_scales(main_track, top, bottom, right)
+
+        height_ratios: list[float] = []
+        def add_row(h):
+            height_ratios.append(h)
+            return len(height_ratios) - 1
+
+        stitle_row = add_row(1.0) if show_st else None
+        top_rows = [add_row(t.size) for t in top]
+        feat_rows = []
+        for fi, (_lbl, pos) in enumerate(fsecs):
+            feat_rows.append(add_row(main_h * len(pos) / n_feat))
+            if fi < gf - 1:
+                add_row(feat_gap)
+        bottom_rows = [add_row(t.size) for t in bottom]
+
+        width_ratios: list[float] = []
+        def add_col(w):
+            width_ratios.append(w)
+            return len(width_ratios) - 1
+
+        ftitle_col = add_col(3.0) if show_ft else None
+        left_cols = [add_col(t.size) for t in left]
+        samp_cols = []
+        for si, (_lbl, pos) in enumerate(ssecs):
+            samp_cols.append(add_col(main_w * len(pos) / n_samp))
+            if si < gs_ - 1:
+                add_col(samp_gap)
+        right_cols = [add_col(t.size) for t in right]
+        if legend_pad > 0:
+            add_col(legend_pad)
+        legend_col = add_col(legend_width)
+
+        self.gs = GridSpec(
+            len(height_ratios), len(width_ratios), width_ratios=width_ratios,
+            height_ratios=height_ratios, wspace=wspace, hspace=hspace, figure=fig,
+        )
+
+        # main matrix sub-axes (gf x gs)
+        first_ax = None
+        for fi, (_flbl, fpos) in enumerate(fsecs):
+            for si, (_slbl, spos) in enumerate(ssecs):
+                ax = fig.add_subplot(self.gs[feat_rows[fi], samp_cols[si]])
+                sub = main_track.subset(feat=fpos, samp=spos)
+                if si > 0:
+                    sub.yticklabels = False
+                sub.render(ax)
+                first_ax = first_ax or ax
+                if fi == gf - 1 and not bottom:
+                    ax.set_xticks([j + 0.5 for j in range(len(spos))])
+                    ax.set_xticklabels(
+                        self.pivot_table.columns[spos], rotation=90, fontsize=8
+                    )
+        self.ax_heatmap = first_ax
+
+        # top / bottom tracks (sample sections)
+        for ti, t in enumerate(top):
+            for si, (_slbl, spos) in enumerate(ssecs):
+                ax = fig.add_subplot(self.gs[top_rows[ti], samp_cols[si]])
+                t.subset(samp=spos).render(ax)
+                if isinstance(t, BarTrack):
+                    ax.set_ylim(0, getattr(t, "_shared_ymax", ax.get_ylim()[1]))
+                if si > 0:
+                    ax.set_ylabel("")
+                    ax.set_yticks([])
+                    ax.spines["left"].set_visible(False)
+        for ti, t in enumerate(bottom):
+            for si, (_slbl, spos) in enumerate(ssecs):
+                ax = fig.add_subplot(self.gs[bottom_rows[ti], samp_cols[si]])
+                t.subset(samp=spos).render(ax)
+                if si > 0:
+                    ax.set_yticks([])
+                    ax.set_ylabel("")
+                if ti == len(bottom) - 1:
+                    ax.set_xticks([j + 0.5 for j in range(len(spos))])
+                    ax.set_xticklabels(
+                        self.pivot_table.columns[spos], rotation=90, fontsize=8
+                    )
+
+        # left / right tracks (feature sections)
+        for ti, t in enumerate(left):
+            for fi, (_flbl, fpos) in enumerate(fsecs):
+                fig_ax = fig.add_subplot(self.gs[feat_rows[fi], left_cols[ti]])
+                t.subset(feat=fpos).render(fig_ax)
+        for ti, t in enumerate(right):
+            for fi, (_flbl, fpos) in enumerate(fsecs):
+                ax = fig.add_subplot(self.gs[feat_rows[fi], right_cols[ti]])
+                t.subset(feat=fpos).render(ax)
+                if fi < gf - 1:
+                    ax.set_xticks([])
+
+        # group titles
+        if show_st:
+            x, ha = {
+                "start": (0.0, "left"), "center": (0.5, "center"), "end": (1.0, "right"),
+            }[scfg["title_align"]]
+            for si, (slbl, _spos) in enumerate(ssecs):
+                ax = fig.add_subplot(self.gs[stitle_row, samp_cols[si]])
+                ax.axis("off")
+                ax.text(
+                    x, 0.0, str(slbl), ha=ha, va="bottom",
+                    fontsize=scfg["title_fontsize"], fontweight="bold",
+                )
+        if show_ft:
+            y, va = {
+                "start": (1.0, "top"), "center": (0.5, "center"), "end": (0.0, "bottom"),
+            }[fcfg["title_align"]]
+            for fi, (flbl, _fpos) in enumerate(fsecs):
+                ax = fig.add_subplot(self.gs[feat_rows[fi], ftitle_col])
+                ax.axis("off")
+                ax.text(
+                    0.15, y, str(flbl), rotation=90, ha="center", va=va,
+                    fontsize=fcfg["title_fontsize"], fontweight="bold",
+                )
+
+        # legend spans the matrix rows
+        self.ax_legend = fig.add_subplot(
+            self.gs[feat_rows[0]:feat_rows[-1] + 1, legend_col]
+        )
 
     def plot_bar(
         self,

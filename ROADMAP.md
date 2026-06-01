@@ -122,7 +122,7 @@ wrong output · 🟠 forces a workaround · 🟡 ergonomics. A1① shipped in v0
 - [ ] 🟡 **A5** (env, not code) Multiple on-disk copies + editable install cause intermittent `cannot import name 'MAF'`; ensure a single installable `pymaftools`.
 
 ### Plotting (OncoPlot)
-- [ ] 🟠 **B1** `feature_groups` support: stack groups with equal row height, gaps, separators, and section titles (currently needs manual gridspec).
+- [x] 🟠 **B1** Feature/sample group support — done in v0.5.0: `group_features`/`group_samples` section the matrix + aligned tracks with real whitespace gaps, equal row heights, and bidirectional group titles (alignable).
 - [x] 🟠 **B2** `add_xticklabel(fontsize=None, rotation=90)` — done in v0.5.0.
 - [ ] 🟡 **B3** Custom y-axis side label; `numeric_heatmap` force-clears ylabel. (Partial: `show_ylabel` exists.)
 - [x] 🟠 **B4** `numeric_heatmap` reuses `ax_freq` as colorbar → freq column and colorbar can't coexist. — done in v0.5.0 (CNV colorbar renders in the legend area, not `ax_freq`).
