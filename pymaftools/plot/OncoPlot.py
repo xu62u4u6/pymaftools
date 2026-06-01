@@ -7,8 +7,9 @@ from matplotlib.patches import Rectangle
 from matplotlib.gridspec import GridSpec
 import seaborn as sns
 from matplotlib import cm, ticker
-from matplotlib.colors import ListedColormap, Normalize
+from matplotlib.colors import Normalize
 from .BasePlot import BasePlot
+from .Track import Track, MainMatrixTrack, draw_categorical_heatmap
 
 # Type checking imports to avoid circular dependencies
 from typing import TYPE_CHECKING
@@ -46,6 +47,9 @@ class OncoPlot(BasePlot):
         self.pivot_table = pivot_table
         self.feature_metadata = pivot_table.feature_metadata
         self.sample_metadata = pivot_table.sample_metadata
+
+        # Registered tracks (declarative path). Stage 1: only MainMatrixTrack.
+        self.tracks: list[Track] = []
 
         self.set_config(**kwargs)
 
@@ -297,30 +301,16 @@ class OncoPlot(BasePlot):
         linecolor="white",
         **kwargs,
     ):
-        if ax is None:
-            fig, ax = plt.subplots(figsize=fig_size)
-        else:
-            fig = ax.get_figure()
-        category_to_index = {k: i for i, k in enumerate(category_cmap.keys())}
-        table_mapped = table.map(lambda x: category_to_index.get(x, len(category_cmap)))
-        has_unknown = table.map(lambda x: x not in category_cmap).any().any()
-
-        color_list = list(category_cmap.values())
-        if has_unknown:
-            color_list.append(unknown_color)
-        cmap = ListedColormap(color_list)
-
-        # plot heatmap
-        sns.heatmap(
-            table_mapped, cmap=cmap, cbar=False, ax=ax, linecolor=linecolor, **kwargs
+        """Backward-compatible delegate to :func:`Track.draw_categorical_heatmap`."""
+        return draw_categorical_heatmap(
+            table,
+            category_cmap,
+            ax=ax,
+            fig_size=fig_size,
+            unknown_color=unknown_color,
+            linecolor=linecolor,
+            **kwargs,
         )
-
-        # perpare legend info
-        legend_info = list(category_cmap.items())
-        if has_unknown:
-            legend_info.append(("Unknown", unknown_color))
-
-        return fig, ax, legend_info
 
     def mutation_heatmap(
         self,
@@ -364,45 +354,90 @@ class OncoPlot(BasePlot):
         if ytick_fontsize is None:
             ytick_fontsize = self.ytick_fontsize
 
-        fig, ax, legend_info = self.categorical_heatmap(
-            table=self.pivot_table,
-            category_cmap=cmap_dict,
+        # Thin wrapper: register a MainMatrixTrack and draw it onto the eager
+        # heatmap axis, preserving the existing behaviour exactly.
+        track = MainMatrixTrack(
+            self.pivot_table,
+            cmap_dict,
             linecolor=linecolor,
             linewidths=linewidths,
-            ax=self.ax_heatmap,
-            vmin=0,  # Ensure mapping uses full range
-            vmax=len(cmap_dict),
+            show_frame=show_frame,
+            n=n,
+            yticklabels=yticklabels,
+            ytick_fontsize=ytick_fontsize,
+            show_ylabel=show_ylabel,
         )
+        self.tracks.append(track)
+        track.render(self.ax_heatmap)
+        for name, color_dict in track.legend_entries().items():
+            self.add_legend(name, color_dict)
 
-        ax.set_xticks([])
-        ax.set_xlabel("")
-        if not show_ylabel:
-            ax.set_ylabel("")
-        if yticklabels:
-            ax.set_yticks([i + 0.5 for i in range(len(self.pivot_table.index))])
-            ax.set_yticklabels(
-                self.pivot_table.index, rotation=0, fontsize=ytick_fontsize
+        return self
+
+    def main(self, kind: str = "mutation", cmap_dict: dict | None = None, **kwargs) -> OncoPlot:
+        """Register the main matrix track for the declarative ``render()`` path.
+
+        Stage 1 supports only ``kind="mutation"``. ``**kwargs`` are forwarded to
+        :class:`~pymaftools.plot.Track.MainMatrixTrack` (e.g. ``show_frame``,
+        ``yticklabels``, ``linecolor``).
+
+        Returns
+        -------
+        self : OncoPlot
+            Returns self for method chaining.
+        """
+        if kind != "mutation":
+            raise ValueError(
+                f"Stage 1 only supports kind='mutation', got {kind!r}."
             )
-        else:
-            ax.set_yticks([])
-        # Show frame every `n` columns
-        if show_frame:
-            for i in range(0, len(self.pivot_table.columns), n):
-                rect = Rectangle(
-                    (i, -0.5),  # X, y
-                    n,  # width
-                    len(self.pivot_table) + 1,  # height
-                    linewidth=1,
-                    edgecolor="lightgray",
-                    facecolor="none",
-                )
-                self.ax_heatmap.add_patch(rect)
+        if cmap_dict is None:
+            cmap_dict = self.cmap
+        kwargs.setdefault("ytick_fontsize", self.ytick_fontsize)
+        self.tracks.append(MainMatrixTrack(self.pivot_table, cmap_dict, **kwargs))
+        return self
 
-        mutation_legend = {
-            key: cmap_dict[key] for key in cmap_dict.keys() if key != "Unknown"
-        }
-        self.add_legend("Mutation", mutation_legend)
+    def render(self, fig=None) -> OncoPlot:
+        """Derive the layout from registered tracks and draw them in one pass.
 
+        New declarative entry point: ``OncoPlot(table).main().render()``. Stage 1
+        handles the main matrix track plus a legend column; later stages add the
+        annotation tracks and retire the eager ``update_layout`` path.
+
+        Parameters
+        ----------
+        fig : matplotlib.figure.Figure, optional
+            Existing figure to draw into. If *None*, a new figure is created.
+            (Stage 4 removes the remaining global-pyplot dependency.)
+
+        Returns
+        -------
+        self : OncoPlot
+            Returns self for method chaining.
+        """
+        main_tracks = [t for t in self.tracks if t.side == "main"]
+        if not main_tracks:
+            raise ValueError("No main track registered; call .main() before render().")
+
+        if fig is None:
+            fig = plt.figure(figsize=self.figsize)
+        self.fig = fig
+
+        self.gs = GridSpec(
+            1,
+            2,
+            width_ratios=[self.width_ratios[0], self.width_ratios[-1]],
+            wspace=self.wspace,
+            figure=fig,
+        )
+        self.ax_heatmap = fig.add_subplot(self.gs[0, 0])
+        self.ax_legend = fig.add_subplot(self.gs[0, 1])
+
+        for track in main_tracks:
+            track.render(self.ax_heatmap)
+            for name, color_dict in (track.legend_entries() or {}).items():
+                self.add_legend(name, color_dict)
+
+        self.plot_all_legends()
         return self
 
     def plot_bar(
@@ -848,7 +883,7 @@ class OncoPlot(BasePlot):
     def default_oncoplot(
         pivot_table: "PivotTable",
         figsize: tuple[int, int] = (30, 15),
-        width_ratios: list[int] = [20, 1, 2],
+        width_ratios: list[int] = [20, 1, 1, 2],
     ) -> OncoPlot:
         """
         Create a default oncoplot with standard configuration.
@@ -863,8 +898,9 @@ class OncoPlot(BasePlot):
             The PivotTable instance containing mutation data
         figsize : tuple, default (30, 15)
             Figure size (width, height)
-        width_ratios : list, default [20, 1, 2]
-            Width ratios for subplot columns
+        width_ratios : list, default [20, 1, 1, 2]
+            Width ratios for subplot columns (must match the 4-column GridSpec
+            built by ``update_layout``)
 
         Returns
         -------

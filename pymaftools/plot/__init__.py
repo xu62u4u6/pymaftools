@@ -10,6 +10,7 @@ from .FontManager import FontManager
 from .LegendManager import LegendManager
 from .LollipopPlot import LollipopPlot
 from .OncoPlot import OncoPlot
+from .Track import Track, MainMatrixTrack
 from .PivotTablePlot import PivotTablePlot
 from .MethodsPlot import MethodsPlot
 from .ModelPlot import ModelPlot
@@ -21,6 +22,8 @@ __all__ = [
     "LegendManager",
     "LollipopPlot",
     "OncoPlot",
+    "Track",
+    "MainMatrixTrack",
     "PivotTablePlot",
     "MethodsPlot",
     "ModelPlot",
