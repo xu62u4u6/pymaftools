@@ -432,7 +432,14 @@ class Cohort:
             )
             store.put("cohort_metadata", cohort_meta)
 
-            table_names = pd.DataFrame({"table_name": list(self.tables.keys())})
+            table_names = pd.DataFrame(
+                {
+                    "table_name": list(self.tables.keys()),
+                    "class_name": [
+                        type(table).__name__ for table in self.tables.values()
+                    ],
+                }
+            )
             store.put("table_registry", table_names)
 
             for table_name, table in self.tables.items():
@@ -466,13 +473,37 @@ class Cohort:
             )
 
             table_registry = store.get("table_registry")
+            has_class_info = "class_name" in table_registry.columns
+            if not has_class_info:
+                warnings.warn(
+                    f"HDF5 file '{h5_path}' was written without class info; "
+                    "all tables will be loaded as PivotTable. Re-save with "
+                    "to_hdf5() to preserve subclass type.",
+                    UserWarning,
+                    stacklevel=2,
+                )
 
-            for table_name in table_registry["table_name"]:
+            for _, row in table_registry.iterrows():
+                table_name = row["table_name"]
                 data = store.get(f"{table_name}/data").T
                 sample_metadata = store.get(f"{table_name}/sample_metadata")
                 feature_metadata = store.get(f"{table_name}/feature_metadata")
 
-                pivot = PivotTable(data)
+                table_cls = PivotTable
+                if has_class_info:
+                    class_name = row["class_name"]
+                    table_cls = PivotTable._subclass_registry.get(class_name)
+                    if table_cls is None:
+                        warnings.warn(
+                            f"Unknown PivotTable subclass '{class_name}' for table "
+                            f"'{table_name}'; falling back to PivotTable. Ensure the "
+                            "module defining the subclass is imported.",
+                            UserWarning,
+                            stacklevel=2,
+                        )
+                        table_cls = PivotTable
+
+                pivot = table_cls(data)
                 pivot.sample_metadata = sample_metadata
                 pivot.feature_metadata = feature_metadata
 

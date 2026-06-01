@@ -67,6 +67,15 @@ class PivotTable(pd.DataFrame):
     # Store metadata attribute names for pandas inheritance
     _metadata: List[str] = ["feature_metadata", "sample_metadata"]
 
+    # Registry of PivotTable subclasses keyed by class name. Populated
+    # automatically via __init_subclass__ so that Cohort.read_hdf5 can
+    # restore the correct concrete type from a serialized table.
+    _subclass_registry: dict[str, type] = {}
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        PivotTable._subclass_registry[cls.__name__] = cls
+
     def __init__(self, data: Any = None, *args: Any, **kwargs: Any) -> None:
         """
         Initialize PivotTable with data and metadata.
@@ -1988,6 +1997,11 @@ class PivotTable(pd.DataFrame):
         ).fillna(fill_value)
 
         return pivot_table
+
+
+# Register the base class itself so lookups for "PivotTable" succeed.
+# __init_subclass__ only fires for subclasses, not for PivotTable itself.
+PivotTable._subclass_registry[PivotTable.__name__] = PivotTable
 
 
 def capture_size(bed_path: str) -> float:
