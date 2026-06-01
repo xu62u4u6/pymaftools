@@ -24,6 +24,7 @@ from pymaftools.core.PivotTable import PivotTable
 from pymaftools.plot.OncoPlot import OncoPlot
 from pymaftools.plot.Track import (
     MainMatrixTrack,
+    NumericMatrixTrack,
     BarTrack,
     FreqTrack,
     CategoricalTrack,
@@ -117,11 +118,32 @@ def test_render_without_main_track_raises(mutation_table):
         op.render()
 
 
-def test_main_rejects_non_mutation_kind(mutation_table):
-    """Stage 1 only implements the mutation matrix; other kinds must error."""
+def test_main_rejects_unknown_kind(mutation_table):
+    """main() accepts 'mutation' and 'cnv'; anything else must error."""
     op = OncoPlot(mutation_table, figsize=(8, 6))
-    with pytest.raises(ValueError, match="kind='mutation'"):
-        op.main(kind="cnv")
+    with pytest.raises(ValueError, match="Unknown kind"):
+        op.main(kind="bogus")
+
+
+def test_main_cnv_renders_numeric_matrix_with_colorbar():
+    """main(kind='cnv') renders a continuous matrix with its own inset colorbar,
+    so CNV/numeric main matrices are reachable through render()."""
+    rng = np.random.default_rng(1)
+    table = PivotTable(
+        pd.DataFrame(
+            rng.normal(0.0, 0.8, (5, 6)),
+            index=[f"g{i}" for i in range(5)],
+            columns=[f"s{i}" for i in range(6)],
+        )
+    )
+    op = OncoPlot(table, figsize=(6, 4)).main(
+        kind="cnv", cmap="coolwarm", symmetric=True
+    ).render()
+
+    assert any(isinstance(t, NumericMatrixTrack) for t in op.tracks)
+    assert len(op.ax_heatmap.collections) >= 1
+    # inset colorbar is a child axis of the heatmap
+    assert len(op.ax_heatmap.child_axes) == 1
 
 
 # --- Stage 2: sample-annotation tracks -------------------------------------

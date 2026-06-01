@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-from matplotlib import cm
+from matplotlib import cm, ticker
 from matplotlib.axes import Axes
 from matplotlib.colors import ListedColormap, Normalize
 from matplotlib.patches import Rectangle
@@ -181,6 +181,123 @@ class MainMatrixTrack(Track):
             if k != "Unknown" and k in present and k not in self._WILDTYPE
         }
         return {"Mutation": legend}
+
+
+class NumericMatrixTrack(Track):
+    """Continuous main matrix (e.g. CNV log2 ratios).
+
+    Drawn as a heatmap with a colorbar instead of categorical swatches. The
+    colorbar is its legend, so ``legend_entries`` is None. ``render`` draws a
+    compact inset colorbar (the declarative path); the legacy freq-column
+    colorbar lives in :meth:`draw_colorbar` for the eager ``numeric_heatmap``.
+    """
+
+    side = "main"
+
+    def __init__(
+        self,
+        table: pd.DataFrame,
+        *,
+        cmap: str = "Blues",
+        vmin: float | None = None,
+        vmax: float | None = None,
+        symmetric: bool = False,
+        yticklabels: bool = True,
+        annot: bool = False,
+        fmt: str = ".2f",
+        ytick_fontsize: int = 10,
+        linewidths: float = 1,
+        show_ylabel: bool = False,
+        cbar: bool = True,
+    ) -> None:
+        self.table = table
+        self.cmap = cmap
+        self.vmin = vmin
+        self.vmax = vmax
+        self.symmetric = symmetric
+        self.yticklabels = yticklabels
+        self.annot = annot
+        self.fmt = fmt
+        self.ytick_fontsize = ytick_fontsize
+        self.linewidths = linewidths
+        self.show_ylabel = show_ylabel
+        self.cbar = cbar
+        self._vmin: float | None = None
+        self._vmax: float | None = None
+
+    def render(self, ax: Axes) -> Axes:
+        table = self.table
+        vmin, vmax = self.vmin, self.vmax
+        if vmin is None and vmax is None:
+            if self.symmetric:
+                vextreme = max(abs(table.min().min()), abs(table.max().max()))
+                vmin, vmax, center = -vextreme, vextreme, 0
+            else:
+                vmin = table.min().min()
+                vmax = table.max().max()
+                center = (vmin + vmax) / 2
+        elif vmin is None or vmax is None:
+            raise ValueError("Both vmin and vmax must be specified.")
+        else:
+            center = 0
+
+        sns.heatmap(
+            table,
+            ax=ax,
+            cmap=self.cmap,
+            cbar=False,
+            vmin=vmin,
+            vmax=vmax,
+            center=center,
+            yticklabels=self.yticklabels,
+            annot=self.annot,
+            fmt=self.fmt,
+            linewidths=self.linewidths,
+        )
+        ax.set_xticks([])
+        ax.set_xlabel("")
+        if not self.show_ylabel:
+            ax.set_ylabel("")
+        if self.yticklabels:
+            ax.set_yticks([i + 0.5 for i in range(len(table.index))])
+            ax.set_yticklabels(table.index, rotation=0, fontsize=self.ytick_fontsize)
+
+        self._vmin, self._vmax = vmin, vmax
+        if self.cbar:
+            cax = ax.inset_axes([1.01, 0.0, 0.015, 1.0])
+            cbar = ax.figure.colorbar(
+                cm.ScalarMappable(norm=Normalize(vmin, vmax), cmap=self.cmap),
+                cax=cax,
+                ticks=[vmin, vmax],
+            )
+            cbar.ax.tick_params(labelsize=7, length=2, width=0.5)
+            for spine in cbar.ax.spines.values():
+                spine.set_visible(False)
+        return ax
+
+    def draw_colorbar(self, cax: Axes):
+        """Legacy freq-column colorbar (used by the eager ``numeric_heatmap`` so
+        its output stays byte-identical). Must be called after :meth:`render`."""
+        vmin, vmax = self._vmin, self._vmax
+        cbar = cax.figure.colorbar(
+            cm.ScalarMappable(norm=Normalize(vmin=vmin, vmax=vmax), cmap=self.cmap),
+            cax=cax,
+            ticks=np.linspace(vmin, vmax, 5),
+            shrink=0.5,
+        )
+        cbar.ax.set_aspect(18)
+        for spine in cbar.ax.spines.values():
+            spine.set_visible(False)
+        cbar.ax.tick_params(labelsize=10, length=6, width=1)
+        if self.yticklabels:
+            cbar.ax.yaxis.set_tick_params(color="gray", labelcolor="black")
+            if max(abs(vmin), abs(vmax)) < 0.01 or max(abs(vmin), abs(vmax)) > 1000:
+                cbar.ax.yaxis.set_major_formatter(
+                    ticker.ScalarFormatter(useMathText=True)
+                )
+            else:
+                cbar.ax.yaxis.set_major_formatter(ticker.FormatStrFormatter("%.2f"))
+        return cbar
 
 
 class BarTrack(Track):

@@ -1,17 +1,15 @@
 from __future__ import annotations
 
 import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 from matplotlib.gridspec import GridSpec
 import seaborn as sns
-from matplotlib import cm, ticker
-from matplotlib.colors import Normalize
 from .BasePlot import BasePlot
 from .Track import (
     Track,
     MainMatrixTrack,
+    NumericMatrixTrack,
     BarTrack,
     FreqTrack,
     CategoricalTrack,
@@ -378,23 +376,34 @@ class OncoPlot(BasePlot):
     def main(self, kind: str = "mutation", cmap_dict: dict | None = None, **kwargs) -> OncoPlot:
         """Register the main matrix track for the declarative ``render()`` path.
 
-        Stage 1 supports only ``kind="mutation"``. ``**kwargs`` are forwarded to
-        :class:`~pymaftools.plot.Track.MainMatrixTrack` (e.g. ``show_frame``,
-        ``yticklabels``, ``linecolor``).
+        Parameters
+        ----------
+        kind : {"mutation", "cnv"}, default "mutation"
+            ``"mutation"`` registers a categorical :class:`MainMatrixTrack`;
+            ``"cnv"`` (alias ``"numeric"``) registers a continuous
+            :class:`NumericMatrixTrack` for log2-ratio data.
+        cmap_dict : dict, optional
+            Categorical colormap (mutation only); defaults to ``self.cmap``.
+        **kwargs
+            Forwarded to the matrix track (e.g. ``show_frame``, ``yticklabels``
+            for mutation; ``cmap``, ``symmetric`` for cnv).
 
         Returns
         -------
         self : OncoPlot
             Returns self for method chaining.
         """
-        if kind != "mutation":
-            raise ValueError(
-                f"Only kind='mutation' is supported, got {kind!r}."
-            )
-        if cmap_dict is None:
-            cmap_dict = self.cmap
         kwargs.setdefault("ytick_fontsize", self.ytick_fontsize)
-        self.tracks.append(MainMatrixTrack(self.pivot_table, cmap_dict, **kwargs))
+        if kind == "mutation":
+            if cmap_dict is None:
+                cmap_dict = self.cmap
+            self.tracks.append(MainMatrixTrack(self.pivot_table, cmap_dict, **kwargs))
+        elif kind in ("cnv", "numeric"):
+            self.tracks.append(NumericMatrixTrack(self.pivot_table, **kwargs))
+        else:
+            raise ValueError(
+                f"Unknown kind {kind!r}; expected 'mutation' or 'cnv'."
+            )
         return self
 
     def add_bar(
@@ -931,75 +940,28 @@ class OncoPlot(BasePlot):
         self : OncoPlot
             Returns self for method chaining
         """
-        ax = self.ax_heatmap
-        table = self.pivot_table
         if ytick_fontsize is None:
             ytick_fontsize = self.ytick_fontsize
 
-        # decide color range
-        if vmin is None and vmax is None:
-            if symmetric:
-                vextreme = max(abs(table.min().min()), abs(table.max().max()))
-                vmin = -vextreme
-                vmax = vextreme
-                center = 0
-            else:
-                vmin = table.min().min()
-                vmax = table.max().max()
-                center = (vmin + vmax) / 2
-        elif vmin is None or vmax is None:
-            raise ValueError("Both vmin and vmax must be specified.")
-
-        else:
-            center = 0
-        # Draw heatmap
-        sns.heatmap(
-            table,
-            ax=ax,
+        # Thin wrapper: draw a NumericMatrixTrack onto the eager heatmap axis and
+        # keep the legacy freq-column colorbar / axis-closing behaviour exactly.
+        track = NumericMatrixTrack(
+            self.pivot_table,
             cmap=cmap,
-            cbar=False,
             vmin=vmin,
             vmax=vmax,
-            center=center,
+            symmetric=symmetric,
             yticklabels=yticklabels,
             annot=annot,
             fmt=fmt,
+            ytick_fontsize=ytick_fontsize,
             linewidths=linewidths,
+            show_ylabel=show_ylabel,
+            cbar=False,  # colorbar drawn on ax_freq below (legacy layout)
         )
-
-        ax.set_xticks([])
-        ax.set_xlabel("")
-        if not show_ylabel:
-            ax.set_ylabel("")
-
-        if yticklabels:
-            ax.set_yticks([i + 0.5 for i in range(len(table.index))])
-            ax.set_yticklabels(table.index, rotation=0, fontsize=ytick_fontsize)
-
-        # Create colorbar
-        norm = Normalize(vmin=vmin, vmax=vmax)
-        cbar = self.fig.colorbar(
-            cm.ScalarMappable(norm=norm, cmap=cmap),
-            cax=self.ax_freq,
-            ticks=np.linspace(vmin, vmax, 5),
-            shrink=0.5,
-        )
-        cbar.ax.set_aspect(18)
-
-        # Hide colorbar borders
-        for spine in cbar.ax.spines.values():
-            spine.set_visible(False)
-
-        cbar.ax.tick_params(labelsize=10, length=6, width=1)
-        if yticklabels:
-            cbar.ax.yaxis.set_tick_params(color="gray", labelcolor="black")
-            # Format tick labels
-            if max(abs(vmin), abs(vmax)) < 0.01 or max(abs(vmin), abs(vmax)) > 1000:
-                cbar.ax.yaxis.set_major_formatter(
-                    ticker.ScalarFormatter(useMathText=True)
-                )
-            else:
-                cbar.ax.yaxis.set_major_formatter(ticker.FormatStrFormatter("%.2f"))
+        self.tracks.append(track)
+        track.render(self.ax_heatmap)
+        track.draw_colorbar(self.ax_freq)
         self.ax_legend.axis("off")
         self.ax_bar.axis("off")
         return self
