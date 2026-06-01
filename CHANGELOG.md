@@ -17,6 +17,7 @@ by a single `render()` call. See `PLOTTING_REVIEW.md` for the full design.
 ### 🆕 New Features
 * **Feature-side annotations** (`add_feature_annotation`): `feature_metadata` columns (e.g. `pathway`) can finally be drawn as row-side strips — impossible under the old layout.
 * **Declarative track API**: `main()`, `add_bar()`, `add_freq()`, `add_sample_annotation()`, `add_feature_annotation()` register tracks; `render()` derives the GridSpec from each track's `side`/`size`. Numeric vs categorical is inferred from column dtype.
+* **Axis grouping** (`group_features`, `group_samples`): partition rows (by a `feature_metadata` column, e.g. `pathway`) and/or columns (by a `sample_metadata` column, e.g. `subtype`) into labelled sections with separator lines drawn across the matrix and aligned tracks, plus group titles on the left (features) and top (samples).
 * **Unified entry point**: oncoplots are reachable from the same accessor as the stats plots — `table.plot.oncoplot(...)`.
 * **`main(kind="cnv")`**: continuous (CNV) main matrices go through `render()` too.
 * **Numeric metadata colorbars** (`plot_numeric_metadata`, P1#3): numeric strips carry a colorbar so the value scale is interpretable. Placement is a mode — `colorbar="legend"` (default; stacked in the legend area, readable with several numeric columns), `"inset"` (small bar beside the strip), or `"off"`. Per-column cmaps via `cmap_dict=`.

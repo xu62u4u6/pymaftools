@@ -52,8 +52,12 @@ class OncoPlot(BasePlot):
         self.feature_metadata = pivot_table.feature_metadata
         self.sample_metadata = pivot_table.sample_metadata
 
-        # Registered tracks (declarative path). Stage 1: only MainMatrixTrack.
+        # Registered tracks (declarative path).
         self.tracks: list[Track] = []
+
+        # Optional axis grouping (drawn by render() as separators + titles).
+        self._feature_groups: dict | None = None
+        self._sample_groups: dict | None = None
 
         self.set_config(**kwargs)
 
@@ -390,6 +394,120 @@ class OncoPlot(BasePlot):
             self.feature_metadata, columns, side, cmap_dict, default_cmap, kwargs
         )
 
+    def group_features(
+        self,
+        by: str,
+        *,
+        show_titles: bool = True,
+        title_fontsize: int = 11,
+        line_color: str = "black",
+        line_width: float = 1.5,
+    ) -> OncoPlot:
+        """Mark row (feature) groups from a ``feature_metadata`` column.
+
+        ``render()`` then draws a separator line between consecutive groups (on
+        the matrix and every feature-aligned track) and, if ``show_titles``, a
+        rotated group label on the left. Features must already be contiguous by
+        group — sort first, e.g. ``table.sort_features(by="pathway")``.
+        """
+        self._feature_groups = {
+            "by": by,
+            "show_titles": show_titles,
+            "title_fontsize": title_fontsize,
+            "line_color": line_color,
+            "line_width": line_width,
+        }
+        return self
+
+    def group_samples(
+        self,
+        by: str,
+        *,
+        show_titles: bool = True,
+        title_fontsize: int = 11,
+        line_color: str = "black",
+        line_width: float = 1.5,
+    ) -> OncoPlot:
+        """Mark column (sample) groups from a ``sample_metadata`` column.
+
+        ``render()`` draws a separator line between consecutive groups (on the
+        matrix and every sample-aligned track) and, if ``show_titles``, a group
+        label on top. Samples must already be contiguous by group — sort first,
+        e.g. ``table.sort_samples_by_group(group_col="subtype", ...)``.
+        """
+        self._sample_groups = {
+            "by": by,
+            "show_titles": show_titles,
+            "title_fontsize": title_fontsize,
+            "line_color": line_color,
+            "line_width": line_width,
+        }
+        return self
+
+    @staticmethod
+    def _group_runs(labels: list) -> list[tuple]:
+        """Contiguous runs of equal labels → list of (label, start, end)."""
+        runs = []
+        start = 0
+        n = len(labels)
+        for i in range(1, n + 1):
+            if i == n or labels[i] != labels[start]:
+                runs.append((labels[start], start, i))
+                start = i
+        return runs
+
+    def _draw_axis_groups(self, axis, cfg, aligned_axes, title_axes) -> None:
+        """Draw group separator lines (across the matrix + aligned tracks) and
+        group titles for one axis. ``axis`` is ``"sample"`` or ``"feature"``."""
+        by = cfg["by"]
+        if axis == "sample":
+            labels = self.sample_metadata.loc[list(self.pivot_table.columns), by].tolist()
+        else:
+            labels = self.feature_metadata.loc[list(self.pivot_table.index), by].tolist()
+
+        runs = self._group_runs(labels)
+        boundaries = [end for _label, _start, end in runs[:-1]]  # internal only
+
+        for ax in aligned_axes:
+            for b in boundaries:
+                if axis == "sample":
+                    ax.axvline(b, color=cfg["line_color"], lw=cfg["line_width"])
+                else:
+                    ax.axhline(b, color=cfg["line_color"], lw=cfg["line_width"])
+
+        if not cfg["show_titles"]:
+            return
+        title_ax = title_axes[0] if axis == "sample" else title_axes[-1]
+        for label, start, end in runs:
+            center = (start + end) / 2
+            if axis == "sample":
+                title_ax.annotate(
+                    str(label),
+                    xy=(center, 1.0),
+                    xycoords=("data", "axes fraction"),
+                    xytext=(0, 5),
+                    textcoords="offset points",
+                    ha="center",
+                    va="bottom",
+                    fontsize=cfg["title_fontsize"],
+                    fontweight="bold",
+                    annotation_clip=False,
+                )
+            else:
+                title_ax.annotate(
+                    str(label),
+                    xy=(0.0, center),
+                    xycoords=("axes fraction", "data"),
+                    xytext=(-40, 0),
+                    textcoords="offset points",
+                    ha="right",
+                    va="center",
+                    rotation=90,
+                    fontsize=cfg["title_fontsize"],
+                    fontweight="bold",
+                    annotation_clip=False,
+                )
+
     def render(
         self,
         fig=None,
@@ -493,16 +611,43 @@ class OncoPlot(BasePlot):
             main_track.cbar = False
         main_track.render(self.ax_heatmap)
 
-        # sample-aligned tracks share the matrix column
+        # sample-aligned tracks share the matrix column; collect axes so group
+        # separators can be drawn across the matrix and every aligned track.
+        top_axes, bottom_axes, left_axes, right_axes = [], [], [], []
         for i, track in enumerate(top):
-            track.render(fig.add_subplot(self.gs[i, main_col]))
+            ax = fig.add_subplot(self.gs[i, main_col])
+            track.render(ax)
+            top_axes.append(ax)
         for i, track in enumerate(bottom):
-            track.render(fig.add_subplot(self.gs[main_row + 1 + i, main_col]))
+            ax = fig.add_subplot(self.gs[main_row + 1 + i, main_col])
+            track.render(ax)
+            bottom_axes.append(ax)
         # feature-aligned tracks share the matrix row; registered outward from it
         for i, track in enumerate(left):
-            track.render(fig.add_subplot(self.gs[main_row, main_col - 1 - i]))
+            ax = fig.add_subplot(self.gs[main_row, main_col - 1 - i])
+            track.render(ax)
+            left_axes.append(ax)
         for i, track in enumerate(right):
-            track.render(fig.add_subplot(self.gs[main_row, main_col + 1 + i]))
+            ax = fig.add_subplot(self.gs[main_row, main_col + 1 + i])
+            track.render(ax)
+            right_axes.append(ax)
+
+        # Group separators + titles (light: overlay lines on aligned axes; no
+        # physical gaps / no per-track sectioning).
+        if self._sample_groups:
+            self._draw_axis_groups(
+                "sample",
+                self._sample_groups,
+                aligned_axes=[self.ax_heatmap, *top_axes, *bottom_axes],
+                title_axes=top_axes or [self.ax_heatmap],
+            )
+        if self._feature_groups:
+            self._draw_axis_groups(
+                "feature",
+                self._feature_groups,
+                aligned_axes=[self.ax_heatmap, *left_axes, *right_axes],
+                title_axes=left_axes or [self.ax_heatmap],
+            )
 
         # legends: single source of truth, gathered from every track —
         # categorical swatches plus any numeric tracks set to colorbar="legend".

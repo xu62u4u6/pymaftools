@@ -160,6 +160,31 @@ def demo_declarative(table: PivotTable) -> None:
     op.close()
 
 
+def demo_grouped(table: PivotTable) -> None:
+    """Figure 5: features grouped by pathway (rows) and samples by subtype
+    (columns), with separator lines and group titles in both directions."""
+    grouped = (
+        table.add_freq()
+        .sort_features(by="pathway")  # genes contiguous by pathway
+        .sort_samples_by_group(
+            group_col="subtype", group_order=["LUAD", "ASC", "LUSC"], top=10
+        )
+    )
+    op = (
+        OncoPlot(grouped, figsize=(13, 9))
+        .main()
+        .add_bar("TMB", side="top")
+        .add_freq(side="right")
+        .add_sample_annotation(["sex"], side="bottom")
+        .group_features(by="pathway")
+        .group_samples(by="subtype")
+        .render()
+    )
+    op.add_xticklabel()
+    op.save(str(OUT_DIR / "demo_oncoplot_grouped.png"))
+    op.close()
+
+
 def main() -> None:
     OUT_DIR.mkdir(exist_ok=True)
     mutation = prepare(make_mutation_table())
@@ -169,6 +194,7 @@ def main() -> None:
     demo_with_metadata(mutation)
     demo_numeric(cnv)
     demo_declarative(mutation)
+    demo_grouped(make_mutation_table())
     print(f"[INFO] demo figures written to {OUT_DIR.resolve()}")
 
 

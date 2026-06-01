@@ -235,6 +235,28 @@ op.save("oncoplot.png", dpi=300)
 `add_sample_annotation` / `add_feature_annotation` infer categorical vs numeric
 from the column dtype. For a continuous (CNV) main matrix use `.main(kind="cnv")`.
 
+### Grouped oncoplot
+
+Partition rows by a `feature_metadata` column and/or columns by a
+`sample_metadata` column into labelled sections (separator lines across the
+matrix + aligned tracks, with group titles). Sort first so each group is
+contiguous:
+
+```python
+grouped = (table
+    .sort_features(by="pathway")
+    .sort_samples_by_group(group_col="subtype", group_order=["LUAD", "ASC", "LUSC"]))
+
+op = (grouped.plot.oncoplot(figsize=(13, 9))
+    .main()
+    .add_bar("TMB", side="top")
+    .group_features(by="pathway")   # row sections + left titles
+    .group_samples(by="subtype")    # column sections + top titles
+    .render()
+)
+op.save("grouped_oncoplot.png", dpi=300)
+```
+
 ### Lollipop Plot
 
 ```python
