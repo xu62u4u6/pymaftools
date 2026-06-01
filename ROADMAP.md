@@ -123,12 +123,12 @@ wrong output · 🟠 forces a workaround · 🟡 ergonomics. A1① shipped in v0
 
 ### Plotting (OncoPlot)
 - [ ] 🟠 **B1** `feature_groups` support: stack groups with equal row height, gaps, separators, and section titles (currently needs manual gridspec).
-- [ ] 🟠 **B2** `add_xticklabel(fontsize=None, rotation=90)` — fontsize is currently unsettable, rotation hardcoded.
-- [ ] 🟡 **B3** Custom y-axis side label; `numeric_heatmap` force-clears ylabel.
-- [ ] 🟠 **B4** `numeric_heatmap` reuses `ax_freq` as colorbar → freq column and colorbar can't coexist; give colorbar its own axis.
-- [ ] 🟡 **B5** Rigid 4-column layout requires width-0 dummy columns; use named optional components.
-- [ ] 🟠 **B6** Method chain has implicit ordering dependencies and silently toggles axes; make axis on/off declarative.
-- [ ] 🟡 **B7** `set_config()` calls `plt.close("all")` and rebuilds the figure (global side effect); accept an existing `fig`/subfigure.
+- [x] 🟠 **B2** `add_xticklabel(fontsize=None, rotation=90)` — done in v0.5.0.
+- [ ] 🟡 **B3** Custom y-axis side label; `numeric_heatmap` force-clears ylabel. (Partial: `show_ylabel` exists.)
+- [x] 🟠 **B4** `numeric_heatmap` reuses `ax_freq` as colorbar → freq column and colorbar can't coexist. — done in v0.5.0 (CNV colorbar renders in the legend area, not `ax_freq`).
+- [x] 🟡 **B5** Rigid 4-column layout requires width-0 dummy columns; use named optional components. — done in v0.5.0 (`render()` derives the GridSpec from registered tracks; `legend_pad` is the named spacer).
+- [x] 🟠 **B6** Method chain has implicit ordering dependencies and silently toggles axes; make axis on/off declarative. — done in v0.5.0 (convenience methods register-only; single declarative `render()`).
+- [x] 🟡 **B7** `set_config()` calls `plt.close("all")` and rebuilds the figure (global side effect); accept an existing `fig`/subfigure. — done in v0.5.0 (`set_config` no longer touches pyplot; `render(fig=...)` accepts an existing figure).
 - [ ] 🟡 **B8** Color mapping is exact-match; unknown categories silently turn white. Warn + add "Unknown" to legend; normalize case/aliases.
 
 > Detailed write-up (symptoms, root cause with file:line, workarounds) in the analysis repo's `docs/pymaftools_limitations.md`.
