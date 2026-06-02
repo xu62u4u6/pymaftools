@@ -5,7 +5,9 @@ Tests for PivotTable core functionality
 import pytest
 import pandas as pd
 import numpy as np
+import pymaftools
 from pymaftools.core.PivotTable import PivotTable
+from pymaftools.core.SmallVariationTable import SmallVariationTable
 
 
 class TestPivotTableBasics:
@@ -44,6 +46,33 @@ class TestPivotTableBasics:
         assert copied.sample_metadata.equals(original.sample_metadata)
         assert copied.feature_metadata.equals(original.feature_metadata)
         assert copied.equals(original)
+
+    def test_to_h5_read_h5_roundtrip(self, sample_pivot_table, tmp_path):
+        """Single-table HDF5 IO preserves data and both metadata tables."""
+        h5_path = tmp_path / "pivot_table.h5"
+
+        sample_pivot_table.to_h5(h5_path)
+        loaded = PivotTable.read_h5(h5_path)
+        loaded_via_package = pymaftools.read_h5(h5_path)
+
+        assert isinstance(loaded, PivotTable)
+        assert loaded.equals(sample_pivot_table)
+        assert loaded.sample_metadata.equals(sample_pivot_table.sample_metadata)
+        assert loaded.feature_metadata.equals(sample_pivot_table.feature_metadata)
+        assert loaded_via_package.equals(sample_pivot_table)
+
+    def test_read_h5_infers_registered_subclass(self, sample_pivot_table, tmp_path):
+        """Single-table HDF5 IO restores registered PivotTable subclasses."""
+        h5_path = tmp_path / "small_variation_table.h5"
+        table = SmallVariationTable(sample_pivot_table)
+
+        table.to_h5(h5_path)
+        loaded = pymaftools.read_h5(h5_path)
+
+        assert isinstance(loaded, SmallVariationTable)
+        assert loaded.equals(table)
+        assert loaded.sample_metadata.equals(table.sample_metadata)
+        assert loaded.feature_metadata.equals(table.feature_metadata)
     
     def test_subset_functionality(self, sample_pivot_table):
         """Test subset method"""

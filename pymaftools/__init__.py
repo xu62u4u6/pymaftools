@@ -56,6 +56,11 @@ from .model.modelUtils import (
 # io
 from .io.tcga import GDCClient, parse_tcga_barcode
 
+
+def read_h5(h5_path, table_cls=None):
+    """Read a single-table HDF5 file via ``PivotTable.read_h5``."""
+    return (table_cls or PivotTable).read_h5(h5_path)
+
 # utils
 from .utils.geneset import read_GMT, fetch_msigdb_geneset
 from .utils.reduction import PCA_CCA

@@ -268,6 +268,41 @@ class PivotTable(pd.DataFrame):
         conn.close()
         print(f"[PivotTable] saved to {db_path}")
 
+    def to_h5(
+        self,
+        h5_path: str | Path,
+        *,
+        complib: str = "zlib",
+        complevel: int = 9,
+    ) -> None:
+        """
+        Save PivotTable to HDF5 format.
+
+        Parameters
+        ----------
+        h5_path : str or pathlib.Path
+            Path to the output HDF5 file.
+        complib : str, default "zlib"
+            Compression library passed to ``pandas.HDFStore``.
+        complevel : int, default 9
+            Compression level passed to ``pandas.HDFStore``.
+        """
+        h5_path = Path(h5_path)
+        if h5_path.exists():
+            h5_path.unlink()
+
+        table = self.copy().rename_index_and_columns()
+        with pd.HDFStore(
+            str(h5_path), mode="w", complib=complib, complevel=complevel
+        ) as store:
+            table_metadata = pd.DataFrame({"class_name": [type(self).__name__]})
+            store.put("table_metadata", table_metadata)
+            store.put("data", pd.DataFrame(table))
+            store.put("sample_metadata", table.sample_metadata)
+            store.put("feature_metadata", table.feature_metadata)
+
+        print(f"[PivotTable] saved to {h5_path}")
+
     @classmethod
     def read_sqlite(cls, db_path: str) -> "PivotTable":
         """
@@ -305,6 +340,49 @@ class PivotTable(pd.DataFrame):
         table._validate_metadata()
         conn.close()
         print(f"[PivotTable] loaded from {db_path}")
+        return table
+
+    @classmethod
+    def read_h5(cls, h5_path: str | Path) -> "PivotTable":
+        """
+        Load PivotTable from HDF5 format.
+
+        Parameters
+        ----------
+        h5_path : str or pathlib.Path
+            Path to the HDF5 file.
+
+        Returns
+        -------
+        PivotTable
+            Loaded PivotTable with metadata.
+        """
+        h5_path = Path(h5_path)
+        with pd.HDFStore(str(h5_path), mode="r") as store:
+            required = {"/data", "/sample_metadata", "/feature_metadata"}
+            keys = set(store.keys())
+            missing = sorted(required - keys)
+            if missing:
+                raise ValueError(
+                    f"HDF5 file '{h5_path}' is missing required key(s): {missing}."
+                )
+
+            data = store.get("data")
+            sample_metadata = store.get("sample_metadata")
+            feature_metadata = store.get("feature_metadata")
+
+            table_cls = cls
+            if cls is PivotTable and "/table_metadata" in keys:
+                table_metadata = store.get("table_metadata")
+                if "class_name" in table_metadata.columns:
+                    class_name = table_metadata["class_name"].iloc[0]
+                    table_cls = PivotTable._subclass_registry.get(class_name, PivotTable)
+
+        table = table_cls(data)
+        table.sample_metadata = sample_metadata.reindex(table.columns)
+        table.feature_metadata = feature_metadata.reindex(table.index)
+        table._validate_metadata()
+        print(f"[PivotTable] loaded from {h5_path}")
         return table
 
     # ------------------------------------------------------------------ #
