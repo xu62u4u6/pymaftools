@@ -245,9 +245,13 @@ class MAF(pd.DataFrame):
         elif len(non_false_mutations) == 1:
             return non_false_mutations.iloc[0]
 
-    def to_pivot_table(self) -> "SmallVariationTable":
+    def to_gene_table(self) -> "SmallVariationTable":
         """
-        Create a gene-by-sample pivot table of variant classifications.
+        Create a gene-level (gene × sample) pivot table of variant classifications.
+
+        This is the gene-level counterpart to :meth:`to_mutation_table` (one row
+        per mutation); the name makes the granularity explicit. ``to_pivot_table``
+        is a backward-compatible alias.
 
         Delegates to :meth:`to_mutation_table` followed by
         :meth:`SmallVariationTable.to_gene_level`, so both the mutation-level
@@ -259,6 +263,14 @@ class MAF(pd.DataFrame):
             Gene × sample matrix with gene-level feature_metadata.
         """
         return self.to_mutation_table().to_gene_level()
+
+    def to_pivot_table(self) -> "SmallVariationTable":
+        """Alias for :meth:`to_gene_table` (gene-level pivot table).
+
+        Kept for backward compatibility; ``to_gene_table`` is preferred in new
+        code as its name states the granularity.
+        """
+        return self.to_gene_table()
 
     # Columns to carry into mutation-level feature_metadata
     _FEATURE_META_COLS = [
@@ -427,9 +439,12 @@ class MAF(pd.DataFrame):
         # Call the parent class's to_csv method
         super().to_csv(csv_path, **kwargs)
 
-    def to_MAF(self, maf_path: str | os.PathLike, **kwargs: Any) -> None:
+    def to_maf(self, maf_path: str | os.PathLike, **kwargs: Any) -> None:
         """
-        Write the data as a standard MAF file (no index column).
+        Write the data as a standard MAF file (tab-separated, no index column).
+
+        This is the canonical MAF writer; ``to_MAF`` and ``write_maf`` are
+        deprecated aliases kept for backward compatibility.
 
         Parameters
         ----------
@@ -440,11 +455,20 @@ class MAF(pd.DataFrame):
             ``pd.DataFrame.to_csv``.
         """
         # Set default arguments
-        kwargs.setdefault("index", False)  # Ensure index is saved by default
+        kwargs.setdefault("index", False)  # MAF files have no index column
         kwargs.setdefault("sep", "\t")  # Default to tab-separated values
 
         # Call the parent class's to_csv method
         super().to_csv(maf_path, **kwargs)
+
+    def to_MAF(self, maf_path: str | os.PathLike, **kwargs: Any) -> None:
+        """Deprecated alias for :meth:`to_maf`."""
+        warnings.warn(
+            "MAF.to_MAF is deprecated; use to_maf() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        self.to_maf(maf_path, **kwargs)
 
     def to_base_change_pivot_table(self) -> PivotTable:
         """
@@ -609,15 +633,13 @@ class MAF(pd.DataFrame):
         ]
 
     def write_maf(self, file_path: str | os.PathLike) -> None:
-        """
-        Write the MAF to a tab-separated file without the index.
-
-        Parameters
-        ----------
-        file_path : str or os.PathLike
-            Destination file path.
-        """
-        self.to_csv(file_path, sep="\t", index=False)
+        """Deprecated alias for :meth:`to_maf`."""
+        warnings.warn(
+            "MAF.write_maf is deprecated; use to_maf() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        self.to_maf(file_path)
 
     def write_SigProfilerMatrixGenerator_format(
         self, output_path: str | os.PathLike

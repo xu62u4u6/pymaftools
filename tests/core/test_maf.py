@@ -89,6 +89,37 @@ def test_to_pivot_table_returns_expected_axes_and_metadata():
     assert table.loc["TP53", "s1"] == "Multi_Hit"
 
 
+def test_to_gene_table_matches_to_pivot_table_alias():
+    """to_gene_table is canonical; to_pivot_table is a backward-compatible alias."""
+    maf = MAF(_build_maf_df())
+
+    gene_table = maf.to_gene_table()
+    aliased = maf.to_pivot_table()
+
+    assert isinstance(gene_table, PivotTable)
+    assert set(gene_table.index) == set(aliased.index)
+    assert set(gene_table.columns) == set(aliased.columns)
+
+
+def test_to_maf_canonical_and_deprecated_aliases(tmp_path):
+    """to_maf is canonical; to_MAF/write_maf warn but produce identical output."""
+    maf = MAF(_build_maf_df())
+
+    canonical = tmp_path / "canonical.maf"
+    maf.to_maf(canonical)
+    expected = canonical.read_text()
+
+    legacy_camel = tmp_path / "camel.maf"
+    with pytest.warns(DeprecationWarning, match="to_maf"):
+        maf.to_MAF(legacy_camel)
+    assert legacy_camel.read_text() == expected
+
+    legacy_write = tmp_path / "write.maf"
+    with pytest.warns(DeprecationWarning, match="to_maf"):
+        maf.write_maf(legacy_write)
+    assert legacy_write.read_text() == expected
+
+
 def test_merge_mutations_covers_false_single_and_multi_hit():
     assert MAF.merge_mutations(pd.Series([False, False])) is False
     assert MAF.merge_mutations(pd.Series(["Splice_Site", False], index=[0, 10])) == "Splice_Site"
