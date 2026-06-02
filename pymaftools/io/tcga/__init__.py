@@ -1,7 +1,7 @@
 """TCGA-specific data builders and GDC client."""
 
 from .base import TCGATableBuilder
-from .client import GDCClient, parse_tcga_barcode
+from .client import GDCClient, parse_tcga_barcode, DATA_TYPE_CONFIGS
 from .clinical import TCGAClinicalBuilder
 from .cnv_gene import TCGACNVGeneBuilder
 from .cnv_segment import TCGACNVSegmentBuilder
@@ -13,6 +13,7 @@ from .mutation import TCGAMutationBuilder
 __all__ = [
     "GDCClient",
     "parse_tcga_barcode",
+    "DATA_TYPE_CONFIGS",
     "TCGATableBuilder",
     "TCGAExpressionBuilder",
     "TCGAMutationBuilder",

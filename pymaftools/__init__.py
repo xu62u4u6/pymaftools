@@ -4,7 +4,7 @@ from importlib.metadata import version
 __version__ = version("pymaftools")
 
 # core
-from .core.PivotTable import PivotTable
+from .core.PivotTable import PivotTable, capture_size
 from .core.MAF import MAF
 from .core.CopyNumberVariationTable import CopyNumberVariationTable
 from .core.SmallVariationTable import SmallVariationTable
@@ -27,7 +27,6 @@ from .core.Clustering import (
     plot_cluster_feature_importance,
     run_feature_clustering,
     plot_clustering_metrics_and_find_best_k,
-    gpt_known_genes_summary,
 )
 
 # plot

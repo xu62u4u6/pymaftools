@@ -111,8 +111,15 @@ class Cohort:
             If ``table`` is not an instance of PivotTable.
         """
         if not isinstance(table, PivotTable):
+            if isinstance(table, str) and isinstance(table_name, PivotTable):
+                raise TypeError(
+                    "add_table arguments appear swapped. The signature is "
+                    "add_table(table, table_name), e.g. "
+                    "add_table(mutation_pt, 'mutations')."
+                )
             raise TypeError(
-                f"Assay data for '{table_name}' must be an instance of PivotTable."
+                "add_table(table, table_name): 'table' must be a PivotTable, "
+                f"got {type(table).__name__}."
             )
 
         if self.sample_IDs is None:

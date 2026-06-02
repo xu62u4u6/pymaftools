@@ -133,10 +133,11 @@ Multi-omics Integration
    from pymaftools import PivotTable, Cohort
 
    # Build a cohort from multiple omics layers
-   cohort = Cohort()
-   cohort.add_table("mutation", mutation_table)
-   cohort.add_table("expression", expression_table)
-   cohort.add_table("cnv", cnv_table)
+   # add_table(table, table_name) — the PivotTable comes first
+   cohort = Cohort("my_cohort")
+   cohort.add_table(mutation_table, "mutation")
+   cohort.add_table(expression_table, "expression")
+   cohort.add_table(cnv_table, "cnv")
 
    # Subset to shared samples
    cohort = cohort.subset(samples=shared_samples)

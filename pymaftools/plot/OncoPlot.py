@@ -221,6 +221,9 @@ class OncoPlot(BasePlot):
         """
         Plot the main mutation heatmap using categorical color coding.
 
+        Legacy shorthand for the canonical ``main(kind="mutation")``; prefer
+        ``main()`` in new code.
+
         Parameters
         ----------
         cmap_dict : dict, optional
@@ -796,6 +799,9 @@ class OncoPlot(BasePlot):
         """
         Plot bar chart showing values (typically TMB) for each sample.
 
+        Legacy shorthand for the canonical ``add_bar()``; prefer ``add_bar()``
+        in new code.
+
         Parameters
         ----------
         fontsize : int, default 6
@@ -839,6 +845,9 @@ class OncoPlot(BasePlot):
     ) -> OncoPlot:
         """
         Plot frequency heatmap showing mutation frequencies for each gene.
+
+        Legacy shorthand for the canonical ``add_freq()``; prefer ``add_freq()``
+        in new code.
 
         Parameters
         ----------
@@ -1003,6 +1012,9 @@ class OncoPlot(BasePlot):
     ) -> OncoPlot:
         """
         Plot numeric heatmap with customizable y-axis tick label font size.
+
+        Legacy shorthand for the canonical ``main(kind="cnv")``; prefer
+        ``main(kind="cnv")`` in new code.
 
         Parameters
         ----------

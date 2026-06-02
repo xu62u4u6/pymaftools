@@ -74,13 +74,13 @@ class TestGDCClientOffline:
 
     def test_data_type_configs(self):
         """Verify all expected data types are configured."""
-        expected = {"expression", "mutation", "cnv", "methylation", "clinical"}
+        expected = {"expression", "mutation", "cnv_seg", "cnv_gene", "methylation"}
         assert set(DATA_TYPE_CONFIGS.keys()) == expected
         for key, config in DATA_TYPE_CONFIGS.items():
             assert "data_type" in config
             assert "label" in config
 
-    @patch("pymaftools.io.tcga.requests.post")
+    @patch("pymaftools.io.tcga.client.requests.post")
     def test_get_cases(self, mock_post):
         mock_response = MagicMock()
         mock_response.json.return_value = {
@@ -101,7 +101,7 @@ class TestGDCClientOffline:
         assert cases == {"TCGA-44-2655", "TCGA-44-2656"}
         mock_post.assert_called_once()
 
-    @patch("pymaftools.io.tcga.requests.post")
+    @patch("pymaftools.io.tcga.client.requests.post")
     def test_align_cases(self, mock_post):
         """Test alignment returns intersection of case sets."""
         call_count = [0]
@@ -130,7 +130,7 @@ class TestGDCClientOffline:
 
         assert aligned == ["B", "C"]
 
-    @patch("pymaftools.io.tcga.requests.post")
+    @patch("pymaftools.io.tcga.client.requests.post")
     def test_generate_manifests(self, mock_post, tmp_path):
         mock_response = MagicMock()
         mock_response.json.return_value = {
@@ -165,7 +165,7 @@ class TestGDCClientOffline:
         assert "uuid-1" in content
         assert "file1.tsv" in content
 
-    @patch("pymaftools.io.tcga.requests.post")
+    @patch("pymaftools.io.tcga.client.requests.post")
     def test_fetch_clinical_table(self, mock_post):
         mock_response = MagicMock()
         mock_response.json.return_value = {

@@ -113,8 +113,10 @@ pt = (pt
     .calculate_TMB(default_capture_size=50)
 )
 
-# Create oncoplot. The convenience methods register tracks; a single
-# render() draws the figure (required before save()).
+# Create oncoplot. A single render() draws the figure (required before save()).
+# This uses the convenience methods (mutation_heatmap/plot_freq/plot_bar), which
+# are shorthand for the canonical declarative track API documented below under
+# "Declarative track API" — prefer that for new code.
 oncoplot = (OncoPlot(pt.head(50), figsize=(15, 10))
     .mutation_heatmap()
     .plot_freq()
@@ -209,15 +211,18 @@ oncoplot.save("cnv_oncoplot.tiff", dpi=600)
 
 ![image](img/1_COSMIC_gene_level.png)
 
-### Declarative track API
+### Declarative track API (canonical)
 
-Oncoplots are composed of *tracks*: a main matrix plus annotation strips. The
-convenience methods above (`mutation_heatmap`, `plot_freq`, …) are thin wrappers
-that register tracks; `render()` derives the layout and draws everything in one
-pass. The full API gives explicit control over each track's side and, unlike the
-old layout, can draw **feature-side annotations** (row strips from
-`feature_metadata`). It is reachable from the same `table.plot` accessor as the
-statistical plots:
+This is the recommended API for new code. Oncoplots are composed of *tracks*: a
+main matrix plus annotation strips. The convenience methods above
+(`mutation_heatmap`, `plot_freq`, `plot_bar`, `numeric_heatmap`) are legacy
+shorthand that register the same tracks — `main()` covers both
+`mutation_heatmap()` and `numeric_heatmap()` via `kind=`, `add_freq()` replaces
+`plot_freq()`, and `add_bar()` replaces `plot_bar()`. `render()` derives the
+layout and draws everything in one pass. The declarative API gives explicit
+control over each track's side and, unlike the convenience methods, can draw
+**feature-side annotations** (row strips from `feature_metadata`). It is reachable
+from the same `table.plot` accessor as the statistical plots:
 
 ```python
 op = (table.plot.oncoplot(figsize=(15, 10))
@@ -279,10 +284,11 @@ plot.plot()
 ### Multi-Omics with Cohort
 
 ```python
-cohort = Cohort(sample_IDs=sample_list)
-cohort.add_table("mutations", mutation_pt)
-cohort.add_table("cnv", cnv_table)
-cohort.add_table("expression", expr_table)
+cohort = Cohort("my_cohort")
+# add_table(table, table_name) — the PivotTable comes first
+cohort.add_table(mutation_pt, "mutations")
+cohort.add_table(cnv_table, "cnv")
+cohort.add_table(expr_table, "expression")
 cohort.add_sample_metadata(clinical_df)
 
 # Save/load

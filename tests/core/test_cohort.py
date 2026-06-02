@@ -170,28 +170,49 @@ class TestCohortValidation:
     def test_add_invalid_table(self):
         """Test adding non-PivotTable object"""
         cohort = Cohort("test")
-        
-        with pytest.raises(TypeError, match="must be an instance of PivotTable"):
+
+        with pytest.raises(TypeError, match="'table' must be a PivotTable"):
             cohort.add_table("not_a_pivot_table", "invalid")
+
+    def test_add_table_swapped_args(self, sample_pivot_table):
+        """Swapped (name, table) args get a dedicated, self-explaining error."""
+        cohort = Cohort("test")
+
+        with pytest.raises(TypeError, match="arguments appear swapped"):
+            cohort.add_table("mutations", sample_pivot_table)
     
     def test_conflicting_metadata(self, sample_pivot_table):
-        """Test handling of conflicting metadata"""
+        """Conflicting metadata columns are kept (prefixed), not silently dropped.
+
+        add_table warns and renames the incoming column to ``<table_name>_<col>``
+        so both versions survive — this guards against the lossy behaviour of
+        either overwriting or raising on every shared column.
+        """
         cohort = Cohort("test")
         cohort.add_table(sample_pivot_table, "table1")
-        
+        original_subtype = cohort.sample_metadata["subtype"].copy()
+
         # Create conflicting metadata
         conflicting_metadata = pd.DataFrame({
             'subtype': ['DIFFERENT', 'VALUES', 'HERE', 'CONFLICT']  # Different from original
         }, index=sample_pivot_table.columns)
-        
-        conflicting_table = PivotTable(sample_pivot_table.values, 
+
+        conflicting_table = PivotTable(sample_pivot_table.values,
                                      index=sample_pivot_table.index,
                                      columns=sample_pivot_table.columns)
         conflicting_table.sample_metadata = conflicting_metadata
         conflicting_table.feature_metadata = sample_pivot_table.feature_metadata.copy()
-        
-        with pytest.raises(ValueError, match="conflicting values"):
+
+        with pytest.warns(UserWarning, match="Conflicting sample metadata"):
             cohort.add_table(conflicting_table, "table2")
+
+        # Original column untouched; conflicting values preserved under a prefix.
+        pd.testing.assert_series_equal(
+            cohort.sample_metadata["subtype"], original_subtype
+        )
+        assert list(cohort.sample_metadata["table2_subtype"]) == [
+            'DIFFERENT', 'VALUES', 'HERE', 'CONFLICT'
+        ]
     
     def test_mismatched_samples(self, sample_pivot_table):
         """Test handling of mismatched samples"""

@@ -992,6 +992,44 @@ class PivotTable(pd.DataFrame):
         group_col: str = "subtype",
         capture_size_dict: Optional[Dict[str, float]] = None,
     ) -> "PivotTable":
+        """
+        Compute Tumor Mutation Burden (TMB) per sample.
+
+        TMB is ``mutations_count / capture_size`` (mutations per Mb) and is
+        stored as a new ``sample_metadata["TMB"]`` column on the returned copy.
+
+        Parameters
+        ----------
+        default_capture_size : float, default 40
+            Capture size in Mb applied to every sample unless overridden via
+            ``capture_size_dict``.
+        group_col : str, default "subtype"
+            ``sample_metadata`` column used to look up per-group capture sizes
+            in ``capture_size_dict``.
+        capture_size_dict : dict, optional
+            Mapping ``{group_value: capture_size_mb}``; samples whose
+            ``group_col`` value matches a key use that capture size instead of
+            ``default_capture_size``. Use :func:`capture_size` to derive a size
+            from a BED file.
+
+        Returns
+        -------
+        PivotTable
+            A copy with ``sample_metadata`` columns ``capture_size`` and ``TMB``.
+
+        Raises
+        ------
+        KeyError
+            If ``sample_metadata["mutations_count"]`` is absent. This column is
+            populated by :meth:`MAF.to_mutation_table`; for tables built another
+            way, set it manually before calling.
+        """
+        if "mutations_count" not in self.sample_metadata.columns:
+            raise KeyError(
+                "calculate_TMB requires sample_metadata['mutations_count'], which "
+                "is populated by MAF.to_mutation_table(). For tables built another "
+                "way, set table.sample_metadata['mutations_count'] manually first."
+            )
         table = self.copy()
         table.sample_metadata["capture_size"] = default_capture_size
 
