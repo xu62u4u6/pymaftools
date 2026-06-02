@@ -494,7 +494,7 @@ class OncoPlot(BasePlot):
         main_width: float | None = None,
         main_height: float | None = None,
         legend_width: float = 3,
-        legend_pad: float = 0,
+        legend_pad: float = 1,
         colorbar_width: float = 0.55,
         wspace: float | None = None,
         hspace: float | None = None,
@@ -520,10 +520,9 @@ class OncoPlot(BasePlot):
             ``width_ratios[0]`` / ``height_ratios[-1]`` from ``set_config``.
         legend_width : float, default 3
             Relative width of the legend column.
-        legend_pad : float, default 0
+        legend_pad : float, default 1
             Relative width of an explicit empty spacer column inserted between the
-            right-side tracks and the legend. This is the named, opt-in
-            replacement for the old hardcoded "phantom column"; 0 means none.
+            right-side tracks and the legend. Use 0 to remove the spacer.
         colorbar_width : float, default 0.55
             Width (axes fraction) of the stacked numeric colorbars drawn in the
             legend area for tracks with ``colorbar="legend"``.
@@ -839,7 +838,7 @@ class OncoPlot(BasePlot):
     def plot_freq(
         self,
         freq_columns: list[str] = ["freq"],
-        annot_fontsize: int = 9,
+        annot_fontsize: int = 8,
         linewidths: float = 1,
         xtick_fontsize: int = 9,
     ) -> OncoPlot:
@@ -853,7 +852,7 @@ class OncoPlot(BasePlot):
         ----------
         freq_columns : list, default ["freq"]
             List of frequency columns to display
-        annot_fontsize : int, default 9
+        annot_fontsize : int, default 8
             Font size for annotations
         linewidths: float, default 1
             Width of lines between cells

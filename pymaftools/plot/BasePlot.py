@@ -184,6 +184,7 @@ class BasePlot:
         filename: str,
         dpi: int = 300,
         bbox_inches: str = "tight",
+        pad_inches: float = 0.08,
         transparent: bool = False,
         **kwargs: Any,
     ) -> None:
@@ -198,6 +199,8 @@ class BasePlot:
             Resolution.
         bbox_inches : str, optional
             Bounding box setting.
+        pad_inches : float, optional
+            Padding around the tight bounding box.
         transparent : bool, optional
             Whether to use transparent background.
         **kwargs : Any
@@ -214,6 +217,7 @@ class BasePlot:
             save_kwargs: dict[str, Any] = {
                 "dpi": dpi,
                 "bbox_inches": bbox_inches,
+                "pad_inches": pad_inches,
                 "transparent": transparent,
                 "format": format,
             }

@@ -402,7 +402,8 @@ class FreqTrack(Track):
         freq_data: pd.DataFrame,
         *,
         line_color: str = "white",
-        annot_fontsize: int = 9,
+        annot: bool = True,
+        annot_fontsize: int = 8,
         linewidths: float = 1,
         xtick_fontsize: int = 9,
         vmin: float | None = None,
@@ -410,6 +411,7 @@ class FreqTrack(Track):
     ) -> None:
         self.freq_data = freq_data
         self.line_color = line_color
+        self.annot = annot
         self.annot_fontsize = annot_fontsize
         self.linewidths = linewidths
         self.xtick_fontsize = xtick_fontsize
@@ -426,7 +428,7 @@ class FreqTrack(Track):
             ax=ax,
             xticklabels=self.freq_data.columns,
             yticklabels=False,
-            annot=True,
+            annot=self.annot,
             fmt=".2f",
             annot_kws={"size": self.annot_fontsize},
             cmap="Blues",
@@ -474,6 +476,7 @@ class CategoricalTrack(Track):
         annotation_font_size: int = 10,
         annotate_text_color: str = "black",
         ytick_fontsize: int = 10,
+        size: float = 1.0,
     ) -> None:
         self.data = data  # 1xN (sample-aligned) or Nx1 (feature-aligned)
         self.column_cmap = column_cmap
@@ -486,6 +489,7 @@ class CategoricalTrack(Track):
         self.annotation_font_size = annotation_font_size
         self.annotate_text_color = annotate_text_color
         self.ytick_fontsize = ytick_fontsize
+        self.size = size
 
     def render(self, ax: Axes) -> Axes:
         horizontal = self.side in ("top", "bottom")
@@ -498,6 +502,8 @@ class CategoricalTrack(Track):
             xticklabels=False,
             yticklabels=list(self.data.index) if horizontal else False,
             alpha=self.alpha,
+            vmin=0,
+            vmax=len(self.column_cmap),
         )
 
         if self.annotate:

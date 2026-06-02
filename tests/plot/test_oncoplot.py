@@ -15,12 +15,16 @@ import matplotlib
 
 matplotlib.use("Agg")  # headless rendering
 
+from pathlib import Path
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pytest
+import pymaftools
 
 from pymaftools.core.PivotTable import PivotTable
+from pymaftools.core.SmallVariationTable import SmallVariationTable
 from pymaftools.plot.OncoPlot import OncoPlot
 from pymaftools.plot.Track import (
     MainMatrixTrack,
@@ -32,6 +36,7 @@ from pymaftools.plot.Track import (
 )
 
 VARIANT_TYPES = ["Missense_Mutation", "Nonsense_Mutation", "Frame_Shift_Del"]
+DATA_DIR = Path(__file__).resolve().parents[2] / "pymaftools" / "data"
 
 
 @pytest.fixture
@@ -65,12 +70,13 @@ def teardown_function(_):
 
 def test_default_oncoplot_does_not_crash(mutation_table):
     """P0#1 regression: the convenience entry point must build and render
-    without error. It derives a 3-column layout (heatmap + freq + legend)."""
+    without error. It derives a layout with a spacer before the legend."""
     op = OncoPlot.default_oncoplot(mutation_table, figsize=(8, 6))
 
     assert op.fig is not None
-    # 0 left + main + 1 right (freq) + legend = 3 cols; 1 top (bar) + main = 2 rows
-    assert op.gs.ncols == 3
+    # 0 left + main + 1 right (freq) + spacer + legend = 4 cols;
+    # 1 top (bar) + main = 2 rows
+    assert op.gs.ncols == 4
     assert op.gs.nrows == 2
 
 
@@ -99,13 +105,22 @@ def test_mutation_legend_content(mutation_table):
     assert "Unknown" not in legend
 
 
+def test_legend_swatch_default_is_wide_and_short(mutation_table):
+    """Legend swatches should be squat rectangles, not near-square blocks."""
+    op = OncoPlot(mutation_table, figsize=(8, 6)).main().render()
+
+    patch = op.ax_legend.patches[0]
+    assert patch.get_width() == pytest.approx(0.06)
+    assert patch.get_height() == pytest.approx(0.02)
+
+
 def test_render_path_derives_layout_from_tracks(mutation_table):
     """Declarative path: .main().render() must produce a heatmap + legend axis
     purely from the registered track, independent of the eager axes."""
     op = OncoPlot(mutation_table, figsize=(8, 6)).main().render()
 
     assert op.fig is not None
-    assert op.gs.ncols == 2  # heatmap + legend, derived from the single main track
+    assert op.gs.ncols == 3  # heatmap + spacer + legend
     assert len(op.ax_heatmap.collections) >= 1
     assert op.has_legend("Mutation")
 
@@ -263,8 +278,8 @@ def test_render_derives_multi_side_layout(mutation_table):
 
     # rows: 1 top + main + 1 bottom = 3
     assert op.gs.nrows == 3
-    # cols: 0 left + main + 2 right + 1 legend = 4
-    assert op.gs.ncols == 4
+    # cols: 0 left + main + 2 right + spacer + 1 legend = 5
+    assert op.gs.ncols == 5
 
 
 def test_render_feature_annotation_legend_present(mutation_table):
@@ -360,6 +375,25 @@ def test_render_legend_pad_adds_named_spacer_column(mutation_table):
     assert op_pad.gs.ncols == op_no_pad.gs.ncols + 1
 
 
+def test_render_default_legend_pad_adds_space_before_legend(mutation_table):
+    """The default oncoplot keeps the legend off the main plot."""
+    op_no_pad = OncoPlot(mutation_table, figsize=(8, 6)).main().add_freq(side="right")
+    op_no_pad.render(legend_pad=0)
+
+    op_default = OncoPlot(mutation_table, figsize=(8, 6)).main().add_freq(side="right")
+    op_default.render()
+
+    assert op_default.gs.ncols == op_no_pad.gs.ncols + 1
+
+
+def test_freq_track_default_annotation_fontsize_is_smaller(mutation_table):
+    """Frequency cell annotations default one point smaller than before."""
+    op = OncoPlot(mutation_table, figsize=(8, 6)).main().add_freq(side="right")
+
+    track = next(t for t in op.tracks if isinstance(t, FreqTrack))
+    assert track.annot_fontsize == 8
+
+
 # --- S6: unified entry + PivotTablePlot rename backward-compat --------------
 
 
@@ -421,6 +455,45 @@ def test_grouping_sections_aligned_tracks_with_shared_scale():
     assert getattr(bar, "_shared_ymax", None) is not None
     # only the first bar section keeps the y-label
     assert sum(a.get_ylabel() == "TMB" for a in op.fig.axes) == 1
+
+
+def test_real_tcga_lung_grouped_oncoplot_full_layout():
+    """Real TCGA lung fixture: large grouped oncoplot with sample grouping,
+    feature grouping, subtype sample annotation, and frequency track."""
+    table = pymaftools.read_h5(DATA_DIR / "example_tcga_lung_mutation_grouped.h5")
+
+    assert isinstance(table, SmallVariationTable)
+    assert table.shape == (62, 958)
+    assert table.sample_metadata["subtype"].value_counts().to_dict() == {
+        "LUAD": 490,
+        "LUSC": 468,
+    }
+    assert table.feature_metadata["gene_family"].value_counts().to_dict() == {
+        "Other": 58,
+        "ZNF": 2,
+        "MUC": 2,
+    }
+
+    op = (
+        OncoPlot(table, figsize=(18, 12))
+        .main(yticklabels=False, linewidths=0)
+        .add_freq(side="right", annot=False, linewidths=0)
+        .add_sample_annotation(
+            ["subtype"],
+            side="bottom",
+            cmap_dict={"subtype": {"LUAD": "#4C78A8", "LUSC": "#F58518"}},
+            linewidths=0,
+            size=0.6,
+        )
+        .group_features(by="gene_family")
+        .group_samples(by="subtype")
+        .render(wspace=0.02, hspace=0.02)
+    )
+
+    titles = {txt.get_text() for ax in op.fig.axes for txt in ax.texts}
+    assert {"LUAD", "LUSC", "ZNF", "MUC", "Other"} <= titles
+    assert op.has_legend("Mutation")
+    assert op.has_legend("subtype")
 
 
 def test_pivottableplot_rename_backward_compat():
