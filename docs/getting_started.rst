@@ -23,7 +23,7 @@ the package, so this runs as-is after ``pip install``:
 
    # Build + prepare the mutation table
    table = (
-       maf.to_pivot_table()
+       maf.to_gene_table()
        .add_freq()
        .calculate_tmb(default_capture_size=40)
        .sort_features(by="freq")
@@ -59,7 +59,7 @@ work.
 - ``Variant_Classification``
 
 The first six build the per-mutation index; ``Variant_Classification`` is the
-value used by ``to_pivot_table``. (``Variant_Type`` and ``Protein_position``
+value used by ``to_gene_table``. (``Variant_Type`` and ``Protein_position``
 are only needed for base-change / lollipop analyses.)
 
 **Sample identity.** By default each row's sample comes from the
@@ -87,13 +87,13 @@ Computing TMB
 
 .. code-block:: python
 
-   table = maf.to_pivot_table()          # provides `mutations_count`, not TMB
+   table = maf.to_gene_table()           # provides `mutations_count`, not TMB
    table = table.calculate_tmb(default_capture_size=40)  # TMB = count / size (Mb)
    table.sample_metadata["TMB"]
 
 .. note::
 
-   ``to_pivot_table`` does not compute TMB. ``calculate_tmb`` returns a **new**
+   ``to_gene_table`` does not compute TMB. ``calculate_tmb`` returns a **new**
    table rather than modifying in place, so capture the return value
    (``table = table.calculate_tmb(...)``) or the TMB column will not appear.
 

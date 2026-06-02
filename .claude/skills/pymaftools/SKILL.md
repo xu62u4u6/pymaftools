@@ -21,9 +21,9 @@ from pymaftools import MAF
 maf = MAF.read_maf("path/to/file.maf")                  # samples from Tumor_Sample_Barcode
 maf = MAF.read_maf("path/to/file.maf", sample_ID="SampleA")  # or force one sample_ID
 # Filter to nonsynonymous mutations
-filtered = maf.filter_maf(filter_type="nonsynonymous")
-# Convert to PivotTable (gene x sample matrix)
-pt = maf.to_pivot_table()
+filtered = maf.filter_maf(MAF.nonsynonymous_types)
+# Convert to a gene-level table (gene x sample matrix; alias: to_pivot_table)
+pt = maf.to_gene_table()
 # Merge multiple MAFs
 merged = MAF.merge_mafs([maf1, maf2])
 # Protein info for lollipop plots

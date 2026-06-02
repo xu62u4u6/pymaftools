@@ -102,8 +102,8 @@ maf1 = MAF.read_maf("case1.maf")
 maf2 = MAF.read_maf("case2.maf")
 merged = MAF.merge_mafs([maf1, maf2])
 
-# Filter to nonsynonymous mutations and convert to pivot table
-pt = merged.filter_maf(MAF.nonsynonymous_types).to_pivot_table()
+# Filter to nonsynonymous mutations and convert to a gene-level table
+pt = merged.filter_maf(MAF.nonsynonymous_types).to_gene_table()
 
 # Process pivot table
 pt = (pt
@@ -149,7 +149,7 @@ all_case_maf = MAF.merge_mafs([LUAD_maf, LUSC_maf])
 # Filter and convert to table
 table = (all_case_maf
     .filter_maf(all_case_maf.nonsynonymous_types)
-    .to_pivot_table()
+    .to_gene_table()
 )
 
 # Load sample metadata
