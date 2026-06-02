@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import gzip
 import re
+import warnings
 from typing import Any
 
 import pandas as pd
@@ -58,6 +59,17 @@ class VCF(pd.DataFrame):
 
     @classmethod
     def from_file(cls, vcf_path: str, caller: str) -> VCF:
+        """Deprecated alias for :meth:`read_vcf` (reads from a file path)."""
+        warnings.warn(
+            "VCF.from_file is deprecated; use VCF.read_vcf() instead "
+            "(read_* is the convention for file readers).",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return cls.read_vcf(vcf_path, caller)
+
+    @classmethod
+    def read_vcf(cls, vcf_path: str, caller: str) -> VCF:
         """
         Read a VCF file and return a VCF object.
 

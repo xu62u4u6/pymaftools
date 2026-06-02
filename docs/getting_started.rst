@@ -25,7 +25,7 @@ the package, so this runs as-is after ``pip install``:
    table = (
        maf.to_pivot_table()
        .add_freq()
-       .calculate_TMB(default_capture_size=40)
+       .calculate_tmb(default_capture_size=40)
        .sort_features(by="freq")
        .sort_samples_by_mutations()
    )
@@ -88,14 +88,14 @@ Computing TMB
 .. code-block:: python
 
    table = maf.to_pivot_table()          # provides `mutations_count`, not TMB
-   table = table.calculate_TMB(default_capture_size=40)  # TMB = count / size (Mb)
+   table = table.calculate_tmb(default_capture_size=40)  # TMB = count / size (Mb)
    table.sample_metadata["TMB"]
 
 .. note::
 
-   ``to_pivot_table`` does not compute TMB. ``calculate_TMB`` returns a **new**
+   ``to_pivot_table`` does not compute TMB. ``calculate_tmb`` returns a **new**
    table rather than modifying in place, so capture the return value
-   (``table = table.calculate_TMB(...)``) or the TMB column will not appear.
+   (``table = table.calculate_tmb(...)``) or the TMB column will not appear.
 
 Subsetting Data
 ---------------

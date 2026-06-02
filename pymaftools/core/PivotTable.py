@@ -9,6 +9,7 @@ from __future__ import annotations
 
 # Standard library imports
 import sqlite3
+import warnings
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Literal, Optional, Self, Tuple, Union
 
@@ -986,7 +987,16 @@ class PivotTable(pd.DataFrame):
 
         return merged
 
-    def calculate_TMB(
+    def calculate_TMB(self, *args: Any, **kwargs: Any) -> "PivotTable":
+        """Deprecated alias for :meth:`calculate_tmb`."""
+        warnings.warn(
+            "calculate_TMB is deprecated; use calculate_tmb() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.calculate_tmb(*args, **kwargs)
+
+    def calculate_tmb(
         self,
         default_capture_size: float = 40,
         group_col: str = "subtype",
@@ -1026,7 +1036,7 @@ class PivotTable(pd.DataFrame):
         """
         if "mutations_count" not in self.sample_metadata.columns:
             raise KeyError(
-                "calculate_TMB requires sample_metadata['mutations_count'], which "
+                "calculate_tmb requires sample_metadata['mutations_count'], which "
                 "is populated by MAF.to_mutation_table(). For tables built another "
                 "way, set table.sample_metadata['mutations_count'] manually first."
             )

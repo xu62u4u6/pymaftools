@@ -13,6 +13,13 @@ class SignatureTable(PivotTable):
     for reading signature weight files.
     """
 
+    @property
+    def plot(self) -> "SignatureTablePlot":
+        """Access signature-specific plotting plus the shared plotters."""
+        from ..plot.SignatureTablePlot import SignatureTablePlot
+
+        return SignatureTablePlot(self)
+
     @classmethod
     def read_signature(cls, file_path: str) -> SignatureTable:
         """

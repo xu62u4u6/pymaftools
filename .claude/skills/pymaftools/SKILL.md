@@ -41,7 +41,7 @@ from pymaftools import PivotTable
 pt = maf.to_pivot_table()
 pt = pt.add_freq()                          # Add mutation frequency to feature_metadata
 pt = pt.filter_by_freq(min_freq=0.05)       # Keep genes mutated in >=5% samples
-pt = pt.calculate_TMB()                     # Add TMB to sample_metadata
+pt = pt.calculate_tmb()                     # Add TMB to sample_metadata
 similarity = pt.compute_similarity(method="jaccard")
 
 # Sorting

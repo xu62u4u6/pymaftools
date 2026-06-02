@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import os
 import re
+import warnings
 from typing import TYPE_CHECKING
 from .PivotTable import PivotTable
 
@@ -28,6 +29,13 @@ class CopyNumberVariationTable(PivotTable):
     --------
     PivotTable : Base class providing generic pivot-table operations.
     """
+
+    @property
+    def plot(self) -> "CopyNumberVariationTablePlot":
+        """Access CNV-specific plotting (e.g. ``band_ratio``) plus shared plots."""
+        from ..plot.CopyNumberVariationTablePlot import CopyNumberVariationTablePlot
+
+        return CopyNumberVariationTablePlot(self)
 
     @classmethod
     def from_pivot_table(cls, table: PivotTable) -> "CopyNumberVariationTable":
@@ -455,7 +463,16 @@ class CopyNumberVariationTable(PivotTable):
         )
         return cluster_table.rename_index_and_columns()
 
-    def plot_cnv_band_ratio(
+    def plot_cnv_band_ratio(self, *args, **kwargs) -> pd.DataFrame:
+        """Deprecated alias for ``.plot.band_ratio()``."""
+        warnings.warn(
+            "plot_cnv_band_ratio is deprecated; use .plot.band_ratio() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self._cnv_band_ratio(*args, **kwargs)
+
+    def _cnv_band_ratio(
         self,
         cluster_id: str,
         mode: str = "gain",

@@ -110,7 +110,7 @@ pt = (pt
     .add_freq()
     .sort_features(by="freq")
     .sort_samples_by_mutations()
-    .calculate_TMB(default_capture_size=50)
+    .calculate_tmb(default_capture_size=50)
 )
 
 # Create oncoplot. A single render() draws the figure (required before save()).

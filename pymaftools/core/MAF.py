@@ -644,6 +644,16 @@ class MAF(pd.DataFrame):
     def write_SigProfilerMatrixGenerator_format(
         self, output_path: str | os.PathLike
     ) -> None:
+        """Deprecated alias for :meth:`to_sigprofiler`."""
+        warnings.warn(
+            "write_SigProfilerMatrixGenerator_format is deprecated; "
+            "use to_sigprofiler() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        self.to_sigprofiler(output_path)
+
+    def to_sigprofiler(self, output_path: str | os.PathLike) -> None:
         """
         Convert and write the MAF in SigProfilerMatrixGenerator format.
 

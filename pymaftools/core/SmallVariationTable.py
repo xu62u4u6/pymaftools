@@ -14,6 +14,13 @@ class SmallVariationTable(PivotTable):
     pandas operations return SmallVariationTable objects.
     """
 
+    @property
+    def plot(self) -> "SmallVariationTablePlot":
+        """Access mutation-specific plotting plus the shared plotters."""
+        from ..plot.SmallVariationTablePlot import SmallVariationTablePlot
+
+        return SmallVariationTablePlot(self)
+
     # Gene-level annotation columns — taken from first mutation per gene
     _GENE_LEVEL_COLS = [
         "Entrez_Gene_Id", "Gene", "BIOTYPE", "TRANSCRIPT_STRAND",

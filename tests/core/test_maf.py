@@ -178,7 +178,7 @@ def test_read_csv_reindex_and_sigprofiler_export(tmp_path):
 
     maf = MAF.read_csv(csv_path, reindex=True)
     out_path = tmp_path / "sigprofiler.tsv"
-    maf.write_SigProfilerMatrixGenerator_format(out_path)
+    maf.to_sigprofiler(out_path)
     written = pd.read_csv(out_path, sep="\t")
 
     assert "sample_ID" in written.columns
@@ -267,8 +267,8 @@ def test_read_maf_to_pivot_table_and_tmb_end_to_end(tmp_path):
     assert "mutations_count" in pivot.sample_metadata.columns
     assert "TMB" not in pivot.sample_metadata.columns
 
-    # calculate_TMB returns a NEW table; the original is left untouched.
-    with_tmb = pivot.calculate_TMB(default_capture_size=40)
+    # calculate_tmb returns a NEW table; the original is left untouched.
+    with_tmb = pivot.calculate_tmb(default_capture_size=40)
     assert "TMB" not in pivot.sample_metadata.columns
     assert "TMB" in with_tmb.sample_metadata.columns
 
