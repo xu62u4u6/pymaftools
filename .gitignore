@@ -15,3 +15,6 @@ data/*
 pymaftools/data/*.tsv
 tmp/
 todo.md
+
+# pybiomart query cache
+.pybiomart.sqlite

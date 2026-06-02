@@ -496,6 +496,40 @@ def test_real_tcga_lung_grouped_oncoplot_full_layout():
     assert op.has_legend("subtype")
 
 
+def test_group_samples_per_section_freq_strips():
+    """group_samples(freq=True) draws each group's own freq strip (X_freq, Y_freq)
+    right of its section, independent of an overall freq bar at the far right."""
+    t = _grouped_table()
+    groups = {
+        g: t.subset(samples=t.sample_metadata["grp"] == g) for g in ["X", "Y"]
+    }
+    t = t.add_freq(groups=groups)  # creates X_freq, Y_freq, and overall freq
+
+    op = (
+        OncoPlot(t, figsize=(7, 5))
+        .main()
+        .add_freq(freq_columns=["freq"], side="right")  # overall, far right
+        .group_samples(by="grp", freq=True, freq_annot=False)
+        .render()
+    )
+
+    # Each section drew a strip labelled with ITS OWN freq column (not a shared
+    # one), alongside the overall "freq" bar.
+    labels = {
+        lbl.get_text() for ax in op.fig.axes for lbl in ax.get_xticklabels()
+    }
+    assert {"X_freq", "Y_freq", "freq"} <= labels
+
+
+def test_group_samples_freq_missing_column_raises():
+    """freq=True without the per-group freq columns fails with a guiding error."""
+    t = _grouped_table()  # no X_freq / Y_freq computed
+
+    op = OncoPlot(t, figsize=(7, 5)).main().group_samples(by="grp", freq=True)
+    with pytest.raises(ValueError, match="add_freq"):
+        op.render()
+
+
 def test_pivottableplot_rename_backward_compat():
     """The old PivotTablePlot import path still resolves to the renamed
     PivotStatsPlot class (S6)."""

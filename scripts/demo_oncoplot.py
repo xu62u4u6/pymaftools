@@ -183,6 +183,37 @@ def demo_grouped(table: PivotTable) -> None:
     op.close()
 
 
+def demo_grouped_per_section_freq(table: PivotTable) -> None:
+    """Figure 6: per-section frequency bars. With samples grouped by subtype,
+    each group gets its OWN freq strip immediately right of its block (LUAD_freq
+    next to the LUAD section, ...), plus one overall freq bar at the far right.
+    Enabled with ``group_samples(by="subtype", freq=True)``; the per-group freq
+    columns come from ``add_freq(groups=...)``.
+    """
+    subtypes = ["LUAD", "ASC", "LUSC"]
+    grouped = table.sort_samples_by_group(
+        group_col="subtype", group_order=subtypes, top=10
+    )
+    # per-group freq columns (LUAD_freq / ASC_freq / LUSC_freq) + overall "freq"
+    groups = {
+        s: grouped.subset(samples=grouped.sample_metadata.subtype == s)
+        for s in subtypes
+    }
+    grouped = grouped.add_freq(groups=groups).sort_features(
+        by="freq", ascending=False
+    )
+    op = (
+        OncoPlot(grouped, figsize=(14, 9))
+        .main()
+        .add_freq(freq_columns=["freq"], side="right")  # overall, far right
+        .add_sample_annotation(["subtype"], side="bottom")
+        .group_samples(by="subtype", freq=True)
+        .render()
+    )
+    op.save(str(OUT_DIR / "demo_oncoplot_grouped_freq.png"))
+    op.close()
+
+
 def main() -> None:
     OUT_DIR.mkdir(exist_ok=True)
     mutation = prepare(make_mutation_table())
@@ -193,6 +224,7 @@ def main() -> None:
     demo_numeric(cnv)
     demo_declarative(mutation)
     demo_grouped(make_mutation_table())
+    demo_grouped_per_section_freq(make_mutation_table())
     print(f"[INFO] demo figures written to {OUT_DIR.resolve()}")
 
 

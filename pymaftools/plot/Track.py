@@ -435,7 +435,11 @@ class FreqTrack(Track):
             vmin=self.vmin,
             vmax=self.vmax,
         )
-        ax.tick_params(axis="x", labelsize=self.xtick_fontsize)
+        # Vertical column labels: freq columns (e.g. "LUAD_freq") read better
+        # rotated, and stay aligned under the narrow per-section strips.
+        ax.set_xticklabels(
+            self.freq_data.columns, rotation=90, fontsize=self.xtick_fontsize
+        )
         ax.set_ylabel("")
         ax.set_yticks([])  # hide y-axis
         return ax

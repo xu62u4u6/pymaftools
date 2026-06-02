@@ -432,6 +432,10 @@ class OncoPlot(BasePlot):
         show_titles: bool = True,
         title_fontsize: int = 11,
         title_align: str = "start",
+        freq: bool = False,
+        freq_suffix: str = "_freq",
+        freq_size: float = 1.0,
+        freq_annot: bool = True,
     ) -> OncoPlot:
         """Split columns (samples) into groups from a ``sample_metadata`` column.
 
@@ -440,6 +444,26 @@ class OncoPlot(BasePlot):
         group label on top (``title_align`` = ``"start"`` left / ``"center"`` /
         ``"end"`` right). Samples must already be contiguous by group — sort
         first, e.g. ``table.sort_samples_by_group(group_col="subtype", ...)``.
+
+        Per-section frequency
+        ---------------------
+        With ``freq=True`` each section gets its own frequency strip immediately
+        to its right, reading ``feature_metadata[f"{label}{freq_suffix}"]`` (e.g.
+        the ``LUAD_freq`` / ``LUSC_freq`` columns produced by
+        ``PivotTable.add_freq(groups=...)``). The strips share a 0–1 colour scale
+        so groups are comparable. An overall frequency bar is independent — add it
+        the usual way with ``.add_freq(freq_columns=["freq"])``.
+
+        Parameters
+        ----------
+        freq : bool, default False
+            Draw a per-section frequency strip right of each sample section.
+        freq_suffix : str, default "_freq"
+            Suffix appended to each section label to find its frequency column.
+        freq_size : float, default 1.0
+            Width of each per-section frequency strip (matrix-cell units).
+        freq_annot : bool, default True
+            Annotate each strip cell with its frequency value.
         """
         self._sample_groups = {
             "by": by,
@@ -447,6 +471,10 @@ class OncoPlot(BasePlot):
             "show_titles": show_titles,
             "title_fontsize": title_fontsize,
             "title_align": title_align,
+            "freq": freq,
+            "freq_suffix": freq_suffix,
+            "freq_size": freq_size,
+            "freq_annot": freq_annot,
         }
         return self
 
@@ -689,13 +717,35 @@ class OncoPlot(BasePlot):
             width_ratios.append(w)
             return len(width_ratios) - 1
 
+        # Per-section sample frequency strips (group_samples(freq=True)): one
+        # narrow column right after each sample section, before its gap.
+        sfreq = bool(scfg and scfg.get("freq"))
+        sfreq_suffix = scfg.get("freq_suffix", "_freq") if scfg else "_freq"
+        if sfreq:
+            missing = [
+                f"{lbl}{sfreq_suffix}"
+                for lbl, _ in ssecs
+                if f"{lbl}{sfreq_suffix}" not in self.feature_metadata.columns
+            ]
+            if missing:
+                raise ValueError(
+                    f"group_samples(freq=True) needs feature_metadata columns "
+                    f"{missing}. Compute per-group frequencies first, e.g. "
+                    "pt.add_freq(groups={'LUAD': luad_subset, ...})."
+                )
+
         ftitle_col = add_col(3.0) if show_ft else None
         left_cols = [add_col(t.size) for t in left]
         samp_cols = []
+        sfreq_cols: list[int | None] = []
         for si, (_lbl, pos) in enumerate(ssecs):
             samp_cols.append(add_col(main_w * len(pos) / n_samp))
+            sfreq_cols.append(add_col(scfg["freq_size"]) if sfreq else None)
             if si < gs_ - 1:
                 add_col(samp_gap)
+        # keep the overall freq bar (a right track) clear of the per-section strips
+        if sfreq and right:
+            add_col(samp_gap)
         right_cols = [add_col(t.size) for t in right]
         if legend_pad > 0:
             add_col(legend_pad)
@@ -758,6 +808,23 @@ class OncoPlot(BasePlot):
                 t.subset(feat=fpos).render(ax)
                 if fi < gf - 1:
                     ax.set_xticks([])
+
+        # per-section sample frequency strips (group_samples(freq=True)):
+        # each section's own freq column, on a shared 0-1 scale for comparison.
+        if sfreq:
+            for si, (slbl, _spos) in enumerate(ssecs):
+                strip = FreqTrack(
+                    self.feature_metadata[[f"{slbl}{sfreq_suffix}"]],
+                    line_color=self.line_color,
+                    annot=scfg["freq_annot"],
+                    vmin=0.0,
+                    vmax=1.0,
+                )
+                for fi, (_flbl, fpos) in enumerate(fsecs):
+                    ax = fig.add_subplot(self.gs[feat_rows[fi], sfreq_cols[si]])
+                    strip.subset(feat=fpos).render(ax)
+                    if fi < gf - 1:
+                        ax.set_xticks([])
 
         # group titles
         if show_st:
