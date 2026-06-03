@@ -1193,7 +1193,11 @@ class PivotTable(pd.DataFrame):
         frequency = binary_table.sum(axis=1).astype(float) / binary_table.shape[1]
         return frequency
 
-    def add_freq(self, groups: Dict[str, "PivotTable"] = {}) -> "PivotTable":
+    def add_freq(
+        self,
+        groups: Optional[Dict[str, "PivotTable"]] = None,
+        group_col: Optional[str] = None,
+    ) -> "PivotTable":
         """
         Add mutation frequency columns to feature_metadata.
 
@@ -1204,13 +1208,18 @@ class PivotTable(pd.DataFrame):
 
         Parameters
         ----------
-        groups : Dict[str, PivotTable], default {}
+        groups : Dict[str, PivotTable], optional
             Dictionary mapping group names to PivotTable objects for calculating
             group-specific mutation frequencies. Each PivotTable should represent
             a subset of samples belonging to a specific group (e.g., cancer subtypes,
             treatment groups, etc.).
 
             Example: {"LUAD": luad_table, "LUSC": lusc_table, "Control": control_table}
+        group_col : str, optional
+            Convenience alternative to ``groups``: a ``sample_metadata`` column to
+            split samples by. ``add_freq(group_col="subtype")`` is equivalent to
+            building ``{value: self.subset(samples=...==value)}`` for each distinct
+            value automatically. Mutually exclusive with ``groups``.
 
         Returns
         -------
@@ -1270,6 +1279,21 @@ class PivotTable(pd.DataFrame):
         # fails silently when feature_metadata.index has drifted from the data
         # index (e.g. after a bare ``table.index = [...]``). Fail loud instead.
         self._validate_metadata()
+
+        if group_col is not None:
+            if groups:
+                raise ValueError("Pass either 'groups' or 'group_col', not both.")
+            if group_col not in self.sample_metadata.columns:
+                raise ValueError(
+                    f"group_col '{group_col}' not found in sample_metadata."
+                )
+            labels = self.sample_metadata[group_col]
+            groups = {
+                str(v): self.subset(samples=labels == v)
+                for v in labels.dropna().unique()
+            }
+        groups = groups or {}
+
         pivot_table = self.copy()
         freq_data = pd.DataFrame(index=pivot_table.index)
 
@@ -1329,31 +1353,39 @@ class PivotTable(pd.DataFrame):
         table.feature_metadata[col] = sizes.reindex(table.index).values
         return table
 
-    def sort_features(self, by: str = "freq", ascending: bool = False) -> "PivotTable":
+    def sort_features(
+        self,
+        by: str | List[str] = "freq",
+        ascending: bool | List[bool] = False,
+    ) -> "PivotTable":
         """
-        Sort features (rows) by a column in feature_metadata.
+        Sort features (rows) by one or more columns in feature_metadata.
 
         Parameters
         ----------
-        by : str, default "freq"
-            Column name in feature_metadata to sort by.
-        ascending : bool, default False
-            Sort order. False for descending (highest values first).
+        by : str or list of str, default "freq"
+            feature_metadata column(s) to sort by. A list sorts hierarchically,
+            e.g. ``by=["size_group", "freq"]`` keeps each group contiguous and
+            orders within it by freq.
+        ascending : bool or list of bool, default False
+            Sort order(s). False for descending (highest values first). When
+            ``by`` is a list, may be a matching list of booleans.
 
         Returns
         -------
         PivotTable
-            New PivotTable with features sorted by the specified column.
+            New PivotTable with features sorted by the specified column(s).
 
         Raises
         ------
         ValueError
-            If the specified column is not found in feature_metadata.
+            If any specified column is not found in feature_metadata.
         """
-        if by not in self.feature_metadata.columns:
-            raise ValueError(f"Column '{by}' not found in feature_metadata.")
+        cols = [by] if isinstance(by, str) else list(by)
+        missing = [c for c in cols if c not in self.feature_metadata.columns]
+        if missing:
+            raise ValueError(f"Column(s) {missing} not found in feature_metadata.")
         table = self.copy()
-        # get sorted index based on the specified column
         sorted_index = table.feature_metadata.sort_values(
             by=by, ascending=ascending
         ).index

@@ -448,3 +448,50 @@ def test_add_exon_size_writes_feature_metadata(monkeypatch):
     assert pd.isna(out.feature_metadata.loc["TTN", "exon_size"])
     # original table untouched (add_exon_size returns a copy)
     assert "exon_size" not in pt.feature_metadata.columns
+
+
+def test_add_freq_group_col_matches_manual_groups():
+    """add_freq(group_col=) auto-splits samples and matches the manual groups dict."""
+    df = pd.DataFrame(
+        {"s1": [True, False], "s2": [True, True], "s3": [False, True], "s4": [False, False]},
+        index=["TP53", "KRAS"],
+    )
+    pt = PivotTable(df)
+    pt.sample_metadata["subtype"] = ["A", "A", "B", "B"]
+
+    auto = pt.add_freq(group_col="subtype")
+    manual = pt.add_freq(
+        groups={g: pt.subset(samples=pt.sample_metadata.subtype == g) for g in ["A", "B"]}
+    )
+
+    for col in ["A_freq", "B_freq", "freq"]:
+        assert col in auto.feature_metadata.columns
+        pd.testing.assert_series_equal(
+            auto.feature_metadata[col], manual.feature_metadata[col]
+        )
+
+
+def test_add_freq_rejects_groups_and_group_col_together():
+    pt = PivotTable(pd.DataFrame({"s1": [True]}, index=["TP53"]))
+    pt.sample_metadata["subtype"] = ["A"]
+    with pytest.raises(ValueError, match="not both"):
+        pt.add_freq(groups={"A": pt}, group_col="subtype")
+
+
+def test_sort_features_multikey_keeps_groups_contiguous():
+    """A list `by` sorts hierarchically: groups contiguous, then by freq within."""
+    pt = PivotTable(
+        pd.DataFrame({"s1": [True, True, True, True]}, index=["g1", "g2", "g3", "g4"])
+    )
+    pt.feature_metadata["band"] = ["Large", "Small", "Large", "Small"]
+    pt.feature_metadata["freq"] = [0.1, 0.9, 0.8, 0.2]
+
+    out = pt.sort_features(by=["band", "freq"], ascending=[True, False])
+    # bands contiguous (Large, Large, Small, Small); within band freq descending
+    assert list(out.index) == ["g3", "g1", "g2", "g4"]
+
+
+def test_sort_features_unknown_column_raises():
+    pt = PivotTable(pd.DataFrame({"s1": [True]}, index=["g1"]))
+    with pytest.raises(ValueError, match="bogus"):
+        pt.sort_features(by=["bogus"])

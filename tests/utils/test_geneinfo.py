@@ -110,15 +110,33 @@ def test_get_exon_size_maps_and_handles_missing(monkeypatch):
             "cds_length": [1182, 100272],
         }
     )
-    monkeypatch.setattr(geneinfo, "load_gene_sizes", lambda force=False: fake)
+    # force_download bypasses any local cache and uses the targeted fetch path
+    monkeypatch.setattr(geneinfo, "_fetch_gene_sizes", lambda genes: fake)
 
-    s = geneinfo.get_exon_size(["TTN", "TP53", "NOTAGENE"])
+    s = geneinfo.get_exon_size(["TTN", "TP53", "NOTAGENE"], force_download=True)
     assert list(s.index) == ["TTN", "TP53", "NOTAGENE"]  # input order preserved
     assert s["TTN"] == 109224
     assert pd.isna(s["NOTAGENE"])
 
-    cds = geneinfo.get_exon_size(["TP53"], metric="cds_length")
+    cds = geneinfo.get_exon_size(["TP53"], metric="cds_length", force_download=True)
     assert cds["TP53"] == 1182
+
+
+def test_fetch_gene_sizes_maps_ids_and_reduces(monkeypatch):
+    """_fetch_gene_sizes filters to requested genes, maps Ensembl IDs back to
+    symbols, and keeps each gene's longest transcript."""
+    monkeypatch.setattr(
+        geneinfo,
+        "symbol_to_ensembl",
+        lambda genes: {"TP53": "ENSG_TP53", "TTN": "ENSG_TTN"},
+    )
+    # two TTN transcripts -> longest kept
+    tsv = "ENSG_TP53\t2591\t1182\nENSG_TTN\t80000\t79000\nENSG_TTN\t109224\t100272\n"
+    monkeypatch.setattr(geneinfo, "_biomart_query", lambda q, retries=4: tsv)
+
+    out = geneinfo._fetch_gene_sizes(["TP53", "TTN"]).set_index("hugo_symbol")
+    assert out.loc["TTN", "transcript_length"] == 109224
+    assert out.loc["TP53", "transcript_length"] == 2591
 
 
 def test_get_exon_size_invalid_metric_raises():

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import time
 
 import requests
 import pandas as pd
@@ -293,6 +294,37 @@ _GENE_SIZE_QUERY = (
     '</Dataset></Query>'
 )
 
+_SIZE_ATTRS = (
+    '<Attribute name="ensembl_gene_id"/>'
+    '<Attribute name="transcript_length"/>'
+    '<Attribute name="cds_length"/>'
+)
+
+
+def _biomart_query(query_xml: str, retries: int = 4) -> str:
+    """Run a BioMart REST query and return its TSV text.
+
+    Uses ``redirect=no`` (Ensembl's mirror sites are periodically down and the
+    main site only serves BioMart when the mirror redirect is suppressed) and
+    retries while the service returns its HTML maintenance page instead of TSV.
+    """
+    for attempt in range(retries):
+        resp = requests.get(
+            _BIOMART_URL,
+            params={"query": query_xml, "redirect": "no"},
+            timeout=180,
+        )
+        resp.raise_for_status()
+        text = resp.text
+        if "\t" in text.split("\n", 1)[0] and not text.lstrip().startswith("<"):
+            return text
+        if attempt < retries - 1:
+            time.sleep(5)
+    raise RuntimeError(
+        "Ensembl BioMart returned a non-TSV response (the service may be down "
+        "for maintenance). Try again later, or see https://www.ensembl.org."
+    )
+
 
 def load_gene_sizes(force: bool = False) -> pd.DataFrame:
     """Load per-gene transcript sizes, downloading from Ensembl if needed.
@@ -322,21 +354,7 @@ def load_gene_sizes(force: bool = False) -> pd.DataFrame:
     if _GENE_SIZE_CACHE.exists() and not force:
         return pd.read_csv(_GENE_SIZE_CACHE, sep="\t")
 
-    resp = requests.get(
-        _BIOMART_URL,
-        params={"query": _GENE_SIZE_QUERY, "redirect": "no"},
-        timeout=180,
-    )
-    resp.raise_for_status()
-    text = resp.text
-    # A healthy response is tab-separated rows; the maintenance page is HTML.
-    if "\t" not in text.split("\n", 1)[0] or text.lstrip().startswith("<"):
-        raise RuntimeError(
-            "Ensembl BioMart returned a non-TSV response (the service may be "
-            "down for maintenance). Try again later, or see "
-            "https://www.ensembl.org for status."
-        )
-
+    text = _biomart_query(_GENE_SIZE_QUERY)
     df = pd.read_csv(
         io.StringIO(text),
         sep="\t",
@@ -347,6 +365,40 @@ def load_gene_sizes(force: bool = False) -> pd.DataFrame:
     _DATA_DIR.mkdir(parents=True, exist_ok=True)
     df.to_csv(_GENE_SIZE_CACHE, sep="\t", index=False)
     return df
+
+
+def _fetch_gene_sizes(genes: list[str]) -> pd.DataFrame:
+    """Fetch sizes for just ``genes`` via a filtered BioMart query.
+
+    Maps symbols to Ensembl IDs (offline, via the bundled gene map), queries
+    only those genes, and reduces to one row per gene. Far cheaper and more
+    robust than the genome-wide dump in :func:`load_gene_sizes` — a small
+    filtered query succeeds even when Ensembl rejects the full dump.
+    """
+    sym2ens = symbol_to_ensembl(list(genes))
+    ens2sym = {ens: sym for sym, ens in sym2ens.items() if ens}
+    ids = list(ens2sym)
+    if not ids:
+        return pd.DataFrame(
+            columns=["hugo_symbol", "ensembl_gene_id", "transcript_length", "cds_length"]
+        )
+
+    query = (
+        '<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE Query>'
+        '<Query virtualSchemaName="default" formatter="TSV" header="0" '
+        'uniqueRows="1" datasetConfigVersion="0.6">'
+        '<Dataset name="hsapiens_gene_ensembl" interface="default">'
+        f'<Filter name="link_ensembl_gene_id" value="{",".join(ids)}"/>'
+        f'{_SIZE_ATTRS}</Dataset></Query>'
+    )
+    df = pd.read_csv(
+        io.StringIO(_biomart_query(query)),
+        sep="\t",
+        header=None,
+        names=["ensembl_gene_id", "transcript_length", "cds_length"],
+    )
+    df["hugo_symbol"] = df["ensembl_gene_id"].map(ens2sym)
+    return _reduce_to_canonical_transcript(df)
 
 
 def _reduce_to_canonical_transcript(df: pd.DataFrame) -> pd.DataFrame:
@@ -385,23 +437,33 @@ def get_exon_size(
         ``"transcript_length"`` (default; total exon length including UTRs) or
         ``"cds_length"`` (coding length only).
     force_download:
-        Passed to :func:`load_gene_sizes`.
+        If True, ignore the bundled cache and fetch from Ensembl.
 
     Returns
     -------
     pd.Series
         Indexed by the input symbols (order preserved), values are the size in
         base pairs; genes absent from Ensembl are ``NaN``.
+
+    Notes
+    -----
+    Uses the bundled ``ensembl_gene_sizes.tsv`` cache when present; otherwise
+    queries Ensembl for only the requested genes (a small filtered query, not
+    the genome-wide dump), so a table's genes can be annotated without first
+    building the full cache.
     """
     if metric not in ("transcript_length", "cds_length"):
         raise ValueError(
             f"metric must be 'transcript_length' or 'cds_length', got {metric!r}."
         )
-    sizes = load_gene_sizes(force=force_download)
+    genes = list(genes)
+    if _GENE_SIZE_CACHE.exists() and not force_download:
+        sizes = pd.read_csv(_GENE_SIZE_CACHE, sep="\t")
+    else:
+        sizes = _fetch_gene_sizes(genes)
     mapping = (
         sizes.dropna(subset=["hugo_symbol"])
         .drop_duplicates(subset=["hugo_symbol"], keep="first")
         .set_index("hugo_symbol")[metric]
     )
-    genes = list(genes)
     return pd.Series([mapping.get(g) for g in genes], index=genes, name=metric)
