@@ -34,6 +34,11 @@ class OncoPlot(BasePlot):
     Inherits from BasePlot to utilize unified legend management and save functionality.
     """
 
+    # Above this many samples, render() hides the per-column tick labels by
+    # default (they overprint into an unreadable smear); override per call with
+    # render(show_sample_labels=True/False).
+    _SAMPLE_LABEL_LIMIT = 50
+
     def __init__(self, pivot_table, **kwargs):
         """
         Initialize OncoPlot with a PivotTable and configuration options.
@@ -526,6 +531,7 @@ class OncoPlot(BasePlot):
         colorbar_width: float = 0.55,
         wspace: float | None = None,
         hspace: float | None = None,
+        show_sample_labels: bool | None = None,
     ) -> OncoPlot:
         """Derive the layout from registered tracks and draw them in one pass.
 
@@ -587,6 +593,11 @@ class OncoPlot(BasePlot):
         wspace = self.wspace if wspace is None else wspace
         hspace = self.hspace if hspace is None else hspace
 
+        # Sample (column) tick labels are unreadable for large cohorts; auto-hide
+        # them past _SAMPLE_LABEL_LIMIT unless the caller forces show_sample_labels.
+        if show_sample_labels is None:
+            show_sample_labels = self.pivot_table.shape[1] <= self._SAMPLE_LABEL_LIMIT
+
         layout = self._render_sectioned if (
             self._feature_groups or self._sample_groups
         ) else self._render_simple
@@ -594,6 +605,7 @@ class OncoPlot(BasePlot):
             fig, main_track, top, bottom, left, right,
             main_w=main_w, main_h=main_h, legend_width=legend_width,
             legend_pad=legend_pad, wspace=wspace, hspace=hspace,
+            show_sample_labels=show_sample_labels,
         )
 
         # legends: single source of truth, gathered from every track —
@@ -626,8 +638,13 @@ class OncoPlot(BasePlot):
     def _render_simple(
         self, fig, main_track, top, bottom, left, right, *,
         main_w, main_h, legend_width, legend_pad, wspace, hspace,
+        show_sample_labels=True,
     ) -> None:
-        """Ungrouped layout: one cell per track along each axis."""
+        """Ungrouped layout: one cell per track along each axis.
+
+        (``show_sample_labels`` is accepted for a uniform layout interface; the
+        ungrouped path draws sample tick labels only via ``add_xticklabel()``.)
+        """
         main_row, main_col = len(top), len(left)
         has_pad = legend_pad > 0
         ncols = len(left) + 1 + len(right) + (1 if has_pad else 0) + 1
@@ -683,6 +700,7 @@ class OncoPlot(BasePlot):
     def _render_sectioned(
         self, fig, main_track, top, bottom, left, right, *,
         main_w, main_h, legend_width, legend_pad, wspace, hspace,
+        show_sample_labels=True,
     ) -> None:
         """Grouped layout: split the matrix into sections with whitespace gaps,
         rendering a sliced copy of each track per section, plus group titles."""
@@ -767,10 +785,13 @@ class OncoPlot(BasePlot):
                 sub.render(ax)
                 first_ax = first_ax or ax
                 if fi == gf - 1 and not bottom:
-                    ax.set_xticks([j + 0.5 for j in range(len(spos))])
-                    ax.set_xticklabels(
-                        self.pivot_table.columns[spos], rotation=90, fontsize=8
-                    )
+                    if show_sample_labels:
+                        ax.set_xticks([j + 0.5 for j in range(len(spos))])
+                        ax.set_xticklabels(
+                            self.pivot_table.columns[spos], rotation=90, fontsize=8
+                        )
+                    else:
+                        ax.set_xticks([])
         self.ax_heatmap = first_ax
 
         # top / bottom tracks (sample sections)
@@ -792,10 +813,13 @@ class OncoPlot(BasePlot):
                     ax.set_yticks([])
                     ax.set_ylabel("")
                 if ti == len(bottom) - 1:
-                    ax.set_xticks([j + 0.5 for j in range(len(spos))])
-                    ax.set_xticklabels(
-                        self.pivot_table.columns[spos], rotation=90, fontsize=8
-                    )
+                    if show_sample_labels:
+                        ax.set_xticks([j + 0.5 for j in range(len(spos))])
+                        ax.set_xticklabels(
+                            self.pivot_table.columns[spos], rotation=90, fontsize=8
+                        )
+                    else:
+                        ax.set_xticks([])
 
         # left / right tracks (feature sections)
         for ti, t in enumerate(left):

@@ -406,8 +406,8 @@ class FreqTrack(Track):
         annot_fontsize: int = 8,
         linewidths: float = 1,
         xtick_fontsize: int = 9,
-        vmin: float | None = None,
-        vmax: float | None = None,
+        vmin: float | None = 0.0,
+        vmax: float | None = 1.0,
     ) -> None:
         self.freq_data = freq_data
         self.line_color = line_color
@@ -415,7 +415,9 @@ class FreqTrack(Track):
         self.annot_fontsize = annot_fontsize
         self.linewidths = linewidths
         self.xtick_fontsize = xtick_fontsize
-        # explicit range keeps the blue scale consistent across grouped sections
+        # Frequencies are proportions, so the colour scale is pinned to 0-1 by
+        # default; this keeps every freq strip (overall and per-group sections)
+        # on one comparable scale. Pass vmin/vmax to override.
         self.vmin = vmin
         self.vmax = vmax
 
