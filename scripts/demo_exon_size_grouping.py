@@ -56,6 +56,11 @@ def main() -> None:
     # Bands contiguous, Small -> Medium -> Large (compact recurrent genes on top,
     # large passenger-prone genes below); within each band, LUSC-enriched on top.
     sub = sub.sort_features(by=["size_group", "delta_freq"], ascending=[True, False])
+    # Waterfall samples within each subtype by the Small band (top rows, TP53/CDH10).
+    n_small = int((sub.feature_metadata["size_group"] == SIZE_LABELS[0]).sum())
+    sub = sub.sort_samples_by_group(
+        group_col="subtype", group_order=["LUAD", "LUSC"], top=n_small
+    )
 
     op = (
         OncoPlot(sub, figsize=(15, 9))

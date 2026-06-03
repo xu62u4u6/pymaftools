@@ -752,7 +752,9 @@ class OncoPlot(BasePlot):
                     "pt.add_freq(groups={'LUAD': luad_subset, ...})."
                 )
 
-        ftitle_col = add_col(3.0) if show_ft else None
+        # Wider title column so multi-line rotated group titles (e.g.
+        # "Large\n(>20kb)") sit clear of the heatmap's gene tick labels.
+        ftitle_col = add_col(5.0) if show_ft else None
         left_cols = [add_col(t.size) for t in left]
         samp_cols = []
         sfreq_cols: list[int | None] = []
@@ -870,7 +872,7 @@ class OncoPlot(BasePlot):
                 ax = fig.add_subplot(self.gs[feat_rows[fi], ftitle_col])
                 ax.axis("off")
                 ax.text(
-                    0.15, y, str(flbl), rotation=90, ha="center", va=va,
+                    0.25, y, str(flbl), rotation=90, ha="center", va=va,
                     fontsize=fcfg["title_fontsize"], fontweight="bold",
                 )
 
