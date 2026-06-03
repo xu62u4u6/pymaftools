@@ -1284,6 +1284,51 @@ class PivotTable(pd.DataFrame):
         pivot_table.feature_metadata[freq_data.columns] = freq_data
         return pivot_table
 
+    def add_exon_size(
+        self,
+        col: str = "exon_size",
+        metric: str = "transcript_length",
+        force_download: bool = False,
+    ) -> "PivotTable":
+        """Add per-feature exon size (canonical-transcript length, bp) to metadata.
+
+        Looks each feature (gene symbol) up against Ensembl BioMart via
+        :func:`pymaftools.utils.geneinfo.get_exon_size` (cached to
+        ``data/ensembl_gene_sizes.tsv`` on first use). Useful for grouping genes
+        by size, e.g. separating large mutation-prone genes (TTN, MUC16) from
+        compact drivers before an oncoplot::
+
+            pt = pt.add_exon_size()
+            pt.feature_metadata["size_group"] = pd.cut(
+                pt.feature_metadata["exon_size"], bins=[0, 5000, 15000, 1e9],
+                labels=["Small", "Medium", "Large"],
+            )
+            pt.plot.oncoplot().main().group_features(by="size_group").render()
+
+        Parameters
+        ----------
+        col : str, default "exon_size"
+            feature_metadata column to write the size into.
+        metric : str, default "transcript_length"
+            Size metric; see :func:`get_exon_size`.
+        force_download : bool, default False
+            Force a fresh BioMart download instead of using the cache.
+
+        Returns
+        -------
+        PivotTable
+            A copy with ``feature_metadata[col]`` populated (NaN for genes not
+            found in Ensembl).
+        """
+        from ..utils.geneinfo import get_exon_size
+
+        table = self.copy()
+        sizes = get_exon_size(
+            table.index, metric=metric, force_download=force_download
+        )
+        table.feature_metadata[col] = sizes.reindex(table.index).values
+        return table
+
     def sort_features(self, by: str = "freq", ascending: bool = False) -> "PivotTable":
         """
         Sort features (rows) by a column in feature_metadata.

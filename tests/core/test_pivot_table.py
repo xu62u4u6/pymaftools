@@ -420,3 +420,31 @@ class TestAnnDataInterop:
         monkeypatch.setattr(builtins, "__import__", mock_import)
         with pytest.raises(ImportError, match="anndata is required"):
             sample_pivot_table.to_anndata()
+
+
+def test_add_exon_size_writes_feature_metadata(monkeypatch):
+    """add_exon_size looks up each feature (gene) and writes sizes into
+    feature_metadata, leaving NaN for genes Ensembl doesn't know."""
+    from pymaftools.utils import geneinfo
+
+    def fake_get_exon_size(genes, metric="transcript_length", force_download=False):
+        sizes = {"TP53": 2591, "KRAS": 5300}  # TTN intentionally absent
+        genes = list(genes)
+        return pd.Series([sizes.get(g) for g in genes], index=genes, name=metric)
+
+    monkeypatch.setattr(geneinfo, "get_exon_size", fake_get_exon_size)
+
+    pt = PivotTable(
+        pd.DataFrame(
+            {"s1": [True, False, True]},
+            index=["TP53", "KRAS", "TTN"],
+        )
+    )
+    out = pt.add_exon_size()
+
+    assert "exon_size" in out.feature_metadata.columns
+    assert out.feature_metadata.loc["TP53", "exon_size"] == 2591
+    assert out.feature_metadata.loc["KRAS", "exon_size"] == 5300
+    assert pd.isna(out.feature_metadata.loc["TTN", "exon_size"])
+    # original table untouched (add_exon_size returns a copy)
+    assert "exon_size" not in pt.feature_metadata.columns

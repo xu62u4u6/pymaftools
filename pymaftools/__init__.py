@@ -63,4 +63,5 @@ def read_h5(h5_path, table_cls=None):
 
 # utils
 from .utils.geneset import read_GMT, fetch_msigdb_geneset
+from .utils.geneinfo import get_exon_size, load_gene_sizes
 from .utils.reduction import PCA_CCA

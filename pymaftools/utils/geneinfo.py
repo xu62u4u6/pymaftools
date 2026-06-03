@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import io
+
 import requests
 import pandas as pd
 
@@ -161,6 +163,7 @@ from pathlib import Path
 
 _DATA_DIR = Path(__file__).parent.parent / "data"
 _ENSEMBL_CACHE = _DATA_DIR / "ensembl_gene_map.tsv"
+_GENE_SIZE_CACHE = _DATA_DIR / "ensembl_gene_sizes.tsv"
 
 
 def load_ensembl_map(force: bool = False) -> pd.DataFrame:
@@ -266,3 +269,139 @@ def symbol_to_ensembl(
         .to_dict()
     )
     return {s: mapping.get(s) for s in symbols}
+
+
+# BioMart REST endpoint. We query it directly (instead of via pybiomart) so we
+# can pass ``redirect=no`` — Ensembl's mirror sites are periodically down and the
+# main site only serves BioMart when the mirror redirect is suppressed.
+_BIOMART_URL = "https://www.ensembl.org/biomart/martservice"
+
+# transcript_is_canonical lives on a different BioMart attribute "page" and
+# cannot be queried alongside the length attributes; we represent each gene by
+# its LONGEST transcript (see _reduce_to_canonical_transcript, which still
+# prefers a canonical flag when one is supplied).
+_GENE_SIZE_QUERY = (
+    '<?xml version="1.0" encoding="UTF-8"?>'
+    '<!DOCTYPE Query>'
+    '<Query virtualSchemaName="default" formatter="TSV" header="0" '
+    'uniqueRows="1" count="" datasetConfigVersion="0.6">'
+    '<Dataset name="hsapiens_gene_ensembl" interface="default">'
+    '<Attribute name="ensembl_gene_id"/>'
+    '<Attribute name="external_gene_name"/>'
+    '<Attribute name="transcript_length"/>'
+    '<Attribute name="cds_length"/>'
+    '</Dataset></Query>'
+)
+
+
+def load_gene_sizes(force: bool = False) -> pd.DataFrame:
+    """Load per-gene transcript sizes, downloading from Ensembl if needed.
+
+    Returns the cached table if present, otherwise queries the Ensembl BioMart
+    REST service for transcript/CDS length, reduces to one row per gene (its
+    longest transcript), caches the result to ``data/ensembl_gene_sizes.tsv``
+    and returns it.
+
+    Parameters
+    ----------
+    force:
+        If True, re-download even if the cache exists.
+
+    Returns
+    -------
+    pd.DataFrame
+        Columns: hugo_symbol, ensembl_gene_id, transcript_length, cds_length.
+        One row per HUGO symbol.
+
+    Raises
+    ------
+    RuntimeError
+        If BioMart returns a non-TSV response (e.g. Ensembl's maintenance page
+        when the service is temporarily unavailable).
+    """
+    if _GENE_SIZE_CACHE.exists() and not force:
+        return pd.read_csv(_GENE_SIZE_CACHE, sep="\t")
+
+    resp = requests.get(
+        _BIOMART_URL,
+        params={"query": _GENE_SIZE_QUERY, "redirect": "no"},
+        timeout=180,
+    )
+    resp.raise_for_status()
+    text = resp.text
+    # A healthy response is tab-separated rows; the maintenance page is HTML.
+    if "\t" not in text.split("\n", 1)[0] or text.lstrip().startswith("<"):
+        raise RuntimeError(
+            "Ensembl BioMart returned a non-TSV response (the service may be "
+            "down for maintenance). Try again later, or see "
+            "https://www.ensembl.org for status."
+        )
+
+    df = pd.read_csv(
+        io.StringIO(text),
+        sep="\t",
+        header=None,
+        names=["ensembl_gene_id", "hugo_symbol", "transcript_length", "cds_length"],
+    )
+    df = _reduce_to_canonical_transcript(df)
+    _DATA_DIR.mkdir(parents=True, exist_ok=True)
+    df.to_csv(_GENE_SIZE_CACHE, sep="\t", index=False)
+    return df
+
+
+def _reduce_to_canonical_transcript(df: pd.DataFrame) -> pd.DataFrame:
+    """Collapse a transcript-level BioMart frame to one row per HUGO symbol.
+
+    Prefers the canonical transcript (``is_canonical`` truthy); otherwise falls
+    back to the longest transcript for that gene.
+    """
+    df = df.dropna(subset=["hugo_symbol", "transcript_length"]).copy()
+    df["transcript_length"] = df["transcript_length"].astype(int)
+
+    canonical = df[df.get("is_canonical").fillna(0) != 0] if "is_canonical" in df else df.iloc[0:0]
+    # genes without a canonical row fall back to their longest transcript
+    longest = df.sort_values("transcript_length").drop_duplicates(
+        subset=["hugo_symbol"], keep="last"
+    )
+    chosen = pd.concat([longest, canonical]).drop_duplicates(
+        subset=["hugo_symbol"], keep="last"
+    )
+    cols = ["hugo_symbol", "ensembl_gene_id", "transcript_length", "cds_length"]
+    return chosen[[c for c in cols if c in chosen.columns]].reset_index(drop=True)
+
+
+def get_exon_size(
+    genes,
+    metric: str = "transcript_length",
+    force_download: bool = False,
+) -> pd.Series:
+    """Return the exon size (canonical-transcript length, in bp) per gene.
+
+    Parameters
+    ----------
+    genes:
+        HUGO symbols to look up.
+    metric:
+        ``"transcript_length"`` (default; total exon length including UTRs) or
+        ``"cds_length"`` (coding length only).
+    force_download:
+        Passed to :func:`load_gene_sizes`.
+
+    Returns
+    -------
+    pd.Series
+        Indexed by the input symbols (order preserved), values are the size in
+        base pairs; genes absent from Ensembl are ``NaN``.
+    """
+    if metric not in ("transcript_length", "cds_length"):
+        raise ValueError(
+            f"metric must be 'transcript_length' or 'cds_length', got {metric!r}."
+        )
+    sizes = load_gene_sizes(force=force_download)
+    mapping = (
+        sizes.dropna(subset=["hugo_symbol"])
+        .drop_duplicates(subset=["hugo_symbol"], keep="first")
+        .set_index("hugo_symbol")[metric]
+    )
+    genes = list(genes)
+    return pd.Series([mapping.get(g) for g in genes], index=genes, name=metric)
