@@ -326,7 +326,26 @@ class OncoPlot(BasePlot):
     def add_freq(
         self, freq_columns: list[str] = ["freq"], side: str = "right", **kwargs
     ) -> OncoPlot:
-        """Register a per-feature frequency track for ``render()``."""
+        """Register a per-feature frequency track for ``render()``.
+
+        Parameters
+        ----------
+        freq_columns : list of str, default ["freq"]
+            ``feature_metadata`` columns to draw, one strip each (e.g.
+            ``["LUAD_freq", "LUSC_freq"]``). Populate group-specific columns with
+            :meth:`PivotTable.add_freq` (``groups=`` or ``group_col=``).
+        side : {"right", "left"}, default "right"
+            Which side of the matrix to place the strip(s) on.
+        **kwargs
+            Forwarded to :class:`Track.FreqTrack` (e.g. ``annot``, ``linewidths``,
+            ``vmin``/``vmax`` — defaults pin the scale to 0–1).
+
+        Notes
+        -----
+        For a *signed* per-feature numeric column (e.g. ``delta_freq``) use
+        :meth:`add_feature_annotation` with a diverging cmap instead; ``add_freq``
+        is for 0–1 proportions on a shared scale.
+        """
         track = FreqTrack(
             self.feature_metadata[freq_columns], line_color=self.line_color, **kwargs
         )
@@ -338,19 +357,39 @@ class OncoPlot(BasePlot):
         """Register one track per column, dtype-inferred (numeric vs categorical),
         aligned to whichever axis ``metadata`` belongs to. ``transpose`` is keyed
         off ``side``: sample annotations (top/bottom) are 1xN rows, feature
-        annotations (left/right) are Nx1 columns."""
+        annotations (left/right) are Nx1 columns.
+
+        ``cmap_dict`` is a per-column override for BOTH dtypes:
+
+        - numeric column -> the entry is the matplotlib cmap name for that
+          :class:`Track.NumericTrack`, taking precedence over a global ``cmap``
+          passed in ``kwargs``. A ``"coolwarm"`` (diverging) cmap additionally
+          triggers a symmetric-around-0 value scale (``[-|max|, +|max|]``), so a
+          signed column like ``delta_freq`` centres its midpoint at 0.
+        - categorical column -> the entry is a ``{category: color}`` mapping;
+          categories without a colour fall back to a ``default_cmap`` palette.
+
+        Columns absent from ``cmap_dict`` use the global ``cmap`` in ``kwargs``
+        (numeric, default ``"Blues"`` in NumericTrack) or an auto-generated
+        ``default_cmap`` palette (categorical)."""
         horizontal = side in ("top", "bottom")
         for col in columns:
             series = metadata[col]
             data = series.to_frame().T if horizontal else series.to_frame()
             if pd.api.types.is_numeric_dtype(series):
+                # per-column cmap from cmap_dict (e.g. "coolwarm" for a signed
+                # delta column) takes precedence over a global cmap in kwargs.
+                numeric_kwargs = dict(kwargs)
+                column_cmap = (cmap_dict or {}).get(col)
+                if column_cmap:
+                    numeric_kwargs["cmap"] = column_cmap
                 track = NumericTrack(
                     data,
                     side=side,
                     name=col,
                     line_color=self.line_color,
                     ytick_fontsize=self.ytick_fontsize,
-                    **kwargs,
+                    **numeric_kwargs,
                 )
             else:
                 column_cmap = (cmap_dict or {}).get(col)
@@ -381,7 +420,27 @@ class OncoPlot(BasePlot):
     ) -> OncoPlot:
         """Register sample-aligned annotation tracks (one per column) for
         ``render()``. Numeric columns become NumericTrack (with colorbar),
-        others CategoricalTrack."""
+        others CategoricalTrack.
+
+        Parameters
+        ----------
+        columns : list of str
+            ``sample_metadata`` columns to draw, one track each.
+        side : {"bottom", "top"}, default "bottom"
+            Which side of the matrix to place the strips on.
+        cmap_dict : dict, optional
+            Per-column colour override (numeric cmap name or categorical
+            ``{category: color}`` mapping); see :meth:`_add_annotation`.
+        default_cmap : str, default "pastel"
+            Palette for categorical categories without an explicit colour.
+        **kwargs
+            Forwarded to the per-column track (``NumericTrack`` /
+            ``CategoricalTrack``), e.g. ``annotate``, ``linewidths``, ``size``.
+
+        See Also
+        --------
+        add_feature_annotation : same, on the feature (row) axis.
+        """
         return self._add_annotation(
             self.sample_metadata, columns, side, cmap_dict, default_cmap, kwargs
         )
@@ -398,7 +457,41 @@ class OncoPlot(BasePlot):
         """Register feature-aligned annotation tracks (one per column) for
         ``render()`` — e.g. ``pathway`` / ``is_driver`` from feature_metadata
         drawn as row-side strips. This is the feature-dimension gap (S3 / P1#2)
-        that the eager layout never had a slot for."""
+        that the eager layout never had a slot for.
+
+        Parameters
+        ----------
+        columns : list of str
+            ``feature_metadata`` columns to draw, one track each.
+        side : {"right", "left"}, default "right"
+            Which side of the matrix to place the strips on.
+        cmap_dict : dict, optional
+            Per-column colour override. For a numeric column the entry is a cmap
+            name and takes precedence over a global ``cmap`` in ``kwargs``; a
+            ``"coolwarm"`` cmap centres a signed column (e.g. ``delta_freq``)
+            symmetrically around 0. For a categorical column it is a
+            ``{category: color}`` mapping. See :meth:`_add_annotation`.
+        default_cmap : str, default "pastel"
+            Palette for categorical categories without an explicit colour.
+        **kwargs
+            Forwarded to the per-column track (``NumericTrack`` /
+            ``CategoricalTrack``), e.g. ``annotate``, ``linewidths``.
+
+        Notes
+        -----
+        Use this (not :meth:`add_freq`) for signed/continuous feature columns:
+        ``add_freq`` is for 0–1 frequency proportions on a shared 0–1 scale,
+        while ``add_feature_annotation`` infers the scale per column (and goes
+        symmetric for ``coolwarm``).
+
+        Examples
+        --------
+        >>> # diverging delta_freq strip, symmetric around 0
+        >>> op.add_feature_annotation(
+        ...     ["delta_freq"], side="right",
+        ...     cmap_dict={"delta_freq": "coolwarm"}, annotate=True,
+        ... )
+        """
         return self._add_annotation(
             self.feature_metadata, columns, side, cmap_dict, default_cmap, kwargs
         )

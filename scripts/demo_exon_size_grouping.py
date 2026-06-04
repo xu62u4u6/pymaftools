@@ -66,6 +66,15 @@ def main() -> None:
         OncoPlot(sub, figsize=(15, 9))
         .main(yticklabels=True, linewidths=0)
         .add_freq(side="right", freq_columns=["freq"], annot=True, linewidths=0)
+        # delta_freq strip: diverging coolwarm => symmetric-around-0 scale, kept
+        # separate from the Blues 0-1 freq columns (different value range).
+        .add_feature_annotation(
+            ["delta_freq"],
+            side="right",
+            cmap_dict={"delta_freq": "coolwarm"},
+            annotate=True,
+            linewidths=0,
+        )
         .add_sample_annotation(
             ["subtype"],
             side="bottom",
