@@ -447,10 +447,10 @@ def get_exon_size(
 
     Notes
     -----
-    Uses the bundled ``ensembl_gene_sizes.tsv`` cache when present; otherwise
-    queries Ensembl for only the requested genes (a small filtered query, not
-    the genome-wide dump), so a table's genes can be annotated without first
-    building the full cache.
+    Uses the bundled ``ensembl_gene_sizes.tsv`` cache when present; any
+    requested genes missing from it are still queried from Ensembl (a small
+    filtered query, not the genome-wide dump), so a partial cache never silently
+    yields NaN and a table's genes can be annotated without a full cache.
     """
     if metric not in ("transcript_length", "cds_length"):
         raise ValueError(
@@ -459,6 +459,12 @@ def get_exon_size(
     genes = list(genes)
     if _GENE_SIZE_CACHE.exists() and not force_download:
         sizes = pd.read_csv(_GENE_SIZE_CACHE, sep="\t")
+        # The bundled cache may be partial (e.g. a fixture-scoped fallback built
+        # while BioMart was down). Fetch any genes it doesn't cover rather than
+        # silently returning NaN for them.
+        missing = [g for g in genes if g not in set(sizes["hugo_symbol"].dropna())]
+        if missing:
+            sizes = pd.concat([sizes, _fetch_gene_sizes(missing)], ignore_index=True)
     else:
         sizes = _fetch_gene_sizes(genes)
     mapping = (
