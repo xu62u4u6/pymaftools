@@ -117,7 +117,11 @@ with metadata automatically kept in sync.
        samples=table.sample_metadata["subtype"] == "LUSC",
    )
 
-   # Use with add_freq to compute group-wise mutation frequencies
+   # Compute group-wise mutation frequencies straight from a sample_metadata
+   # column (adds LUAD_freq, LUSC_freq, ... plus the overall freq):
+   table = table.add_freq(group_col="subtype")
+
+   # Equivalent explicit form (still supported) — pass per-group subsets yourself:
    table = table.add_freq(
        groups={
            "LUAD": table.subset(samples=table.sample_metadata.subtype == "LUAD"),

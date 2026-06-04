@@ -23,6 +23,15 @@ by a single `render()` call. See `PLOTTING_REVIEW.md` for the full design.
 * **Numeric metadata colorbars** (`plot_numeric_metadata`, P1#3): numeric strips carry a colorbar so the value scale is interpretable. Placement is a mode — `colorbar="legend"` (default; stacked in the legend area, readable with several numeric columns), `"inset"` (small bar beside the strip), or `"off"`. Per-column cmaps via `cmap_dict=`.
 * **`render()` layout knobs**: `main_width`, `main_height`, `legend_width`, `legend_pad` (a named spacer replacing the old phantom column), `colorbar_width`, `wspace`, `hspace`.
 * **`add_xticklabel(fontsize=, rotation=)`**: was hardcoded to `rotation=90`.
+* **Per-section frequency strips** (`group_samples(..., freq=True)`): each sample group draws its own frequency strip (read from `feature_metadata["{label}_freq"]`, e.g. `LUAD_freq`) right of that group's heatmap section, alongside the overall `add_freq(...)` bar. Tunable `freq_suffix`, `freq_size`, `freq_annot`.
+* **Auto sample labels** (`render(show_sample_labels=None)`): per-column sample tick labels auto-hide above 50 samples; pass `True`/`False` to force.
+* **Exon size from Ensembl BioMart** (`PivotTable.add_exon_size(col="exon_size", metric="transcript_length"|"cds_length", force_download=False)`): annotates each feature (gene) with its canonical-transcript exon size for size-based gene grouping. Returns a copy; network-dependent (BioMart). Backed by `get_exon_size(genes, metric=...)` / `load_gene_sizes(force=)` in `pymaftools.utils.geneinfo`, re-exported at top level.
+* **`add_freq(group_col="subtype")`**: convenience that auto-splits samples by a `sample_metadata` column into per-group `{value}_freq` columns — equivalent to building the `groups={...}` dict manually (mutually exclusive with it).
+* **Multi-key `sort_features(by=[...], ascending=[...])`**: `by`/`ascending` now accept lists for hierarchical sort (e.g. `by=["size_group", "freq"]`), keeping each group contiguous; the single-column form still works.
+* **Scripts**: `scripts/download_gene_sizes.py` builds the bundled gene-size cache; `scripts/demo_exon_size_grouping.py` demonstrates an exon-size grouped oncoplot.
+
+### 🔧 Behaviour Changes
+* **Comparable frequency colour scale**: `FreqTrack` now defaults `vmin=0` / `vmax=1`, so every frequency strip (overall and per-group sections) shares one comparable 0–1 scale. Pass `vmin`/`vmax` to override.
 
 ### 🐛 Fixes
 * **`default_oncoplot` crash** (P0#1): the convenience entry no longer raises `ValueError` from a width_ratios / column-count mismatch.

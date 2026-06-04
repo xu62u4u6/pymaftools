@@ -56,7 +56,7 @@
 ### Utilities
 - **PCA_CCA** — Dimensionality reduction utilities
 - **Gene set tools** — Read GMT files, fetch MSigDB gene sets
-- **Gene info** — NCBI gene ID lookup
+- **Gene info** — NCBI gene ID lookup; Ensembl BioMart exon/transcript size lookup (`get_exon_size`, `load_gene_sizes`) for size-based gene grouping
 
 ## Requirements
 
@@ -238,7 +238,19 @@ op.save("oncoplot.png", dpi=300)
 ```
 
 `add_sample_annotation` / `add_feature_annotation` infer categorical vs numeric
-from the column dtype. For a continuous (CNV) main matrix use `.main(kind="cnv")`.
+from the column dtype. `cmap_dict` overrides the colour per column for either
+dtype — a categorical `{category: color}` mapping, or (for a numeric column) a
+cmap name that beats the global `cmap`; `"coolwarm"` additionally centres a
+signed column symmetrically around 0. Use `add_feature_annotation` (not
+`add_freq`) for signed/continuous feature columns — `add_freq` is for 0–1
+frequency proportions on a shared scale:
+
+```python
+.add_feature_annotation(["delta_freq"], side="right",
+                        cmap_dict={"delta_freq": "coolwarm"}, annotate=True)
+```
+
+For a continuous (CNV) main matrix use `.main(kind="cnv")`.
 
 ### Grouped oncoplot
 
@@ -255,11 +267,48 @@ grouped = (table
 op = (grouped.plot.oncoplot(figsize=(13, 9))
     .main()
     .add_bar("TMB", side="top")
-    .group_features(by="pathway")   # row sections + left titles
-    .group_samples(by="subtype")    # column sections + top titles
-    .render()
+    .add_freq(side="right")
+    .group_features(by="pathway")           # row sections + left titles
+    .group_samples(by="subtype", freq=True) # column sections + top titles
+    .render(show_sample_labels=False)       # None auto-hides labels above 50 samples
 )
 op.save("grouped_oncoplot.png", dpi=300)
+```
+
+`group_samples(by=..., freq=True)` draws each sample group its own per-section
+frequency strip (read from `feature_metadata["{label}_freq"]`, e.g. `LUAD_freq`)
+right of that group's heatmap section, alongside the overall `add_freq(...)` bar.
+Populate those per-group columns with `add_freq(group_col="subtype")` (see below).
+All frequency strips share one comparable 0–1 colour scale.
+`render(show_sample_labels=)` controls per-column sample tick labels: `None`
+(default) auto-hides them above 50 samples, `True`/`False` forces.
+
+### Gene annotation and size-based grouping
+
+```python
+# Per-group frequencies straight from a sample_metadata column (no manual dict):
+table = table.add_freq(group_col="subtype")   # adds LUAD_freq, ASC_freq, ... and freq
+
+# Annotate each gene with its canonical-transcript exon size from Ensembl BioMart,
+# then bucket genes by size so large mutation-prone genes (TTN, MUC16) group apart
+# from compact drivers. NOTE: add_exon_size / get_exon_size hit Ensembl BioMart and
+# require network access.
+table = table.add_exon_size()                 # writes feature_metadata["exon_size"]
+table.feature_metadata["size_group"] = pd.cut(
+    table.feature_metadata["exon_size"],
+    bins=[0, 5000, 15000, 1e9], labels=["Small", "Medium", "Large"],
+)
+
+# Multi-key sort keeps each size group contiguous, ordered by freq within it:
+table = table.sort_features(by=["size_group", "freq"], ascending=[True, False])
+
+op = (table.plot.oncoplot(figsize=(13, 9))
+    .main()
+    .add_freq(side="right")
+    .group_features(by="size_group")
+    .render()
+)
+op.save("size_grouped_oncoplot.png", dpi=300)
 ```
 
 ### Lollipop Plot
