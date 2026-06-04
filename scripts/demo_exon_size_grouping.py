@@ -1,17 +1,19 @@
 """Demo: group genes by exon size in a grouped oncoplot (real TCGA lung data).
 
 Takes the bundled TCGA lung fixture, keeps recurrently-mutated genes
-(freq >= 0.2), looks up each gene's exon size (longest-transcript length) from
-Ensembl BioMart via ``PivotTable.add_exon_size``, bins genes into Small / Medium
-/ Large, and renders a grouped oncoplot: rows sectioned by size band, columns by
-subtype, each subtype carrying its own per-section frequency strip plus an
-overall freq bar. Within each band, genes are ordered by subtype enrichment
-(``delta_freq`` = LUSC_freq - LUAD_freq).
+(freq >= 0.2), looks up each gene's exon size (canonical-transcript length) from
+the bundled Ensembl cache via ``PivotTable.add_exon_size``, bins genes into
+Small / Medium / Large, and renders a grouped oncoplot: rows sectioned by size
+band, columns by subtype, each subtype carrying its own per-section frequency
+strip plus an overall freq bar. Within each band, genes are ordered by subtype
+enrichment — a Fisher-exact log2 odds ratio (LUSC vs LUAD) from
+``PivotTable.mutation_enrichment_test``, which (unlike a raw freq difference)
+accounts for sample counts so low-frequency genes are not over-weighted.
 
 This separates the large "mutated-because-they're-huge" passenger genes (TTN,
 MUC16, SYNE1, ...) from compact recurrently-mutated drivers (TP53, ...).
 
-Needs network (Ensembl BioMart). Run from the project root:
+Runs offline (gene sizes are bundled). Run from the project root:
     uv run python scripts/demo_exon_size_grouping.py
 """
 
@@ -23,6 +25,7 @@ import matplotlib
 
 matplotlib.use("Agg")  # headless rendering
 
+import numpy as np
 import pandas as pd
 
 import pymaftools
@@ -44,18 +47,27 @@ def main() -> None:
         table.feature_metadata["freq"] >= FREQ_THRESHOLD
     ].tolist()
 
-    # exon size for just these genes (targeted BioMart fetch, no genome-wide dump)
+    # exon size for just these genes (reads the bundled cache; no network)
     sub = table.subset(features=genes).add_exon_size()
     sub.feature_metadata["size_group"] = pd.cut(
         sub.feature_metadata["exon_size"], bins=SIZE_BINS, labels=SIZE_LABELS
     )
-    # Subtype enrichment per gene: positive => mutated more often in LUSC.
-    sub.feature_metadata["delta_freq"] = (
-        sub.feature_metadata["LUSC_freq"] - sub.feature_metadata["LUAD_freq"]
+    # Subtype enrichment per gene as a Fisher-exact log2 odds ratio (positive =>
+    # enriched in LUSC). Using the test (not a raw freq difference) weights by
+    # sample counts, so a small shift in a rare gene is not mistaken for signal.
+    enr = sub.mutation_enrichment_test(
+        group_col="subtype", group1="LUAD", group2="LUSC", method="fisher"
+    )
+    counts = enr[["LUAD_True", "LUAD_False", "LUSC_True", "LUSC_False"]].astype(float)
+    # Haldane-corrected (+0.5) so genes with a zero cell stay finite.
+    luad_odds = (counts["LUAD_True"] + 0.5) / (counts["LUAD_False"] + 0.5)
+    lusc_odds = (counts["LUSC_True"] + 0.5) / (counts["LUSC_False"] + 0.5)
+    sub.feature_metadata["log2OR"] = np.log2(lusc_odds / luad_odds).reindex(
+        sub.feature_metadata.index
     )
     # Bands contiguous, Small -> Medium -> Large (compact recurrent genes on top,
     # large passenger-prone genes below); within each band, LUSC-enriched on top.
-    sub = sub.sort_features(by=["size_group", "delta_freq"], ascending=[True, False])
+    sub = sub.sort_features(by=["size_group", "log2OR"], ascending=[True, False])
     # Waterfall samples within each subtype by the Small band (top rows, TP53/CDH10).
     n_small = int((sub.feature_metadata["size_group"] == SIZE_LABELS[0]).sum())
     sub = sub.sort_samples_by_group(
@@ -66,13 +78,16 @@ def main() -> None:
         OncoPlot(sub, figsize=(15, 9))
         .main(yticklabels=True, linewidths=0)
         .add_freq(side="right", freq_columns=["freq"], annot=True, linewidths=0)
-        # delta_freq strip: diverging coolwarm => symmetric-around-0 scale, kept
+        # log2OR strip: diverging coolwarm => symmetric-around-0 scale, kept
         # separate from the Blues 0-1 freq columns (different value range).
+        # annotation_font_size=8 matches the FreqTrack annotation size (NumericTrack
+        # defaults to 10, which otherwise prints visibly larger than the freq cols).
         .add_feature_annotation(
-            ["delta_freq"],
+            ["log2OR"],
             side="right",
-            cmap_dict={"delta_freq": "coolwarm"},
+            cmap_dict={"log2OR": "coolwarm"},
             annotate=True,
+            annotation_font_size=8,
             linewidths=0,
         )
         .add_sample_annotation(
