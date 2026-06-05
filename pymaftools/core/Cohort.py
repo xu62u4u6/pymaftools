@@ -184,7 +184,7 @@ class Cohort:
         if table_name in self.tables:
             del self.tables[table_name]
 
-    def subset(self, samples: list[str] = []) -> Cohort:
+    def subset(self, samples: list[str] | None = None) -> Cohort:
         """
         Create a new Cohort containing only the specified samples.
 
@@ -198,6 +198,8 @@ class Cohort:
         Cohort
             A new Cohort containing only the specified samples.
         """
+        if samples is None:
+            samples = []
         cohort = self.copy()
         for table_name, table in cohort.tables.items():
             cohort.tables[table_name] = table.subset(samples=samples)
