@@ -18,9 +18,6 @@ from sklearn.decomposition import PCA
 from sklearn.metrics import pairwise_distances
 from sklearn.metrics.pairwise import cosine_similarity
 
-# Local imports
-from .PairwiseMatrix import CooccurrenceMatrix, SimilarityMatrix
-
 # Import for lazy loading in property accessor
 from typing import TYPE_CHECKING
 
@@ -29,6 +26,7 @@ if TYPE_CHECKING:
 
     from ..plot.PivotStatsPlot import PivotStatsPlot
     from .MAF import MAF
+    from .PairwiseMatrix import CooccurrenceMatrix, SimilarityMatrix
 
 
 class PivotTable(pd.DataFrame):
@@ -1514,6 +1512,8 @@ class PivotTable(pd.DataFrame):
         CooccurrenceMatrix
             Matrix showing feature co-occurrence patterns.
         """
+        from .PairwiseMatrix import CooccurrenceMatrix
+
         table = self.to_binary_table()
         matrix = table.astype(int)
         cooccur_matrix = matrix.dot(matrix.T)
@@ -1682,6 +1682,8 @@ class PivotTable(pd.DataFrame):
         similarity_df = pd.DataFrame(
             similarity, index=self.columns, columns=self.columns
         )
+        from .PairwiseMatrix import SimilarityMatrix
+
         return SimilarityMatrix(similarity_df)
 
     def order(self, group_col: str, group_order: List[str]) -> "PivotTable":
