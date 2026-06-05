@@ -7,8 +7,6 @@ Specifically designed for mutation analysis and genomic data visualization.
 
 from __future__ import annotations
 
-# Standard library imports
-import sqlite3
 import warnings
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Literal, Optional, Self, Tuple, Union
@@ -16,18 +14,9 @@ from typing import Any, Callable, Dict, List, Literal, Optional, Self, Tuple, Un
 # Third-party imports
 import numpy as np
 import pandas as pd
-from scipy.stats import (
-    chi2_contingency,
-    f_oneway,
-    fisher_exact,
-    kruskal,
-    mannwhitneyu,
-    ttest_ind,
-)
 from sklearn.decomposition import PCA
 from sklearn.metrics import pairwise_distances
 from sklearn.metrics.pairwise import cosine_similarity
-from statsmodels.stats.multitest import multipletests
 
 # Local imports
 from .PairwiseMatrix import CooccurrenceMatrix, SimilarityMatrix
@@ -257,18 +246,9 @@ class PivotTable(pd.DataFrame):
         db_path : str
             Path to the SQLite database file.
         """
-        db_path = Path(db_path)
-        if db_path.exists():
-            db_path.unlink()  # Remove existing file
+        from . import pivot_io
 
-        conn = sqlite3.connect(str(db_path))
-        table = self.copy().rename_index_and_columns()
-        table = table.replace(False, "WT")
-        table.to_sql("data", conn, index=True)
-        table.sample_metadata.to_sql("sample_metadata", conn, index=True)
-        table.feature_metadata.to_sql("feature_metadata", conn, index=True)
-        conn.close()
-        print(f"[PivotTable] saved to {db_path}")
+        pivot_io.to_sqlite(self, db_path)
 
     def to_h5(
         self,
@@ -289,21 +269,9 @@ class PivotTable(pd.DataFrame):
         complevel : int, default 9
             Compression level passed to ``pandas.HDFStore``.
         """
-        h5_path = Path(h5_path)
-        if h5_path.exists():
-            h5_path.unlink()
+        from . import pivot_io
 
-        table = self.copy().rename_index_and_columns()
-        with pd.HDFStore(
-            str(h5_path), mode="w", complib=complib, complevel=complevel
-        ) as store:
-            table_metadata = pd.DataFrame({"class_name": [type(self).__name__]})
-            store.put("table_metadata", table_metadata)
-            store.put("data", pd.DataFrame(table))
-            store.put("sample_metadata", table.sample_metadata)
-            store.put("feature_metadata", table.feature_metadata)
-
-        print(f"[PivotTable] saved to {h5_path}")
+        pivot_io.to_h5(self, h5_path, complib=complib, complevel=complevel)
 
     @classmethod
     def read_sqlite(cls, db_path: str) -> "PivotTable":
@@ -320,29 +288,9 @@ class PivotTable(pd.DataFrame):
         PivotTable
             Loaded PivotTable with metadata.
         """
-        conn = sqlite3.connect(db_path)
+        from . import pivot_io
 
-        # Load main data table
-        data = pd.read_sql("SELECT * FROM 'data'", conn, index_col="feature")
-        data.columns.name = "sample"
-
-        # Load metadata tables
-        sample_metadata = pd.read_sql(
-            "SELECT * FROM 'sample_metadata'", conn, index_col="sample"
-        )
-        feature_metadata = pd.read_sql(
-            "SELECT * FROM 'feature_metadata'", conn, index_col="feature"
-        )
-
-        # Create PivotTable instance
-        table = cls(data)
-        table = table.replace("WT", False)
-        table.sample_metadata = sample_metadata
-        table.feature_metadata = feature_metadata
-        table._validate_metadata()
-        conn.close()
-        print(f"[PivotTable] loaded from {db_path}")
-        return table
+        return pivot_io.read_sqlite(cls, db_path)
 
     @classmethod
     def read_h5(cls, h5_path: str | Path) -> "PivotTable":
@@ -359,33 +307,9 @@ class PivotTable(pd.DataFrame):
         PivotTable
             Loaded PivotTable with metadata.
         """
-        h5_path = Path(h5_path)
-        with pd.HDFStore(str(h5_path), mode="r") as store:
-            required = {"/data", "/sample_metadata", "/feature_metadata"}
-            keys = set(store.keys())
-            missing = sorted(required - keys)
-            if missing:
-                raise ValueError(
-                    f"HDF5 file '{h5_path}' is missing required key(s): {missing}."
-                )
+        from . import pivot_io
 
-            data = store.get("data")
-            sample_metadata = store.get("sample_metadata")
-            feature_metadata = store.get("feature_metadata")
-
-            table_cls = cls
-            if cls is PivotTable and "/table_metadata" in keys:
-                table_metadata = store.get("table_metadata")
-                if "class_name" in table_metadata.columns:
-                    class_name = table_metadata["class_name"].iloc[0]
-                    table_cls = PivotTable._subclass_registry.get(class_name, PivotTable)
-
-        table = table_cls(data)
-        table.sample_metadata = sample_metadata.reindex(table.columns)
-        table.feature_metadata = feature_metadata.reindex(table.index)
-        table._validate_metadata()
-        print(f"[PivotTable] loaded from {h5_path}")
-        return table
+        return pivot_io.read_h5(cls, PivotTable, h5_path)
 
     # ------------------------------------------------------------------ #
     #  AnnData interoperability
@@ -415,28 +339,9 @@ class PivotTable(pd.DataFrame):
         >>> adata.obs  # sample_metadata
         >>> adata.var  # feature_metadata
         """
-        try:
-            import anndata
-        except ImportError:
-            raise ImportError(
-                "anndata is required for AnnData conversion. "
-                "Install it with: pip install anndata"
-            )
+        from . import pivot_io
 
-        X = self.values.T  # (samples, features)
-
-        # Handle non-numeric / mixed dtype: store as object array
-        if X.dtype == object:
-            import numpy as _np
-            X = _np.array(X, dtype=object)
-
-        adata = anndata.AnnData(
-            X=X,
-            obs=self.sample_metadata.copy(),
-            var=self.feature_metadata.copy(),
-            **kwargs,
-        )
-        return adata
+        return pivot_io.to_anndata(self, **kwargs)
 
     @classmethod
     def from_anndata(cls, adata: "anndata.AnnData") -> "PivotTable":
@@ -458,31 +363,9 @@ class PivotTable(pd.DataFrame):
         --------
         >>> table = PivotTable.from_anndata(adata)
         """
-        try:
-            import anndata  # noqa: F401
-        except ImportError:
-            raise ImportError(
-                "anndata is required for AnnData conversion. "
-                "Install it with: pip install anndata"
-            )
+        from . import pivot_io
 
-        import scipy.sparse as sp
-
-        X = adata.X
-        if sp.issparse(X):
-            X = X.toarray()
-
-        data = pd.DataFrame(
-            X.T,  # transpose back to (features, samples)
-            index=adata.var_names,
-            columns=adata.obs_names,
-        )
-
-        table = cls(data)
-        table.feature_metadata = adata.var.copy()
-        table.sample_metadata = adata.obs.copy()
-        table._validate_metadata()
-        return table
+        return pivot_io.from_anndata(cls, adata)
 
     def to_hierarchical_clustering(
         self, method: str = "ward", metric: str = "euclidean"
@@ -1190,10 +1073,9 @@ class PivotTable(pd.DataFrame):
         add_freq : Add frequency columns to feature_metadata
         filter_by_freq : Filter features by frequency threshold
         """
-        binary_table = self.to_binary_table()
-        # Ensure result is float64 type, not object
-        frequency = binary_table.sum(axis=1).astype(float) / binary_table.shape[1]
-        return frequency
+        from . import pivot_frequency
+
+        return pivot_frequency.calculate_feature_frequency(self)
 
     def add_freq(
         self,
@@ -1277,38 +1159,9 @@ class PivotTable(pd.DataFrame):
         filter_by_freq : Filter features by frequency threshold
         sort_features : Sort features by metadata columns including frequency
         """
-        # Guard against the silent all-NaN trap: assigning freq by label join
-        # fails silently when feature_metadata.index has drifted from the data
-        # index (e.g. after a bare ``table.index = [...]``). Fail loud instead.
-        self._validate_metadata()
+        from . import pivot_frequency
 
-        if group_col is not None:
-            if groups:
-                raise ValueError("Pass either 'groups' or 'group_col', not both.")
-            if group_col not in self.sample_metadata.columns:
-                raise ValueError(
-                    f"group_col '{group_col}' not found in sample_metadata."
-                )
-            labels = self.sample_metadata[group_col]
-            groups = {
-                str(v): self.subset(samples=labels == v)
-                for v in labels.dropna().unique()
-            }
-        groups = groups or {}
-
-        pivot_table = self.copy()
-        freq_data = pd.DataFrame(index=pivot_table.index)
-
-        for group, table in groups.items():
-            if not isinstance(table, PivotTable):
-                raise TypeError(
-                    f"Expected PivotTable for group '{group}', got {type(table)}."
-                )
-            freq_data[f"{group}_freq"] = table.calculate_feature_frequency()
-
-        freq_data["freq"] = pivot_table.calculate_feature_frequency()
-        pivot_table.feature_metadata[freq_data.columns] = freq_data
-        return pivot_table
+        return pivot_frequency.add_freq(self, PivotTable, groups=groups, group_col=group_col)
 
     def add_exon_size(
         self,
@@ -1383,15 +1236,9 @@ class PivotTable(pd.DataFrame):
         ValueError
             If any specified column is not found in feature_metadata.
         """
-        cols = [by] if isinstance(by, str) else list(by)
-        missing = [c for c in cols if c not in self.feature_metadata.columns]
-        if missing:
-            raise ValueError(f"Column(s) {missing} not found in feature_metadata.")
-        table = self.copy()
-        sorted_index = table.feature_metadata.sort_values(
-            by=by, ascending=ascending
-        ).index
-        return table.subset(features=sorted_index)
+        from . import pivot_sorting
+
+        return pivot_sorting.sort_features(self, by=by, ascending=ascending)
 
     def sort_samples_by_mutations(self, top: int = 10) -> "PivotTable":
         """
@@ -1412,20 +1259,9 @@ class PivotTable(pd.DataFrame):
             The mutation weight is added to sample_metadata.
         """
 
-        def binary_sort_key(column: pd.Series) -> int:
-            """Convert binary mutation pattern to integer for sorting."""
-            # Convert mutation status (True/False) to binary string (1/0)
-            binary_str = "".join(column.astype(int).astype(str))
-            # Convert binary string to integer (e.g., "101" -> 5)
-            return int(binary_str, 2)
+        from . import pivot_sorting
 
-        # tmp_pivot_table = pivot_table.drop(columns=freq_columns)
-        pivot_table = self.copy()
-        binary_pivot_table = pivot_table.to_binary_table()
-        mutations_weight = binary_pivot_table.head(top).apply(binary_sort_key, axis=0)
-        pivot_table.sample_metadata["mutations_weight"] = mutations_weight
-        sorted_samples = mutations_weight.sort_values(ascending=False).index.tolist()
-        return pivot_table.subset(samples=sorted_samples)
+        return pivot_sorting.sort_samples_by_mutations(self, top=top)
 
     def sort_samples_by_group(
         self, group_col: str, group_order: List[str], top: int = 10
@@ -1492,31 +1328,11 @@ class PivotTable(pd.DataFrame):
         sort_features : Sort features by metadata columns
         subset : Select specific samples or features
         """
-        pivot_table = self.copy()
+        from . import pivot_sorting
 
-        # Ensure group_col exists in sample_metadata
-        if group_col not in pivot_table.sample_metadata.columns:
-            raise ValueError(f"Column '{group_col}' not found in sample_metadata.")
-
-        sorted_samples = []
-
-        # Sort samples by group order
-        for subtype in group_order:
-            subtype_samples = pivot_table.sample_metadata[
-                pivot_table.sample_metadata[group_col] == subtype
-            ].index
-
-            if len(subtype_samples) > 0:
-                # Filter samples for this subtype and apply sort_samples_by_mutations
-                subtype_pivot = pivot_table.subset(samples=subtype_samples)
-                sorted_subtype_pivot = subtype_pivot.sort_samples_by_mutations(top=top)
-
-                sorted_samples.extend(
-                    sorted_subtype_pivot.columns
-                )  # Store sorted sample order
-
-        # Reorder PivotTable with sorted samples
-        return pivot_table.subset(samples=sorted_samples)
+        return pivot_sorting.sort_samples_by_group(
+            self, group_col=group_col, group_order=group_order, top=top
+        )
 
     def PCA(self, to_binary: bool) -> Tuple[pd.DataFrame, np.ndarray, PCA]:
         """
@@ -1600,14 +1416,9 @@ class PivotTable(pd.DataFrame):
         ValueError
             If 'freq' column is not found in feature_metadata.
         """
-        if "freq" not in self.feature_metadata.columns:
-            raise ValueError(
-                "freq column not found in feature_metadata. Please perform table.add_freq() first"
-            )
-        pivot_table = self.copy()
-        return pivot_table.subset(
-            features=pivot_table.feature_metadata.freq >= threshold
-        )
+        from . import pivot_filtering
+
+        return pivot_filtering.filter_by_freq(self, threshold=threshold)
 
     def filter_by_variance(
         self,
@@ -1642,22 +1453,11 @@ class PivotTable(pd.DataFrame):
             If neither ``threshold`` nor ``quantile`` is specified, or if
             ``method`` is not supported.
         """
-        if threshold is None and quantile is None:
-            raise ValueError("Either threshold or quantile must be specified.")
-        if method not in ("var", "mad"):
-            raise ValueError(f"Unsupported method '{method}'. Use 'var' or 'mad'.")
+        from . import pivot_filtering
 
-        pt = self.copy()
-        numeric = pt.astype(float)
-        if method == "var":
-            scores = numeric.var(axis=1)
-        else:  # mad
-            scores = numeric.apply(lambda x: (x - x.median()).abs().median(), axis=1)
-
-        pt.feature_metadata[method] = scores
-        if quantile is not None:
-            threshold = scores.quantile(quantile)
-        return pt.subset(features=scores >= threshold)
+        return pivot_filtering.filter_by_variance(
+            self, threshold=threshold, method=method, quantile=quantile
+        )
 
     def filter_by_statistical_test(
         self,
@@ -1693,52 +1493,11 @@ class PivotTable(pd.DataFrame):
         ValueError
             If ``method`` is unsupported or group count doesn't match the test.
         """
-        test_funcs = {
-            "ttest": lambda groups: ttest_ind(*groups),
-            "mann_whitney": lambda groups: mannwhitneyu(
-                *groups, alternative="two-sided"
-            ),
-            "kruskal": lambda groups: kruskal(*groups),
-            "anova": lambda groups: f_oneway(*groups),
-        }
-        if method not in test_funcs:
-            raise ValueError(
-                f"Unsupported method '{method}'. Choose from {list(test_funcs)}."
-            )
+        from . import pivot_filtering
 
-        two_group_only = {"ttest", "mann_whitney"}
-        pt = self.copy()
-        numeric = pt.astype(float)
-        groups_series = pt.sample_metadata[group_col]
-        unique_groups = groups_series.dropna().unique()
-
-        if method in two_group_only and len(unique_groups) != 2:
-            raise ValueError(
-                f"'{method}' requires exactly 2 groups, got {len(unique_groups)}."
-            )
-
-        p_values = []
-        for feature in numeric.index:
-            row = numeric.loc[feature]
-            group_data = [
-                row[groups_series == g].dropna().values for g in unique_groups
-            ]
-            # Skip features with insufficient data in any group
-            if any(len(g) < 2 for g in group_data):
-                p_values.append(np.nan)
-                continue
-            _, pval = test_funcs[method](group_data)
-            p_values.append(pval)
-
-        p_values = np.array(p_values)
-        valid = ~np.isnan(p_values)
-        adjusted = np.full_like(p_values, np.nan)
-        if valid.any():
-            adjusted[valid] = multipletests(p_values[valid], method="fdr_bh")[1]
-
-        pt.feature_metadata["p_value"] = p_values
-        pt.feature_metadata["adjusted_p_value"] = adjusted
-        return pt.subset(features=adjusted < alpha)
+        return pivot_filtering.filter_by_statistical_test(
+            self, group_col=group_col, method=method, alpha=alpha
+        )
 
     def to_cooccur_matrix(self, freq: bool = True) -> "CooccurrenceMatrix":
         """
@@ -1863,60 +1622,17 @@ class PivotTable(pd.DataFrame):
         statsmodels.stats.multitest.multipletests : Multiple testing correction
         """
 
-        binary_pivot_table = self.to_binary_table()
-        sample_metadata = binary_pivot_table.sample_metadata
+        from . import pivot_stats
 
-        subset1 = binary_pivot_table.subset(
-            samples=sample_metadata[group_col] == group1
+        return pivot_stats.mutation_enrichment_test(
+            self,
+            group_col=group_col,
+            group1=group1,
+            group2=group2,
+            alpha=alpha,
+            minimum_mutations=minimum_mutations,
+            method=method,
         )
-        subset2 = binary_pivot_table.subset(
-            samples=sample_metadata[group_col] == group2
-        )
-
-        df = pd.DataFrame(
-            index=binary_pivot_table.index,
-            columns=[
-                f"{group1}_True",
-                f"{group1}_False",
-                f"{group2}_True",
-                f"{group2}_False",
-            ],
-        )
-
-        df[f"{group1}_True"] = subset1.sum(axis=1)
-        df[f"{group1}_False"] = len(subset1.columns) - df[f"{group1}_True"]
-
-        df[f"{group2}_True"] = subset2.sum(axis=1)
-        df[f"{group2}_False"] = len(subset2.columns) - df[f"{group2}_True"]
-
-        # Filter out mutations not observed enough
-        df = df[
-            (df[f"{group1}_True"] >= minimum_mutations)
-            | (df[f"{group2}_True"] >= minimum_mutations)
-        ]
-
-        def get_p_value(row: pd.Series) -> float:
-            contingency_table = row.values.astype(int).reshape(2, 2)
-            if method == "chi2":
-                _, p, _, _ = chi2_contingency(contingency_table)
-            elif method == "fisher":
-                _, p = fisher_exact(contingency_table)
-            else:
-                raise ValueError(f"Unsupported method: {method}")
-            return p
-
-        df["p_value"] = df.apply(get_p_value, axis=1)
-
-        p_values = df["p_value"].values
-        reject, adjusted_p_value, _, _ = multipletests(
-            p_values, method="fdr_bh", alpha=alpha
-        )
-
-        df["adjusted_p_value"] = adjusted_p_value
-        df["is_significant"] = reject
-        df["test_method"] = method
-
-        return df
 
     def compute_similarity(
         self,
