@@ -8,6 +8,8 @@ Python package for handling and analyzing Mutation Annotation Format (MAF) files
    :caption: User Guide
 
    getting_started
+   pivottable
+   oncoplot
 
 .. toctree::
    :maxdepth: 2
