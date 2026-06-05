@@ -43,10 +43,22 @@ class ColorManager:
 
     CNV_CMAP = {"AMP": "salmon", "DEL": "steelblue", "AMP&DEL": "gray"}
 
+    # Canonical six-class substitution colours (COSMIC SBS-6 convention), so
+    # Ti/Tv plots use the same C>A/C>T/... colours everywhere.
+    TITV_CMAP = {
+        "C>A": "#02BCED",  # sky blue
+        "C>G": "#1A1A1A",  # near-black
+        "C>T": "#E32926",  # red
+        "T>A": "#999999",  # grey
+        "T>C": "#A1CE63",  # green
+        "T>G": "#EDBFC2",  # pink
+    }
+
     predefined_cmaps = {
         "all_mutation": ALL_MUTATION_CMAP,
         "nonsynonymous": NONSYNONYMOUS_CMAP,
         "cnv": CNV_CMAP,
+        "titv": TITV_CMAP,
     }
 
     def __init__(self):

@@ -53,46 +53,65 @@ def plot_maf_summary(maf: pd.DataFrame, top: int = 20, figsize=(12, 9)):
     """Draw a compact MAF summary dashboard."""
     import matplotlib.pyplot as plt
 
+    from .ColorManager import ColorManager
+    from . import style
+
     _require_columns(maf, ["Variant_Classification", "Variant_Type", "Hugo_Symbol"])
     burden = mutation_burden_by_class(maf)
     variant_class = maf["Variant_Classification"].value_counts()
     variant_type = maf["Variant_Type"].value_counts()
     top_genes = top_mutated_genes(maf, top=top)
 
-    fig, axes = plt.subplots(2, 2, figsize=figsize)
-    ax = axes[0, 0]
-    burden.plot(kind="bar", stacked=True, ax=ax, width=0.9, legend=False)
-    ax.set_title("Mutation Burden by Sample")
-    ax.set_xlabel("Sample")
-    ax.set_ylabel("Mutations")
-    ax.tick_params(axis="x", labelrotation=90, labelsize=7)
+    # One colour per variant classification, shared by the stacked burden and
+    # the classification bars (so a class is the same colour in both).
+    def class_color(name):
+        return ColorManager.ALL_MUTATION_CMAP.get(name, style.MUTED)
 
-    ax = axes[0, 1]
-    variant_class.sort_values().plot(kind="barh", ax=ax)
-    ax.set_title("Variant Classification")
-    ax.set_xlabel("Mutations")
+    fig = plt.figure(figsize=figsize)
+    gs = fig.add_gridspec(2, 3, width_ratios=[1.0, 1.0, 0.32])
+    ax_burden = fig.add_subplot(gs[0, 0])
+    ax_class = fig.add_subplot(gs[0, 1])
+    ax_type = fig.add_subplot(gs[1, 0])
+    ax_genes = fig.add_subplot(gs[1, 1])
+    legend_ax = fig.add_subplot(gs[:, 2])
+    legend_ax.axis("off")
 
-    ax = axes[1, 0]
-    variant_type.sort_values().plot(kind="barh", ax=ax, color="#4C78A8")
-    ax.set_title("Variant Type")
-    ax.set_xlabel("Mutations")
+    burden.plot(
+        kind="bar",
+        stacked=True,
+        ax=ax_burden,
+        width=0.9,
+        legend=False,
+        color=[class_color(c) for c in burden.columns],
+    )
+    ax_burden.set_title("Mutation Burden by Sample")
+    ax_burden.set_xlabel("Sample")
+    ax_burden.set_ylabel("Mutations")
+    ax_burden.tick_params(axis="x", labelrotation=90, labelsize=7)
 
-    ax = axes[1, 1]
-    top_genes.sort_values().plot(kind="barh", ax=ax, color="#F58518")
-    ax.set_title(f"Top {len(top_genes)} Mutated Genes")
-    ax.set_xlabel("Mutated samples")
+    vc = variant_class.sort_values()
+    vc.plot(kind="barh", ax=ax_class, color=[class_color(c) for c in vc.index])
+    ax_class.set_title("Variant Classification")
+    ax_class.set_xlabel("Mutations")
 
-    handles, labels = axes[0, 0].get_legend_handles_labels()
-    if handles:
-        fig.legend(
-            handles,
-            labels,
-            loc="lower center",
-            bbox_to_anchor=(0.5, 0.0),
-            ncol=min(4, len(labels)),
-            title="Classification",
-        )
-    fig.tight_layout(rect=(0, 0.12, 1, 1))
+    # Plain count panels carry no category meaning -> one neutral house accent
+    # (not a second arbitrary colour competing with the classification palette).
+    variant_type.sort_values().plot(kind="barh", ax=ax_type, color=style.ACCENT)
+    ax_type.set_title("Variant Type")
+    ax_type.set_xlabel("Mutations")
+
+    top_genes.sort_values().plot(kind="barh", ax=ax_genes, color=style.ACCENT)
+    ax_genes.set_title(f"Top {len(top_genes)} Mutated Genes")
+    ax_genes.set_xlabel("Mutated samples")
+
+    for ax in (ax_burden, ax_class, ax_type, ax_genes):
+        style.style_axes(ax)
+
+    style.draw_legend_cards(
+        legend_ax,
+        {"Classification": {c: class_color(c) for c in variant_class.index}},
+    )
+    fig.tight_layout()
     return fig
 
 
@@ -123,6 +142,9 @@ def plot_titv(maf: pd.DataFrame, fraction: bool = True, figsize=(10, 5)):
     """Draw Ti/Tv six-class substitution composition per sample."""
     import matplotlib.pyplot as plt
 
+    from .ColorManager import ColorManager
+    from . import style
+
     counts = summarize_titv(maf)
     if counts.empty:
         raise ValueError("No SNP substitutions available for Ti/Tv plot.")
@@ -131,14 +153,23 @@ def plot_titv(maf: pd.DataFrame, fraction: bool = True, figsize=(10, 5)):
         if fraction
         else counts
     )
-    ax = plot_data.plot(kind="bar", stacked=True, figsize=figsize, width=0.9)
+    cols = list(plot_data.columns)
+    colors = [ColorManager.TITV_CMAP[c] for c in cols]
+    fig, ax, legend_ax = style.fig_with_legend(figsize, legend_width=0.16)
+    plot_data.plot(
+        kind="bar", stacked=True, width=0.9, color=colors, ax=ax, legend=False
+    )
     ax.set_title("Transition / Transversion Composition")
     ax.set_xlabel("Sample")
     ax.set_ylabel("Fraction" if fraction else "SNP count")
     ax.tick_params(axis="x", labelrotation=90, labelsize=7)
-    ax.legend(title="Base change", bbox_to_anchor=(1.02, 1), loc="upper left")
-    ax.figure.tight_layout()
-    return ax.figure
+    ax.margins(x=0.01)
+    style.style_axes(ax)
+    style.draw_legend_cards(
+        legend_ax, {"Base change": {c: ColorManager.TITV_CMAP[c] for c in cols}}
+    )
+    fig.tight_layout()
+    return fig
 
 
 def _chrom_sort_key(chrom) -> tuple[int, str]:
@@ -157,6 +188,9 @@ def plot_rainfall(
 ):
     """Draw inter-mutation distance across genomic coordinates."""
     import matplotlib.pyplot as plt
+
+    from .ColorManager import ColorManager
+    from . import style
 
     sample_col = _get_sample_col(maf)
     _require_columns(
@@ -193,19 +227,24 @@ def plot_rainfall(
     if data.empty:
         raise ValueError("Rainfall plot requires at least two variants on one chromosome.")
 
-    fig, ax = plt.subplots(figsize=figsize)
+    fig, ax, legend_ax = style.fig_with_legend(figsize, legend_width=0.16)
+    present = {}
     for cls, sub in data.groupby("Variant_Classification"):
+        color = ColorManager.ALL_MUTATION_CMAP.get(cls, style.MUTED)
+        present[cls] = color
         ax.scatter(
             sub["genomic_pos"],
             np.log10(sub["distance"].clip(lower=1)),
             s=point_size,
-            label=cls,
-            alpha=0.75,
+            color=color,
+            alpha=0.8,
+            edgecolors="none",
         )
     ax.set_title(f"Rainfall Plot{f' - {sample}' if sample else ''}")
     ax.set_xlabel("Genomic position")
     ax.set_ylabel("log10 inter-mutation distance")
-    ax.legend(bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=8)
+    style.style_axes(ax)
+    style.draw_legend_cards(legend_ax, {"Mutation": present})
     fig.tight_layout()
     return fig
 
@@ -244,6 +283,8 @@ def plot_vaf(
     """Draw VAF distribution, optionally grouped by a MAF column."""
     import matplotlib.pyplot as plt
 
+    from . import style
+
     data = maf.copy()
     data["VAF"] = infer_vaf(data, vaf_col=vaf_col)
     data = data.dropna(subset=["VAF"])
@@ -253,12 +294,14 @@ def plot_vaf(
     if by and by in data.columns:
         for label, sub in data.groupby(by):
             ax.hist(sub["VAF"], bins=30, alpha=0.5, label=str(label), density=True)
-        ax.legend(title=by)
+        ax.legend(title=by, frameon=False)
+        ax.set_ylabel("Density")
     else:
-        ax.hist(data["VAF"], bins=30, color="#4C78A8", alpha=0.8)
+        ax.hist(data["VAF"], bins=30, color=style.ACCENT, alpha=0.9)
         ax.set_ylabel("Variants")
     ax.set_title("Variant Allele Frequency")
     ax.set_xlabel("VAF")
+    style.style_axes(ax)
     fig.tight_layout()
     return fig
 
@@ -315,6 +358,8 @@ def plot_somatic_interactions(
     import matplotlib.pyplot as plt
     import seaborn as sns
 
+    from . import style
+
     stats = somatic_interactions(table, top=top, alpha=alpha)
     binary = table.to_binary_table().astype(bool)
     genes = (
@@ -339,19 +384,29 @@ def plot_somatic_interactions(
     for _, row in stats.loc[stats["is_significant"]].iterrows():
         annotations.loc[row["gene1"], row["gene2"]] = "*"
         annotations.loc[row["gene2"], row["gene1"]] = "*"
+    vmax = float(np.nanmax(np.abs(mat.values))) if mat.notna().any().any() else 1.0
+    vmax = max(vmax, 1.0)
     fig, ax = plt.subplots(figsize=figsize)
     sns.heatmap(
         mat,
-        cmap="coolwarm",
+        cmap=style.DIVERGING_CMAP,
         center=0,
+        vmin=-vmax,
+        vmax=vmax,
         ax=ax,
         square=True,
         mask=mat.isna(),
         annot=annotations,
         fmt="",
-        cbar_kws={"label": "log2 odds ratio"},
+        linewidths=0.5,
+        linecolor="white",
+        cbar=False,
     )
-    ax.set_title("Somatic Interactions")
+    ax.set_title("Somatic Interactions  (* FDR < %.2g)" % alpha)
+    ax.tick_params(length=0)
+    style.add_vertical_colorbar(
+        ax, style.DIVERGING_CMAP, -vmax, vmax, label="log2 OR"
+    )
     fig.tight_layout()
     return fig, stats
 
@@ -441,6 +496,8 @@ def plot_cohort_comparison_forest(
     """Draw cohort-comparison odds ratios as a forest-style plot."""
     import matplotlib.pyplot as plt
 
+    from . import style
+
     if compare_result.empty:
         raise ValueError("compare_result is empty.")
     data = compare_result.dropna(subset=["odds_ratio"]).head(top).copy()
@@ -457,18 +514,44 @@ def plot_cohort_comparison_forest(
     )
     data.loc[data["plot_odds_ratio"].eq(0), "plot_odds_ratio"] = lower_cap
     data = data.iloc[::-1]
+    capped = data["odds_ratio"].apply(lambda v: not np.isfinite(v) or v == 0)
+    fdr = -np.log10(data["adjusted_p_value"].clip(lower=np.finfo(float).tiny))
+    fdr_max = float(fdr.max()) if len(fdr) else 1.0
+    fdr_max = max(fdr_max, 1e-6)
     fig, ax = plt.subplots(figsize=figsize)
     ax.scatter(
         data["plot_odds_ratio"],
         data["gene"],
-        c=-np.log10(data["adjusted_p_value"].clip(lower=np.finfo(float).tiny)),
-        cmap="viridis",
+        c=fdr,
+        cmap=style.SEQUENTIAL_CMAP,
+        vmin=0,
+        vmax=fdr_max,
+        s=55,
+        edgecolors=style.SPINE_COLOR,
+        linewidths=0.5,
+        zorder=3,
     )
-    ax.axvline(1, color="0.4", linestyle="--", linewidth=1)
+    # Mark genes whose odds ratio was infinite/zero (capped to the axis edge).
+    if capped.any():
+        ax.scatter(
+            data.loc[capped, "plot_odds_ratio"],
+            data.loc[capped, "gene"],
+            marker=">",
+            color=style.ACCENT_2,
+            s=55,
+            zorder=4,
+            label="OR = inf/0 (capped)",
+        )
+        ax.legend(loc="lower right", fontsize=8, frameon=False)
+    ax.axvline(1, color=style.SPINE_COLOR, linestyle="--", linewidth=1, zorder=1)
     ax.set_xscale("log")
     ax.set_xlabel("Odds ratio")
     ax.set_ylabel("Gene")
     ax.set_title("Differentially Mutated Genes")
+    style.style_axes(ax)
+    style.add_vertical_colorbar(
+        ax, style.SEQUENTIAL_CMAP, 0.0, fdr_max, label="-log10 FDR"
+    )
     fig.tight_layout()
     return fig
 

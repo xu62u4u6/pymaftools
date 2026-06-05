@@ -77,24 +77,42 @@ class SignatureTablePlot(PivotStatsPlot):
             totals = df.sum(axis=1)
             df = df.div(totals.where(totals != 0, 1), axis=0)
 
+        from matplotlib.colors import to_hex
+
+        from . import style
+
+        # Explicit colour per signature, so the stacked bars and the legend card
+        # share one mapping.
+        cmap = plt.get_cmap(colormap)
+        sig_colors = {
+            sig: to_hex(cmap(i % cmap.N)) for i, sig in enumerate(df.columns)
+        }
+
+        legend_ax = None
         if ax is None:
-            self.fig, ax = plt.subplots(figsize=figsize)
+            self.fig, ax, legend_ax = style.fig_with_legend(figsize, legend_width=0.12)
         else:
             self.fig = ax.figure
 
-        df.plot(kind="bar", stacked=True, ax=ax, colormap=colormap, width=width)
+        df.plot(
+            kind="bar",
+            stacked=True,
+            ax=ax,
+            color=[sig_colors[s] for s in df.columns],
+            width=width,
+            legend=False,
+        )
         ax.set_xlabel("sample")
         ax.set_ylabel("relative exposure" if normalize else "exposure")
         ax.margins(x=0)
-        if legend:
+        style.style_axes(ax)
+        if legend and legend_ax is not None:
+            style.draw_legend_cards(legend_ax, {"signature": sig_colors})
+        elif legend:
             ax.legend(
                 title="signature",
                 bbox_to_anchor=(1.01, 1),
                 loc="upper left",
                 frameon=False,
             )
-        else:
-            existing = ax.get_legend()
-            if existing is not None:
-                existing.remove()
         return ax

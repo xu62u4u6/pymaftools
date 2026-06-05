@@ -26,3 +26,6 @@ todo.md
 
 # setuptools-scm generated
 pymaftools/_version.py
+
+# scratch render outputs (previews)
+outputs/
