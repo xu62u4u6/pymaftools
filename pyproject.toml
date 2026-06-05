@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=70.0,<75.0", "wheel"]
+requires = ["setuptools>=70.0,<75.0", "wheel", "setuptools-scm>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "pymaftools"
-version = "0.4.1"
+dynamic = ["version"]   # derived from the git tag by setuptools-scm
 description = "Python package for handling and analyzing Mutation Annotation Format (MAF) files."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -65,9 +65,14 @@ ignore = ["E501"]  # line length handled by formatter
 "__init__.py" = ["F401"]  # re-exports
 
 [tool.setuptools.packages.find]
-where = ["."] 
+where = ["."]
 include = ["pymaftools*"]
 exclude = ["tests*"]
+
+[tool.setuptools_scm]
+# Single source of truth: the package version comes from the git tag
+# (e.g. tag v0.5.0 -> version 0.5.0). Writes a runtime _version.py (gitignored).
+version_file = "pymaftools/_version.py"
 
 [dependency-groups]
 dev = [

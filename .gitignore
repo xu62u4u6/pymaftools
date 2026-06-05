@@ -23,3 +23,6 @@ todo.md
 
 # pybiomart query cache
 .pybiomart.sqlite
+
+# setuptools-scm generated
+pymaftools/_version.py
