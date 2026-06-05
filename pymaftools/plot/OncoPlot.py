@@ -1079,18 +1079,12 @@ class OncoPlot(BasePlot):
         annotate : bool, default False
             Whether to display category labels on the heatmap
         cmap_dict : dict, optional
-            Dictionary mapping columns to color mappings
-            Example: {
-                "subtype": {
-                    "LUAD": "orange",
-                    "LUSC": "blue",
-                    "ASC": "green"
-                },
-                "smoke": {
-                    "is_smoke": "gray",
-                    "no_smoke": "white"
+            Dictionary mapping columns to ``{category: color}`` mappings, e.g.::
+
+                {
+                    "subtype": {"LUAD": "orange", "LUSC": "blue", "ASC": "green"},
+                    "smoke": {"is_smoke": "gray", "no_smoke": "white"},
                 }
-            }
         alpha : float, default 1.0
             Transparency level (0-1)
         default_cmap : str, default "pastel"

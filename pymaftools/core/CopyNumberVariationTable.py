@@ -11,6 +11,8 @@ from .PivotTable import PivotTable
 if TYPE_CHECKING:
     import matplotlib.pyplot as plt
 
+    from ..plot.CopyNumberVariationTablePlot import CopyNumberVariationTablePlot
+
 
 class CopyNumberVariationTable(PivotTable):
     """

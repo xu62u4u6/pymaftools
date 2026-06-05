@@ -16,15 +16,6 @@ class MAF(pd.DataFrame):
 
     Provides methods to read, filter, merge, and convert MAF data commonly
     used in cancer genomics pipelines.
-
-    Attributes
-    ----------
-    index_col : list[str]
-        Default columns used to build the row index.
-    vaild_variant_classfication : list[str]
-        All recognised variant classification labels.
-    nonsynonymous_types : list[str]
-        Variant classifications considered nonsynonymous.
     """
 
     index_col = [
@@ -35,6 +26,7 @@ class MAF(pd.DataFrame):
         "Tumor_Seq_Allele1",
         "Tumor_Seq_Allele2",
     ]
+    """list[str]: Default columns used to build the row index."""
 
     # GDC MAF file fields:
     # https://docs.gdc.cancer.gov/Encyclopedia/pages/Mutation_Annotation_Format_TCGAv2/
@@ -59,6 +51,7 @@ class MAF(pd.DataFrame):
         "RNA",
         "Targeted_Region",
     ]
+    """list[str]: All recognised variant classification labels."""
 
     nonsynonymous_types = [
         "Frame_Shift_Del",
@@ -71,6 +64,7 @@ class MAF(pd.DataFrame):
         "Translation_Start_Site",
         "Nonstop_Mutation",
     ]
+    """list[str]: Variant classifications considered nonsynonymous."""
 
     @staticmethod
     def _count_leading_comment_lines(

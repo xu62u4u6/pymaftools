@@ -36,6 +36,8 @@ from .PairwiseMatrix import CooccurrenceMatrix, SimilarityMatrix
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    import anndata
+
     from ..plot.PivotStatsPlot import PivotStatsPlot
     from .MAF import MAF
 
@@ -1833,11 +1835,11 @@ class PivotTable(pd.DataFrame):
 
         Notes
         -----
-        The method creates 2x2 contingency tables for each feature:
+        The method creates 2x2 contingency tables for each feature::
 
-                    Group1   Group2
-        Mutated       a        b
-        Not mutated   c        d
+                         Group1   Group2
+            Mutated         a        b
+            Not mutated     c        d
 
         Features with fewer than `minimum_mutations` in both groups are excluded
         to avoid testing rare mutations that may not be statistically meaningful.

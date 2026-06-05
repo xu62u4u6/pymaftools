@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pandas as pd
 
 from .PivotTable import PivotTable
+
+if TYPE_CHECKING:
+    from ..plot.SignatureTablePlot import SignatureTablePlot
 
 
 class SignatureTable(PivotTable):

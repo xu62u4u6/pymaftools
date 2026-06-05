@@ -158,7 +158,8 @@ class PivotStatsPlot(BasePlot):
         Notes
         -----
         This method uses statannotations library for statistical annotations.
-        P-values are displayed as stars: * p<0.05, ** p<0.01, *** p<0.001.
+        P-values are displayed as stars: ``*`` p<0.05, ``**`` p<0.01,
+        ``***`` p<0.001.
 
         Examples
         --------
