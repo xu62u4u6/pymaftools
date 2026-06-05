@@ -149,3 +149,196 @@ op.save("onco.png")
 3. **feature 註記**：`add_feature_annotation`（left/right）——S3 的核心缺口（解 P1#2）。
 4. **legend 收斂 + 收尾**：legend 單一真相來源、過濾野生型（解 P1#4、S5）；`render(fig=...)` 去全域 pyplot（解 S7）；`add_xticklabel` 開參數（解 P2#5）。
 
+---
+
+## 2026-06-05 補充：WES plots / similarity / interaction network
+
+### 已完成的 WES plot API
+
+- [x] `MAF.plot.summary()` / `plot_maf_summary`
+- [x] `MAF.plot.titv()` / `summarize_titv`
+- [x] `MAF.plot.rainfall()`
+- [x] `MAF.plot.vaf()` / `infer_vaf`
+- [x] `PivotTable.plot.somatic_interactions()`
+- [x] `PivotTable.plot.somatic_interactions_stats()`
+- [x] `MAF.plot.compare_cohorts()`
+- [x] `MAF.plot.forest()`
+
+驗證圖輸出在 `outputs/wes_plots/`。這些圖是用 bundled example MAF / synthetic comparison 產生的檢查 artifact，不應打包進 package data。
+
+### 銳評紀錄
+
+- 第一版 WES 草稿的命名有 notebook shorthand 問題：
+  - `s1/s2` 不清楚是 sample、source 還是 stage。
+  - `n1/n2` 不清楚是 sample count 還是 mutation count。
+  - `m1/m2` 不清楚是 matrix、metadata 還是 mutation counts。
+  - Fisher table 的 `a/b/c/d` 在統計教科書可接受，但 library code 應改成 domain names。
+- 已改成：
+  - `cohort1_sample_col`
+  - `cohort2_sample_col`
+  - `cohort1_sample_count`
+  - `cohort2_sample_count`
+  - `cohort1_gene_counts`
+  - `cohort2_gene_counts`
+  - `both_mutated`
+  - `gene1_only`
+  - `gene2_only`
+  - `neither_mutated`
+- API 責任邊界：
+  - `MAF.plot`：raw MAF-level plots，例如 summary、Ti/Tv、rainfall、VAF、cohort comparison。
+  - `PivotTable.plot`：matrix-level plots，例如 oncoplot、PCA、boxplot、somatic interactions。
+  - 不要讓 `PivotTable` 的 matrix plot 依賴 raw MAF 欄位。
+- 已看過的 demo 圖問題：
+  - `maf_summary` 初版 legend 壓到 top-gene panel；已改到底部。
+  - `somatic_interactions` 初版用 signed `-log10(FDR)` 對小 example 幾乎全同色；已改用 `log2 odds ratio`，FDR 顯著只用星號標註。
+  - `forest` 初版把 infinite odds ratio drop 掉；已改成畫圖時 cap 顯示值，但統計表保留 `inf`。
+- 仍需補：
+  - forest plot 的 confidence interval / pseudo-count policy。
+  - rainfall 的 chromosome tick / boundary labels。
+  - MAF summary 的 outlier handling 與 maftools-style raw Ti/Tv inset。
+
+### `plot_similarity_panel` 設計
+
+定位：這不是單純 heatmap；它應該是 `SimilarityMatrix` 的「完整 cohort comparison panel」。
+
+推薦 API：
+
+```python
+fig, result = table.plot.similarity_panel(
+    method="jaccard",
+    group_col="subtype",
+    group_order=["LUAD", "ASC", "LUSC"],
+    compare_pairs=[("LUAD", "ASC"), ("ASC", "LUSC")],
+    test="mannwhitney",
+)
+```
+
+也應支援 precomputed matrix：
+
+```python
+fig, result = similarity_matrix.plot.panel(
+    group_col="subtype",
+    compare_pairs=[("LUAD", "ASC"), ("ASC", "LUSC")],
+)
+```
+
+設計原則：
+
+- 計算和繪圖分開：
+  - `compute_similarity_panel(...)` 回傳 similarity matrix、group means、p-values。
+  - `plot_similarity_panel(result, ...)` 只畫圖。
+- 只算一次 similarity，不要每個 subplot 重算。
+- 統計方法要顯式：
+  - `test="mannwhitney"` 預設。
+  - 後續可加 `test="permutation"`。
+- 版面：
+  - 左側大圖：sample x sample similarity heatmap。
+  - 底部或頂部：sample group color strip。
+  - 右上：group mean similarity heatmap。
+  - 右下：group p-value heatmap。
+- 回傳：
+  - `fig`
+  - `result`
+    - `similarity`
+    - `group_mean`
+    - `p_value`
+    - `pairwise_values`
+- 應該先接 `SimilarityMatrix`，再用 `PivotTable.plot.similarity_panel()` 當 convenience wrapper。
+
+### `plot_somatic_interaction_network` 設計
+
+定位：它是 `somatic_interactions()` 的 graph view，不應重新定義統計。
+
+推薦 API：
+
+```python
+fig, graph, stats = table.plot.somatic_interaction_network(
+    top=25,
+    alpha=0.05,
+    interaction="both",
+    layout="spring",
+)
+```
+
+設計原則：
+
+- 統計來源唯一：
+  - reuse `somatic_interactions(table, top=top, alpha=alpha)`。
+  - heatmap 和 network 必須使用同一份 stats。
+- 節點：
+  - node = gene。
+  - node size = mutation frequency 或 mutated sample count。
+- 邊：
+  - edge = FDR-significant gene pair。
+  - color = co-occurrence vs mutual exclusivity。
+  - width = `-log10(adjusted_p_value)` 或 `abs(log2(odds_ratio))`。
+- 回傳：
+  - `fig`
+  - `graph`
+  - `stats`
+- 依賴：
+  - NetworkX 是合理選擇，但要決定是否變成 hard dependency。
+  - 若不想加 dependency，先提供 stats + edge table，network plot 放 optional extra。
+- 空結果：
+  - 預設 fail loud：沒有 significant edges 就 raise `ValueError`。
+  - 可加 `show_all=True` 當 exploratory mode，但不該預設畫一張密密麻麻的假訊號網路。
+
+### ASC_0217 可搬用圖型
+
+優先搬：
+
+- `reproduce/analysis/similarity_analysis.py`
+  - `plot_similarity_panel` 的最好原型。
+  - 已有 sample similarity heatmap、group mean heatmap、p-value heatmap、within-vs-across boxplot。
+- `scripts/WES/cooccurance.py`
+  - `plot_somatic_interaction_network` 的原型。
+  - 要搬抽象，不搬 notebook-style global code。
+- `reproduce/analysis/mutation_profile.py`
+  - DDR gene/pathway oncoplot recipe。
+  - multi-metric boxplot panel recipe。
+
+暫不搬：
+
+- CNVkit per-sample scatter / diagram。
+- Sequenza model-fit / genome-view report。
+- SignatureAnalyzer WebPNGs。
+
+這些是外部工具 QC/report 圖，不適合直接變成 pymaftools core plot API。
+
+## 2026-06-05 House Aesthetic Spec（從 lollipop / oncoplot 反推）
+
+**結論：pymaftools 已經有一套好看的家族美學 —— 就是 `OncoPlot` 與 `LollipopPlot`。
+新圖（wes / signature）必須對齊它，而不是各自用 matplotlib/pandas/seaborn 預設。**
+「美學一致」不是再發明風格，是把既有風格抽成共用層。
+
+### 好看的參考圖（lollipop EGFR、exon-size oncoplot）為什麼好看
+1. **Frameless / 無資料區格線** — 圖沒有外框、資料區沒有 grid，資料漂在留白裡。
+   （wes 圖即使 despine 後仍留 spine + grid → spreadsheet 感。）
+2. **Legend 是右側「有標題的卡片」** — `Domains` / `Mutation Types` / `Mutation` /
+   `subtype` / `log2OR` 各自獨立、垂直堆疊、與圖分離（這是 `LegendManager` 的產物）。
+   wes 用 inline matplotlib legend，擠在圖邊。
+3. **單一 canonical 變異色盤,到處一樣** — 柔和、低飽和、可區分(grey/orange/blue/
+   green…),lollipop 與 oncoplot 用同一套(= `ColorManager.NONSYNONYMOUS_CMAP`)。
+4. **marker/形狀有設計** — lollipop 圓點有深色細邊、依 count 縮放、細灰 stem；domain
+   是乾淨填色方塊。不是預設樣式。
+5. **排版與留白** — 大邊距、清楚層級、標題/標籤可讀。wes 的 90° 小字 xlabel 不可讀。
+6. **顏色用得有語意且節制** — 顏色編碼類別/數值,白灰為底;wes 滿版 coolwarm/viridis 太搶。
+
+### 差距根因
+wes / MafPlot **繞過 BasePlot（→ LegendManager + ColorManager）**,所以重新引入 matplotlib
+預設。要美學一致,結構上就得讓它們**走同一個 legend/color 基礎建設**。
+
+### 實作方向（house style 應該長成的樣子）
+- **frameless**:全 despine + 預設不畫 grid（或極淡）;`style.py` 的 `style_axes`
+  之後預設 `grid=None`、移除 left/bottom 以外所有 spine。
+- **legend 走 LegendManager 的卡片樣式**:wes 圖的 legend 不要用 `ax.legend`,改用
+  右側標題卡片(與 oncoplot 一致)。需要讓 wes 能取得一個 LegendManager(MafPlot
+  繼承 BasePlot,或 wes 函式吃一個 color/legend context)。
+- **顏色全部來自 ColorManager**:類別→`*_CMAP`;連續→house `SEQUENTIAL`/`DIVERGING`。
+- **base context**:可用 `seaborn.set_theme(style="white", context="notebook")` 當底,
+  但顏色/legend 仍由 ColorManager/LegendManager 覆寫 —— seaborn 只負責字級/留白基準。
+- **markers**:點圖統一深色細邊 + 適度大小;heatmap 用白細格線分隔。
+
+### 驗收（呼應 CLAUDE.md §4）
+重繪後存 `outputs/design_preview/`,**並排對照 lollipop/oncoplot 人眼檢查**:legend
+是否成卡片、是否 frameless、同一變異類別是否同色。看起來「像同一個庫畫的」才算過。
