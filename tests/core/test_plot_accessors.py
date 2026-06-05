@@ -11,6 +11,7 @@ import pytest
 
 from pymaftools import (
     PivotTable,
+    MAF,
     CopyNumberVariationTable,
     SmallVariationTable,
     SignatureTable,
@@ -44,6 +45,19 @@ def test_plot_accessor_is_type_specific_and_shares_oncoplot(table_cls, accessor_
     assert type(accessor).__name__ == accessor_name
     # ...yet the shared oncoplot entry point is reachable on all of them.
     assert hasattr(accessor, "oncoplot")
+
+
+def test_maf_plot_accessor_is_maf_specific():
+    maf = MAF(
+        {
+            "Hugo_Symbol": ["TP53"],
+            "sample_ID": ["S1"],
+            "Variant_Classification": ["Missense_Mutation"],
+        }
+    )
+
+    assert type(maf.plot).__name__ == "MafPlot"
+    assert hasattr(maf.plot, "summary")
 
 
 def test_cnv_accessor_exposes_band_ratio():

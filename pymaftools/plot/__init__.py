@@ -9,6 +9,7 @@ from .ColorManager import ColorManager
 from .FontManager import FontManager
 from .LegendManager import LegendManager
 from .LollipopPlot import LollipopPlot
+from .MafPlot import MafPlot
 from .OncoPlot import OncoPlot
 from .Track import (
     Track,
@@ -26,6 +27,21 @@ from .PivotStatsPlot import PivotStatsPlot
 # package top level, because the same-named shim submodule would shadow it.
 from .MethodsPlot import MethodsPlot
 from .ModelPlot import ModelPlot
+from .wes import (
+    compare_cohorts,
+    infer_vaf,
+    mutation_burden_by_class,
+    plot_cohort_comparison_forest,
+    plot_forest,
+    plot_maf_summary,
+    plot_rainfall,
+    plot_somatic_interactions,
+    plot_titv,
+    plot_vaf,
+    somatic_interactions,
+    summarize_titv,
+    top_mutated_genes,
+)
 
 __all__ = [
     "BasePlot",
@@ -33,6 +49,7 @@ __all__ = [
     "FontManager",
     "LegendManager",
     "LollipopPlot",
+    "MafPlot",
     "OncoPlot",
     "Track",
     "MainMatrixTrack",
@@ -43,4 +60,17 @@ __all__ = [
     "PivotStatsPlot",
     "MethodsPlot",
     "ModelPlot",
+    "compare_cohorts",
+    "infer_vaf",
+    "mutation_burden_by_class",
+    "plot_cohort_comparison_forest",
+    "plot_forest",
+    "plot_maf_summary",
+    "plot_rainfall",
+    "plot_somatic_interactions",
+    "plot_titv",
+    "plot_vaf",
+    "somatic_interactions",
+    "summarize_titv",
+    "top_mutated_genes",
 ]

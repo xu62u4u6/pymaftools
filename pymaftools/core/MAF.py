@@ -10,7 +10,7 @@ from .PivotTable import PivotTable
 from .SmallVariationTable import SmallVariationTable
 
 if TYPE_CHECKING:
-    from ..plot.LollipopPlot import LollipopPlot
+    from ..plot.MafPlot import MafPlot
 
 
 class MAF(pd.DataFrame):
@@ -194,6 +194,21 @@ class MAF(pd.DataFrame):
         """
         # make sure returned object is MAF type
         return MAF
+
+    @property
+    def plot(self) -> "MafPlot":
+        """
+        Access MAF-level plotting functionality.
+
+        Returns
+        -------
+        MafPlot
+            Plotting interface for raw MAF summaries, Ti/Tv, rainfall, VAF,
+            and cohort comparison plots.
+        """
+        from ..plot.MafPlot import MafPlot
+
+        return MafPlot(self)
 
     def filter_maf(self, mutation_types: list[str]) -> MAF:
         """
@@ -628,61 +643,6 @@ class MAF(pd.DataFrame):
         return subset[["Start", "End", "Label"]].to_dict(orient="records"), refseq_ids[
             0
         ]
-
-    def lollipop(
-        self,
-        gene: str,
-        *,
-        protein_domains_path: str | os.PathLike | None = None,
-        **kwargs: Any,
-    ) -> "LollipopPlot":
-        """Build a :class:`~pymaftools.plot.LollipopPlot.LollipopPlot` for one gene.
-
-        One-call entry point that wires :meth:`get_protein_info` (mutation
-        positions / counts + protein length) and :meth:`get_domain_info`
-        (domain annotations) into a ready-to-draw lollipop, instead of calling
-        the two helpers and constructing ``LollipopPlot`` by hand.
-
-        Parameters
-        ----------
-        gene : str
-            Hugo gene symbol to plot.
-        protein_domains_path : str, os.PathLike, or None, default None
-            Path to a protein domains CSV; ``None`` uses the bundled dataset.
-        **kwargs
-            Forwarded to :class:`LollipopPlot` (e.g. ``config``,
-            ``domain_label_map``, ``mutation_label_map``).
-
-        Returns
-        -------
-        LollipopPlot
-            Draw it with ``.plot()`` then ``.show()`` / ``save``.
-
-        Raises
-        ------
-        ValueError
-            If the MAF has no usable ``Protein_position`` data for ``gene``.
-
-        Examples
-        --------
-        >>> maf.lollipop("TP53").plot()
-        """
-        from ..plot.LollipopPlot import LollipopPlot
-
-        AA_length, mutations_data = self.get_protein_info(gene)
-        if AA_length is None:
-            raise ValueError(
-                f"No protein-position data for {gene!r} in this MAF "
-                "(a populated 'Protein_position' column is required)."
-            )
-        domains, _ = self.get_domain_info(gene, AA_length, protein_domains_path)
-        return LollipopPlot(
-            protein_name=gene,
-            protein_length=AA_length,
-            domains=domains,
-            mutations=mutations_data,
-            **kwargs,
-        )
 
     def write_maf(self, file_path: str | os.PathLike) -> None:
         """Deprecated alias for :meth:`to_maf`."""

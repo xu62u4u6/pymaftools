@@ -76,6 +76,18 @@ class PivotStatsPlot(BasePlot):
 
         return OncoPlot(self.pivot_table, **kwargs)
 
+    def somatic_interactions(self, **kwargs):
+        """Draw co-occurrence / mutual exclusivity heatmap for mutated genes."""
+        from .wes import plot_somatic_interactions
+
+        return plot_somatic_interactions(self.pivot_table, **kwargs)
+
+    def somatic_interactions_stats(self, **kwargs):
+        """Return pairwise co-occurrence / mutual exclusivity Fisher tests."""
+        from .wes import somatic_interactions
+
+        return somatic_interactions(self.pivot_table, **kwargs)
+
     def plot_boxplot_with_annot(
         self,
         data: pd.DataFrame | None = None,
