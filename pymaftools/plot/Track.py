@@ -82,19 +82,13 @@ def draw_categorical_heatmap(
 
 
 class Track(ABC):
-    """Abstract strip of an oncoplot aligned to one axis of the main matrix.
-
-    Attributes
-    ----------
-    side : str
-        ``"main"`` for the central matrix; ``"top"``/``"bottom"`` align to
-        samples (columns); ``"left"``/``"right"`` align to features (rows).
-    size : float
-        Relative thickness of the track's slot in the derived layout.
-    """
+    """Abstract strip of an oncoplot aligned to one axis of the main matrix."""
 
     side: str = "main"
+    """str: ``"main"`` for the central matrix; ``"top"``/``"bottom"`` align to
+    samples (columns); ``"left"``/``"right"`` align to features (rows)."""
     size: float = 1.0
+    """float: Relative thickness of the track's slot in the derived layout."""
 
     @abstractmethod
     def render(self, ax: Axes) -> Axes:
