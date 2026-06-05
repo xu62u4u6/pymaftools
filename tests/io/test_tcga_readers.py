@@ -25,6 +25,7 @@ from pymaftools.io.tcga_readers import (
     read_methylation_betas,
     read_seg_files,
     read_star_counts,
+    resolve_files_to_cases,
     scan_gdc_directory,
 )
 
@@ -234,6 +235,19 @@ class TestScanGdcDirectory:
         (logs_dir / "file.tsv").write_text("test")
         result = scan_gdc_directory(tmp_path, "*.tsv")
         assert "logs" not in result
+
+
+class TestResolveFilesToCases:
+    @patch("pymaftools.io.tcga_readers.build_uuid_to_case_mapping")
+    def test_empty_dir_returns_empty_without_gdc_lookup(self, mock_mapping, tmp_path, mock_manifest):
+        """Empty local downloads should fail locally, not require GDC network access."""
+        data_dir = tmp_path / "data"
+        data_dir.mkdir()
+
+        result = resolve_files_to_cases(data_dir, "*.tsv", mock_manifest)
+
+        assert result == []
+        mock_mapping.assert_not_called()
 
 
 class TestBuildUuidToCaseMapping:

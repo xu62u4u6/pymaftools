@@ -160,6 +160,9 @@ def resolve_files_to_cases(
         Deduplicated list sorted by case_id.
     """
     key_to_path = scan_gdc_directory(data_dir, pattern)
+    if not key_to_path:
+        return []
+
     uuid_to_case = build_uuid_to_case_mapping(manifest_path)
 
     # Build filename→uuid lookup for flat layout
