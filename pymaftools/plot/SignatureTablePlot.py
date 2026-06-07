@@ -35,6 +35,7 @@ class SignatureTablePlot(PivotStatsPlot):
         colormap: str = "tab20",
         legend: bool = True,
         width: float = 0.9,
+        show_sample_labels: bool | None = None,
     ):
         """Per-sample signature exposure as a stacked bar chart.
 
@@ -102,10 +103,11 @@ class SignatureTablePlot(PivotStatsPlot):
             width=width,
             legend=False,
         )
-        ax.set_xlabel("sample")
+        ax.set_xlabel(f"sample (n={len(df)})")
         ax.set_ylabel("relative exposure" if normalize else "exposure")
         ax.margins(x=0)
         style.style_axes(ax)
+        style.apply_sample_xticklabels(ax, df.index, show=show_sample_labels)
         if legend and legend_ax is not None:
             style.draw_legend_cards(legend_ax, {"signature": sig_colors})
         elif legend:

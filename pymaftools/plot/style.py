@@ -25,6 +25,36 @@ SPINE_COLOR = "#444444"
 GRID_COLOR = "#E6E6E6"
 TEXT_COLOR = "#222222"
 
+# Above this many samples, per-sample x tick labels are auto-hidden (they turn
+# into an unreadable band). Mirrors OncoPlot._SAMPLE_LABEL_LIMIT — keep in sync.
+SAMPLE_LABEL_LIMIT = 50
+
+
+def apply_sample_xticklabels(
+    ax,
+    labels,
+    *,
+    show: bool | None = None,
+    limit: int = SAMPLE_LABEL_LIMIT,
+    rotation: int = 90,
+    fontsize: int = 8,
+) -> bool:
+    """Shared per-sample x-label rule for every sample-axis plot.
+
+    ``show=None`` auto-hides the labels once there are more than ``limit``
+    samples (they would otherwise collapse into a black band); ``True`` / ``False``
+    force them on/off — overview panels pass ``False`` because they are small even
+    at low sample counts. Returns whether labels were drawn.
+    """
+    labels = list(labels)
+    visible = show if show is not None else (len(labels) <= limit)
+    if visible:
+        ax.set_xticks(range(len(labels)))
+        ax.set_xticklabels(labels, rotation=rotation, ha="right", fontsize=fontsize)
+    else:
+        ax.set_xticks([])
+    return visible
+
 
 def style_axes(ax: Axes, *, despine: bool = True, grid: str | None = None) -> Axes:
     """Apply the house look to one Axes.

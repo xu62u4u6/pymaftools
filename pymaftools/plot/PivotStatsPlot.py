@@ -328,6 +328,10 @@ class PivotStatsPlot(BasePlot):
         ax.set_xlabel(xlabel if xlabel is not None else group_col, fontsize=fontsize)
         ax.set_ylabel(ylabel if ylabel is not None else test_col, fontsize=fontsize)
 
+        from . import style
+
+        style.style_axes(ax)
+
         # Save figure
         if save_path is not None:
             self.save(save_path, dpi=dpi, bbox_inches="tight", facecolor="white")
@@ -679,6 +683,10 @@ class PivotStatsPlot(BasePlot):
             f"Principal Component 2 ({explained_variance[1] * 100:.2f}%)",
             fontsize=fontsize,
         )
+
+        from . import style
+
+        style.style_axes(ax_pca)
 
         # Save figure using BasePlot's save method
         if save_path is not None:

@@ -49,7 +49,9 @@ def top_mutated_genes(maf: pd.DataFrame, top: int = 20) -> pd.Series:
     )
 
 
-def plot_maf_summary(maf: pd.DataFrame, top: int = 20, figsize=(12, 9)):
+def plot_maf_summary(
+    maf: pd.DataFrame, top: int = 20, figsize=(12, 9), show_sample_labels: bool | None = None
+):
     """Draw a compact MAF summary dashboard."""
     import matplotlib.pyplot as plt
 
@@ -85,9 +87,8 @@ def plot_maf_summary(maf: pd.DataFrame, top: int = 20, figsize=(12, 9)):
         color=[class_color(c) for c in burden.columns],
     )
     ax_burden.set_title("Mutation Burden by Sample")
-    ax_burden.set_xlabel("Sample")
+    ax_burden.set_xlabel(f"sample (n={len(burden)})")
     ax_burden.set_ylabel("Mutations")
-    ax_burden.tick_params(axis="x", labelrotation=90, labelsize=7)
 
     vc = variant_class.sort_values()
     vc.plot(kind="barh", ax=ax_class, color=[class_color(c) for c in vc.index])
@@ -106,6 +107,7 @@ def plot_maf_summary(maf: pd.DataFrame, top: int = 20, figsize=(12, 9)):
 
     for ax in (ax_burden, ax_class, ax_type, ax_genes):
         style.style_axes(ax)
+    style.apply_sample_xticklabels(ax_burden, burden.index, show=show_sample_labels)
 
     style.draw_legend_cards(
         legend_ax,
@@ -138,7 +140,12 @@ def summarize_titv(maf: pd.DataFrame) -> pd.DataFrame:
     return counts.reindex(columns=BASE_CHANGE_ORDER, fill_value=0)
 
 
-def plot_titv(maf: pd.DataFrame, fraction: bool = True, figsize=(10, 5)):
+def plot_titv(
+    maf: pd.DataFrame,
+    fraction: bool = True,
+    figsize=(10, 5),
+    show_sample_labels: bool | None = None,
+):
     """Draw Ti/Tv six-class substitution composition per sample."""
     import matplotlib.pyplot as plt
 
@@ -160,11 +167,11 @@ def plot_titv(maf: pd.DataFrame, fraction: bool = True, figsize=(10, 5)):
         kind="bar", stacked=True, width=0.9, color=colors, ax=ax, legend=False
     )
     ax.set_title("Transition / Transversion Composition")
-    ax.set_xlabel("Sample")
+    ax.set_xlabel(f"sample (n={len(plot_data)})")
     ax.set_ylabel("Fraction" if fraction else "SNP count")
-    ax.tick_params(axis="x", labelrotation=90, labelsize=7)
     ax.margins(x=0.01)
     style.style_axes(ax)
+    style.apply_sample_xticklabels(ax, plot_data.index, show=show_sample_labels)
     style.draw_legend_cards(
         legend_ax, {"Base change": {c: ColorManager.TITV_CMAP[c] for c in cols}}
     )
@@ -604,7 +611,9 @@ def summary_stats(maf: pd.DataFrame) -> dict:
     return stats
 
 
-def plot_sample_burden(maf: pd.DataFrame, ax=None, figsize=(12, 4)):
+def plot_sample_burden(
+    maf: pd.DataFrame, ax=None, figsize=(12, 4), show_sample_labels: bool | None = None
+):
     """Per-sample mutation burden, stacked by functional consequence and sorted
     by total burden, with a median line."""
     from .ColorManager import ColorManager
@@ -644,9 +653,9 @@ def plot_sample_burden(maf: pd.DataFrame, ax=None, figsize=(12, 4)):
     ax.set_title("Mutation burden per sample")
     ax.set_xlabel(f"sample (n={len(burden)}, sorted)")
     ax.set_ylabel("variants")
-    ax.set_xticks([])
     ax.margins(x=0.005)
     style.style_axes(ax)
+    style.apply_sample_xticklabels(ax, burden.index, show=show_sample_labels)
     if standalone:
         style.draw_legend_cards(
             legend_ax,
@@ -859,7 +868,9 @@ def plot_overview(maf: pd.DataFrame, figsize=(15, 10)):
             left=0.06,
             right=0.99,
         )
-        plot_sample_burden(maf, ax=fig.add_subplot(gs[0, 0:3]))
+        plot_sample_burden(
+            maf, ax=fig.add_subplot(gs[0, 0:3]), show_sample_labels=False
+        )
         plot_mutation_composition(maf, ax=fig.add_subplot(gs[1, 0]))
         plot_snv_spectrum(maf, ax=fig.add_subplot(gs[1, 1]))
         plot_top_genes(maf, ax=fig.add_subplot(gs[1, 2]), top=10)

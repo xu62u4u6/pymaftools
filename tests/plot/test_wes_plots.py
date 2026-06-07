@@ -84,6 +84,21 @@ def test_overview_dashboard_and_primitives_render():
         plt.close(fig)
 
 
+def test_sample_label_auto_hide_threshold():
+    """Per-sample x labels auto-hide above the shared limit; force overrides it."""
+    from pymaftools.plot import style
+
+    fig, ax = plt.subplots()
+    few = [f"S{i}" for i in range(5)]
+    many = [f"S{i}" for i in range(style.SAMPLE_LABEL_LIMIT + 1)]
+
+    assert style.apply_sample_xticklabels(ax, few) is True       # auto: few -> show
+    assert style.apply_sample_xticklabels(ax, many) is False     # auto: many -> hide
+    assert style.apply_sample_xticklabels(ax, many, show=True) is True   # force show
+    assert style.apply_sample_xticklabels(ax, few, show=False) is False  # force hide
+    plt.close(fig)
+
+
 def test_summary_stats_reports_cohort_level_numbers():
     """summary_stats counts samples/genes/variants from the raw MAF."""
     stats = _maf().plot.summary_stats()

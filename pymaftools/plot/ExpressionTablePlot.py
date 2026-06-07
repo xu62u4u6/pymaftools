@@ -82,7 +82,14 @@ class ExpressionTablePlot(PivotStatsPlot):
         fm.loc[up, "_deg"] = "Up"
         fm.loc[down, "_deg"] = "Down"
 
-        palette = {"NS": "#bbbbbb", "Up": "#e74c3c", "Down": "#3498db"}
+        from . import style
+        from .ColorManager import ColorManager
+
+        palette = {
+            "NS": style.MUTED,
+            "Up": ColorManager.FUNCTIONAL_CMAP["Truncating"],  # house red
+            "Down": style.ACCENT,  # house blue
+        }
 
         if ax is None:
             self.fig, ax = plt.subplots(figsize=figsize)
@@ -103,9 +110,9 @@ class ExpressionTablePlot(PivotStatsPlot):
         )
 
         # Threshold lines
-        ax.axhline(-np.log10(padj), ls="--", lw=0.8, color="grey")
-        ax.axvline(log2fc, ls="--", lw=0.8, color="grey")
-        ax.axvline(-log2fc, ls="--", lw=0.8, color="grey")
+        ax.axhline(-np.log10(padj), ls="--", lw=0.8, color=style.SPINE_COLOR)
+        ax.axvline(log2fc, ls="--", lw=0.8, color=style.SPINE_COLOR)
+        ax.axvline(-log2fc, ls="--", lw=0.8, color=style.SPINE_COLOR)
 
         # Label top genes
         if label_col in fm.columns and top_n > 0:
@@ -123,6 +130,7 @@ class ExpressionTablePlot(PivotStatsPlot):
         ax.set_xlabel("log2 Fold Change")
         ax.set_ylabel("-log10(padj)")
         ax.legend(title="", frameon=False)
+        style.style_axes(ax)
 
         self.fig.tight_layout()
 
