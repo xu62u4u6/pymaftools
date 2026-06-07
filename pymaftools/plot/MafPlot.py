@@ -45,6 +45,51 @@ class MafPlot:
 
         return plot_cohort_comparison_forest(compare_result, **kwargs)
 
+    # --- MAF-only overview dashboard + its primitives -------------------- #
+
+    def overview(self, **kwargs):
+        """Composite MAF-only overview dashboard (summary header + sample /
+        variant / nucleotide / gene panels)."""
+        from .wes import plot_overview
+
+        return plot_overview(self.maf, **kwargs)
+
+    def summary_stats(self):
+        """Cohort-level summary numbers (dict); no plot."""
+        from .wes import summary_stats
+
+        return summary_stats(self.maf)
+
+    def sample_burden(self, **kwargs):
+        """Per-sample mutation burden stacked by functional consequence."""
+        from .wes import plot_sample_burden
+
+        return plot_sample_burden(self.maf, **kwargs)
+
+    def mutation_composition(self, **kwargs):
+        """Nested Variant_Type x consequence composition."""
+        from .wes import plot_mutation_composition
+
+        return plot_mutation_composition(self.maf, **kwargs)
+
+    def snv_spectrum(self, **kwargs):
+        """Cohort SNV six-class spectrum with Ti/Tv."""
+        from .wes import plot_snv_spectrum
+
+        return plot_snv_spectrum(self.maf, **kwargs)
+
+    def gene_recurrence(self, **kwargs):
+        """Gene recurrence structure (private vs recurrent)."""
+        from .wes import plot_gene_recurrence
+
+        return plot_gene_recurrence(self.maf, **kwargs)
+
+    def top_genes(self, **kwargs):
+        """Top recurrently-mutated genes, stacked by functional consequence."""
+        from .wes import plot_top_genes
+
+        return plot_top_genes(self.maf, **kwargs)
+
     def lollipop(self, gene, *, protein_domains_path=None, **kwargs):
         """Build a :class:`~pymaftools.plot.LollipopPlot.LollipopPlot` for one gene.
 

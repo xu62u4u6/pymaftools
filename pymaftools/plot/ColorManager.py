@@ -54,11 +54,48 @@ class ColorManager:
         "T>G": "#EDBFC2",  # pink
     }
 
+    # Coarse functional grouping of Variant_Classification, for overview plots
+    # where the full ~18 categories are too noisy. Order = legend/stack order.
+    FUNCTIONAL_GROUP = {
+        "Missense_Mutation": "Missense",
+        "Nonsense_Mutation": "Truncating",
+        "Frame_Shift_Del": "Truncating",
+        "Frame_Shift_Ins": "Truncating",
+        "Translation_Start_Site": "Truncating",
+        "Nonstop_Mutation": "Truncating",
+        "Splice_Site": "Splice",
+        "Splice_Region": "Splice",
+        "In_Frame_Del": "In-frame",
+        "In_Frame_Ins": "In-frame",
+        "Silent": "Silent",
+        "3'UTR": "Other",
+        "5'UTR": "Other",
+        "3'Flank": "Other",
+        "5'Flank": "Other",
+        "Intron": "Other",
+        "IGR": "Other",
+        "RNA": "Other",
+        "Targeted_Region": "Other",
+    }
+
+    FUNCTIONAL_CMAP = {
+        "Missense": "#7F7F7F",   # grey (matches Missense_Mutation)
+        "Truncating": "#C0392B",  # deep red (LoF)
+        "Splice": "#D0875D",     # brown (matches Splice_Site)
+        "In-frame": "#ADDBEA",   # light blue (matches In_Frame_Del)
+        "Silent": "#D9D9D9",     # light grey
+        "Other": "#BBBBCC",      # muted non-coding
+    }
+
+    # Stack / legend order, most-damaging first.
+    FUNCTIONAL_ORDER = ["Truncating", "Splice", "Missense", "In-frame", "Silent", "Other"]
+
     predefined_cmaps = {
         "all_mutation": ALL_MUTATION_CMAP,
         "nonsynonymous": NONSYNONYMOUS_CMAP,
         "cnv": CNV_CMAP,
         "titv": TITV_CMAP,
+        "functional": FUNCTIONAL_CMAP,
     }
 
     def __init__(self):

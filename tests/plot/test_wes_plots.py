@@ -63,6 +63,37 @@ def test_maf_plot_accessor_draws_summary_titv_vaf_and_rainfall():
         plt.close(fig)
 
 
+def test_overview_dashboard_and_primitives_render():
+    """The MAF overview + each standalone primitive render without error."""
+    maf = _maf()
+
+    overview = maf.plot.overview(figsize=(12, 8))
+    # dashboard composes >= 4 panels (burden, composition, snv, top genes) + legend
+    assert len(overview.axes) >= 5
+    plt.close(overview)
+
+    primitives = [
+        maf.plot.sample_burden(),
+        maf.plot.mutation_composition(),
+        maf.plot.snv_spectrum(),
+        maf.plot.gene_recurrence(),
+        maf.plot.top_genes(top=3),
+    ]
+    assert all(fig.axes for fig in primitives)
+    for fig in primitives:
+        plt.close(fig)
+
+
+def test_summary_stats_reports_cohort_level_numbers():
+    """summary_stats counts samples/genes/variants from the raw MAF."""
+    stats = _maf().plot.summary_stats()
+
+    assert stats["samples"] == 4  # S1..S4
+    assert stats["variants"] == 6
+    assert stats["genes_mutated"] == 4  # TP53, KRAS, EGFR, PIK3CA
+    assert 0.0 <= stats["missense_fraction"] <= 1.0
+
+
 def test_titv_summary_uses_six_pyrimidine_context_classes():
     """Ti/Tv summary normalizes reverse-complement SNPs into maftools classes."""
     counts = summarize_titv(_maf())

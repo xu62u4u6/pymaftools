@@ -557,3 +557,330 @@ def plot_cohort_comparison_forest(
 
 
 plot_forest = plot_cohort_comparison_forest
+
+
+# --------------------------------------------------------------------------- #
+#  MAF overview dashboard primitives (each draws on a given ax; the accessor /
+#  overview composes them). Colours come from ColorManager's fixed palettes.
+# --------------------------------------------------------------------------- #
+
+def _functional_series(maf: pd.DataFrame) -> pd.Series:
+    """Map ``Variant_Classification`` to a coarse functional group."""
+    from .ColorManager import ColorManager
+
+    return maf["Variant_Classification"].map(
+        lambda c: ColorManager.FUNCTIONAL_GROUP.get(c, "Other")
+    )
+
+
+def _functional_order(present) -> list[str]:
+    from .ColorManager import ColorManager
+
+    return [g for g in ColorManager.FUNCTIONAL_ORDER if g in set(present)]
+
+
+def summary_stats(maf: pd.DataFrame) -> dict:
+    """Cohort-level summary numbers for the overview header (no plotting)."""
+    sample_col = _get_sample_col(maf)
+    _require_columns(maf, [sample_col, "Hugo_Symbol", "Variant_Classification"])
+    per_sample = maf.groupby(sample_col).size()
+    func = _functional_series(maf)
+    stats = {
+        "samples": int(maf[sample_col].nunique()),
+        "genes_mutated": int(maf["Hugo_Symbol"].nunique()),
+        "variants": int(len(maf)),
+        "median_per_sample": float(per_sample.median()) if len(per_sample) else 0.0,
+        "missense_fraction": float((func == "Missense").mean()) if len(func) else 0.0,
+    }
+    if "Variant_Type" in maf.columns:
+        stats["snv_fraction"] = float(maf["Variant_Type"].eq("SNP").mean())
+    try:
+        titv = summarize_titv(maf).sum()
+        ti = titv.get("C>T", 0) + titv.get("T>C", 0)
+        tv = titv.sum() - ti
+        stats["titv_ratio"] = float(ti / tv) if tv else float("nan")
+    except (ValueError, KeyError):
+        pass
+    return stats
+
+
+def plot_sample_burden(maf: pd.DataFrame, ax=None, figsize=(12, 4)):
+    """Per-sample mutation burden, stacked by functional consequence and sorted
+    by total burden, with a median line."""
+    from .ColorManager import ColorManager
+    from . import style
+
+    sample_col = _get_sample_col(maf)
+    _require_columns(maf, [sample_col, "Variant_Classification"])
+    func = _functional_series(maf)
+    burden = pd.crosstab(maf[sample_col], func)
+    order = _functional_order(burden.columns)
+    burden = burden[order]
+    burden = burden.loc[burden.sum(axis=1).sort_values(ascending=False).index]
+
+    standalone = ax is None
+    legend_ax = None
+    if standalone:
+        fig, ax, legend_ax = style.fig_with_legend(figsize, legend_width=0.16)
+    burden.plot(
+        kind="bar",
+        stacked=True,
+        ax=ax,
+        width=1.0,
+        legend=False,
+        color=[ColorManager.FUNCTIONAL_CMAP[g] for g in order],
+    )
+    median = burden.sum(axis=1).median()
+    ax.axhline(median, color=style.SPINE_COLOR, linestyle="--", linewidth=1)
+    ax.text(
+        len(burden) - 0.5,
+        median,
+        f"median {median:.0f} ",
+        va="bottom",
+        ha="right",
+        fontsize=11,
+        color=style.SPINE_COLOR,
+    )
+    ax.set_title("Mutation burden per sample")
+    ax.set_xlabel(f"sample (n={len(burden)}, sorted)")
+    ax.set_ylabel("variants")
+    ax.set_xticks([])
+    ax.margins(x=0.005)
+    style.style_axes(ax)
+    if standalone:
+        style.draw_legend_cards(
+            legend_ax,
+            {"Consequence": {g: ColorManager.FUNCTIONAL_CMAP[g] for g in order}},
+        )
+        return ax.figure
+    return ax
+
+
+def plot_mutation_composition(maf: pd.DataFrame, ax=None, figsize=(8, 4)):
+    """Nested composition: one bar per ``Variant_Type`` (SNP/DEL/INS), stacked by
+    functional consequence — variant level + consequence level in one panel."""
+    from .ColorManager import ColorManager
+    from . import style
+
+    _require_columns(maf, ["Variant_Type", "Variant_Classification"])
+    func = _functional_series(maf)
+    comp = pd.crosstab(maf["Variant_Type"], func)
+    order = _functional_order(comp.columns)
+    comp = comp[order]
+    comp = comp.loc[comp.sum(axis=1).sort_values(ascending=False).index]
+
+    standalone = ax is None
+    legend_ax = None
+    if standalone:
+        fig, ax, legend_ax = style.fig_with_legend(figsize, legend_width=0.2)
+    comp.plot(
+        kind="bar",
+        stacked=True,
+        ax=ax,
+        width=0.7,
+        legend=False,
+        color=[ColorManager.FUNCTIONAL_CMAP[g] for g in order],
+    )
+    ax.set_title("Mutation composition")
+    ax.set_xlabel("variant type")
+    ax.set_ylabel("variants")
+    ax.tick_params(axis="x", labelrotation=0)
+    style.style_axes(ax)
+    if standalone:
+        style.draw_legend_cards(
+            legend_ax,
+            {"Consequence": {g: ColorManager.FUNCTIONAL_CMAP[g] for g in order}},
+        )
+        return ax.figure
+    return ax
+
+
+def plot_snv_spectrum(maf: pd.DataFrame, ax=None, figsize=(7, 4)):
+    """Cohort-aggregate six-class SNV substitution spectrum (proportions), with
+    the Ti/Tv ratio annotated."""
+    import matplotlib.pyplot as plt
+
+    from .ColorManager import ColorManager
+    from . import style
+
+    counts = summarize_titv(maf).sum()
+    if counts.sum() == 0:
+        raise ValueError("No SNP substitutions available for SNV spectrum.")
+    prop = counts / counts.sum()
+    ti = counts.get("C>T", 0) + counts.get("T>C", 0)
+    tv = counts.sum() - ti
+    titv_ratio = ti / tv if tv else float("nan")
+
+    standalone = ax is None
+    if standalone:
+        fig, ax = plt.subplots(figsize=figsize)
+    ax.bar(
+        BASE_CHANGE_ORDER,
+        [prop.get(c, 0) for c in BASE_CHANGE_ORDER],
+        color=[ColorManager.TITV_CMAP[c] for c in BASE_CHANGE_ORDER],
+        width=0.8,
+    )
+    ax.set_title("SNV spectrum  (Ti/Tv = %.2f)" % titv_ratio)
+    ax.set_ylabel("fraction")
+    ax.set_ylim(0, max(0.05, float(prop.max()) * 1.15))
+    style.style_axes(ax)
+    if standalone:
+        ax.figure.tight_layout()
+        return ax.figure
+    return ax
+
+
+def plot_gene_recurrence(maf: pd.DataFrame, ax=None, figsize=(7, 4)):
+    """Gene recurrence structure: how many genes are mutated in N samples
+    (long-tail private vs recurrent driver structure)."""
+    import matplotlib.pyplot as plt
+
+    from . import style
+
+    sample_col = _get_sample_col(maf)
+    _require_columns(maf, [sample_col, "Hugo_Symbol"])
+    gene_samples = (
+        maf.drop_duplicates(["Hugo_Symbol", sample_col])
+        .groupby("Hugo_Symbol")
+        .size()
+    )
+    recurrence = gene_samples.value_counts().sort_index()
+
+    standalone = ax is None
+    if standalone:
+        fig, ax = plt.subplots(figsize=figsize)
+    ax.bar(recurrence.index, recurrence.values, color=style.ACCENT, width=0.8)
+    ax.set_yscale("log")
+    ax.set_title("Gene recurrence")
+    ax.set_xlabel("samples mutated")
+    ax.set_ylabel("genes (log)")
+    style.style_axes(ax)
+    if standalone:
+        ax.figure.tight_layout()
+        return ax.figure
+    return ax
+
+
+def plot_top_genes(maf: pd.DataFrame, ax=None, top: int = 10, figsize=(7, 4)):
+    """Top recurrently-mutated genes as horizontal bars, stacked by functional
+    consequence (shares the overview's Consequence palette/legend)."""
+    import matplotlib.pyplot as plt
+
+    from .ColorManager import ColorManager
+    from . import style
+
+    sample_col = _get_sample_col(maf)
+    _require_columns(maf, [sample_col, "Hugo_Symbol", "Variant_Classification"])
+    n_samples = maf[sample_col].nunique()
+    ranked = (
+        maf.drop_duplicates(["Hugo_Symbol", sample_col])
+        .groupby("Hugo_Symbol")
+        .size()
+        .sort_values(ascending=False)
+        .head(top)
+    )
+    genes = ranked.index
+    sub = maf[maf["Hugo_Symbol"].isin(genes)].copy()
+    sub["_func"] = _functional_series(sub)
+    mat = pd.crosstab(sub["Hugo_Symbol"], sub["_func"]).reindex(genes).fillna(0)
+    order = _functional_order(mat.columns)
+    mat = mat[order].iloc[::-1]  # highest-ranked gene on top
+
+    standalone = ax is None
+    legend_ax = None
+    if standalone:
+        fig, ax, legend_ax = style.fig_with_legend(figsize, legend_width=0.2)
+    mat.plot(
+        kind="barh",
+        stacked=True,
+        ax=ax,
+        width=0.75,
+        legend=False,
+        color=[ColorManager.FUNCTIONAL_CMAP[g] for g in order],
+    )
+    # Frequency label (% of samples mutated) at the end of each bar.
+    for gene, y in zip(mat.index, range(len(mat))):
+        freq = ranked[gene] / n_samples if n_samples else 0
+        ax.text(
+            mat.loc[gene].sum(),
+            y,
+            f"  {freq * 100:.0f}%",
+            va="center",
+            ha="left",
+            fontsize=10,
+            color=style.TEXT_COLOR,
+        )
+    total_genes = maf["Hugo_Symbol"].nunique()
+    ax.set_title(f"Top {len(genes)} of {total_genes:,} mutated genes")
+    ax.set_xlabel("variants")
+    ax.margins(x=0.12)
+    style.style_axes(ax)
+    if standalone:
+        style.draw_legend_cards(
+            legend_ax,
+            {"Consequence": {g: ColorManager.FUNCTIONAL_CMAP[g] for g in order}},
+        )
+        return ax.figure
+    return ax
+
+
+def plot_overview(maf: pd.DataFrame, figsize=(15, 10)):
+    """MAF-only overview dashboard: a summary header plus complementary panels
+    at the sample / variant / nucleotide / gene levels, composed from the
+    primitives above. Colours/legend come from ColorManager's fixed palettes."""
+    import matplotlib.pyplot as plt
+
+    from .ColorManager import ColorManager
+    from . import style
+
+    _require_columns(maf, ["Variant_Classification", "Hugo_Symbol"])
+    stats = summary_stats(maf)
+
+    # Bump the base font sizes — this is a large multi-panel figure, so the
+    # matplotlib defaults read too small.
+    rc = {
+        "font.size": 12,
+        "axes.titlesize": 14,
+        "axes.labelsize": 12,
+        "xtick.labelsize": 11,
+        "ytick.labelsize": 11,
+    }
+    with plt.rc_context(rc):
+        fig = plt.figure(figsize=figsize)
+        gs = fig.add_gridspec(
+            2, 4,
+            height_ratios=[1.0, 1.0],
+            # composition is 3 vertical bars -> ~40% narrower than its neighbours.
+            width_ratios=[0.6, 1.0, 1.0, 0.34],
+            hspace=0.38,
+            wspace=0.4,
+            top=0.86,
+            bottom=0.09,
+            left=0.06,
+            right=0.99,
+        )
+        plot_sample_burden(maf, ax=fig.add_subplot(gs[0, 0:3]))
+        plot_mutation_composition(maf, ax=fig.add_subplot(gs[1, 0]))
+        plot_snv_spectrum(maf, ax=fig.add_subplot(gs[1, 1]))
+        plot_top_genes(maf, ax=fig.add_subplot(gs[1, 2]), top=10)
+
+        # Right column: shared Consequence legend (each panel annotates its own
+        # numbers; cohort-level numbers go in the subtitle).
+        legend_ax = fig.add_subplot(gs[:, 3])
+        legend_ax.axis("off")
+        func_present = _functional_order(_functional_series(maf).unique())
+        style.draw_legend_cards(
+            legend_ax,
+            {"Consequence": {g: ColorManager.FUNCTIONAL_CMAP[g] for g in func_present}},
+        )
+
+        # Title + cohort headline subtitle (full width -> never clipped).
+        subtitle = (
+            f"{stats['samples']} samples  ·  {stats['variants']:,} variants  ·  "
+            f"{stats['genes_mutated']:,} genes mutated"
+        )
+        if "snv_fraction" in stats:
+            subtitle += f"  ·  {stats['snv_fraction'] * 100:.0f}% SNV"
+        fig.suptitle("MAF Overview", fontsize=16, fontweight="semibold", x=0.06, ha="left", y=0.97)
+        fig.text(0.06, 0.915, subtitle, fontsize=11, ha="left", color=style.TEXT_COLOR)
+    return fig

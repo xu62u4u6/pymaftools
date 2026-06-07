@@ -155,9 +155,11 @@ def draw_legend_cards(
     # axis is short/wide, so the tight OncoPlot values overlap.
     manager.plot_legends(
         ax=legend_ax,
+        fontsize=10,
+        title_fontsize=12,
         start_y=0.98,
-        rect_height=0.035,
-        item_offset_y=0.06,
-        title_offset_y=0.08,
-        legend_gap=0.05,
+        rect_height=0.04,
+        item_offset_y=0.07,
+        title_offset_y=0.09,
+        legend_gap=0.06,
     )
