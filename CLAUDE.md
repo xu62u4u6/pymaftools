@@ -66,6 +66,23 @@ thing. Acceptance for any plot feature = all three:
 Real defects this caught: legend overlap, an unreadable interaction colour
 scale, a forest plot silently dropping infinite odds ratios.
 
+**Test plots across cohort-size regimes.** Plot bugs are *scale-dependent*: what
+looks fine on the bundled 6-sample MAF breaks at 1000 (label overflow, legend
+crowding, auto-hide thresholds, performance), and distributions degenerate at
+the low end (a recurrence curve or Ti/Tv is meaningless with <10 samples). So a
+plot is only "verified" once checked at several sizes, roughly:
+
+| regime | samples | what it stresses |
+|--------|---------|------------------|
+| few | < ~10 | degenerate distributions; does it still render/say something honest? |
+| small | ~10–100 | the common case |
+| regular | ~100–300 | label density, legend fit |
+| many | ~300+ | label auto-hide, overflow, render time |
+
+(Buckets are approximate — adjust to the real data.) The bundled example MAF
+covers only the *few* regime; use a real cohort (e.g. an external WES MAF) for
+the larger regimes during visual QC.
+
 ## 5. Naming quality = maintainability
 
 `s1`/`s2`/`n1`/`m1` is fine in a notebook, **not** in package code. Use domain
