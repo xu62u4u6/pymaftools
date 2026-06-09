@@ -325,6 +325,7 @@ def plot_somatic_interactions(
         annotations.loc[row["gene2"], row["gene1"]] = "*"
     vmax = float(np.nanmax(np.abs(mat.values))) if mat.notna().any().any() else 1.0
     vmax = max(vmax, 1.0)
+    triangle_mask = np.tril(np.ones(mat.shape, dtype=bool))
     fig, ax = plt.subplots(figsize=figsize)
     sns.heatmap(
         mat,
@@ -334,7 +335,7 @@ def plot_somatic_interactions(
         vmax=vmax,
         ax=ax,
         square=True,
-        mask=mat.isna(),
+        mask=mat.isna() | triangle_mask,
         annot=annotations,
         fmt="",
         linewidths=0.5,

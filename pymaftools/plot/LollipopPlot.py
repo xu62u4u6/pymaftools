@@ -5,6 +5,7 @@ import matplotlib.cm as cm
 import numpy as np
 import matplotlib.patches as patches
 from .BasePlot import BasePlot
+from . import style
 
 
 class LollipopPlot(BasePlot):
@@ -72,6 +73,8 @@ class LollipopPlot(BasePlot):
             "legend_domain_bbox": (1.02, 1.0),
             "legend_mutation_bbox": (1.02, 0.7),
             "tight_layout_rect": [0, 0, 0.88, 1],
+            "legend": True,
+            "legend_width": 0.18,
         }
         # Merge user config with defaults
         self.config = self._default_config.copy()
@@ -132,7 +135,14 @@ class LollipopPlot(BasePlot):
     def _setup_plot(self, ax=None, fig=None):
         """Initialize plot with proper figure handling."""
         if ax is None or fig is None:
-            self.fig, self.ax_main = plt.subplots(figsize=self.config["figsize"])
+            if self.config.get("legend", True):
+                self.fig, self.ax_main, self.ax_legend = style.fig_with_legend(
+                    self.config["figsize"],
+                    legend_width=self.config.get("legend_width", 0.18),
+                )
+            else:
+                self.fig, self.ax_main = plt.subplots(figsize=self.config["figsize"])
+                self.ax_legend = None
         else:
             self.fig = fig
             self.ax_main = ax
@@ -309,7 +319,16 @@ class LollipopPlot(BasePlot):
         # Use inherited legend plotting functionality
         if hasattr(self, "ax_legend") and self.ax_legend is not None:
             # If we have a dedicated legend axis, use it
-            self.plot_all_legends(ax=self.ax_legend)
+            self.plot_all_legends(
+                ax=self.ax_legend,
+                fontsize=10,
+                title_fontsize=12,
+                start_y=0.98,
+                rect_height=0.04,
+                item_offset_y=0.07,
+                title_offset_y=0.09,
+                legend_gap=0.06,
+            )
         else:
             # Otherwise, create a simple layout adjustment
             try:

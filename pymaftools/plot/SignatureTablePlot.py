@@ -34,7 +34,7 @@ class SignatureTablePlot(PivotStatsPlot):
         figsize: tuple[float, float] = (20, 6),
         colormap: str = "tab20",
         legend: bool = True,
-        width: float = 0.9,
+        width: float = 1.0,
         show_sample_labels: bool | None = None,
     ):
         """Per-sample signature exposure as a stacked bar chart.

@@ -129,6 +129,28 @@ def test_vaf_infers_from_alt_count_and_depth():
     assert vaf.iloc[0] == 0.4
 
 
+def test_lollipop_single_gene_draws_legend_axis():
+    """Single-gene lollipop plots should render the collected legends by default."""
+    from pymaftools.plot import LollipopPlot
+
+    plot = LollipopPlot(
+        protein_name="EGFR",
+        protein_length=300,
+        domains=[{"Start": 25, "End": 90, "Label": "Domain A"}],
+        mutations=[
+            {"position": 45, "type": "Missense_Mutation", "count": 2},
+            {"position": 120, "type": "Frame_Shift_Del", "count": 1},
+        ],
+    ).plot()
+
+    assert plot.ax_main is not None
+    assert plot.ax_legend is not None
+    assert plot.has_legend("Domains")
+    assert plot.has_legend("Mutation Types")
+    assert len(plot.fig.axes) == 2
+    plt.close(plot.fig)
+
+
 def test_pivot_plot_exposes_somatic_interactions():
     """Somatic interactions belong on the gene x sample PivotTable accessor."""
     table = _maf().to_gene_table()
@@ -137,6 +159,20 @@ def test_pivot_plot_exposes_somatic_interactions():
 
     assert {"gene1", "gene2", "odds_ratio", "adjusted_p_value"}.issubset(stats.columns)
     assert fig.axes
+    plt.close(fig)
+
+
+def test_somatic_interactions_displays_upper_triangle_only():
+    """The symmetric interaction matrix should not duplicate lower-triangle cells."""
+    table = _maf().to_gene_table()
+
+    fig, _stats = table.plot.somatic_interactions(top=4)
+    heatmap = fig.axes[0].collections[0]
+    mask = heatmap.get_array().mask.reshape((4, 4))
+
+    assert mask[0, 0]
+    assert mask[1, 0]
+    assert not mask[0, 1]
     plt.close(fig)
 
 
