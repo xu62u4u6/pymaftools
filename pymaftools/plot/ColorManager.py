@@ -9,6 +9,8 @@ from typing import Any
 from matplotlib.colors import to_rgb, to_hex
 import colorsys
 
+from ..core.variant_groups import FUNCTIONAL_GROUP, FUNCTIONAL_ORDER
+
 
 class ColorManager:
     """
@@ -54,29 +56,11 @@ class ColorManager:
         "T>G": "#EDBFC2",  # pink
     }
 
-    # Coarse functional grouping of Variant_Classification, for overview plots
-    # where the full ~18 categories are too noisy. Order = legend/stack order.
-    FUNCTIONAL_GROUP = {
-        "Missense_Mutation": "Missense",
-        "Nonsense_Mutation": "Truncating",
-        "Frame_Shift_Del": "Truncating",
-        "Frame_Shift_Ins": "Truncating",
-        "Translation_Start_Site": "Truncating",
-        "Nonstop_Mutation": "Truncating",
-        "Splice_Site": "Splice",
-        "Splice_Region": "Splice",
-        "In_Frame_Del": "In-frame",
-        "In_Frame_Ins": "In-frame",
-        "Silent": "Silent",
-        "3'UTR": "Other",
-        "5'UTR": "Other",
-        "3'Flank": "Other",
-        "5'Flank": "Other",
-        "Intron": "Other",
-        "IGR": "Other",
-        "RNA": "Other",
-        "Targeted_Region": "Other",
-    }
+    # Coarse functional grouping of Variant_Classification (domain fact; defined
+    # in core.variant_groups). Aliased here so existing
+    # ``ColorManager.FUNCTIONAL_GROUP`` / ``.FUNCTIONAL_ORDER`` callers keep working.
+    FUNCTIONAL_GROUP = FUNCTIONAL_GROUP
+    FUNCTIONAL_ORDER = FUNCTIONAL_ORDER
 
     FUNCTIONAL_CMAP = {
         "Missense": "#7F7F7F",   # grey (matches Missense_Mutation)
@@ -86,9 +70,6 @@ class ColorManager:
         "Silent": "#D9D9D9",     # light grey
         "Other": "#BBBBCC",      # muted non-coding
     }
-
-    # Stack / legend order, most-damaging first.
-    FUNCTIONAL_ORDER = ["Truncating", "Splice", "Missense", "In-frame", "Silent", "Other"]
 
     predefined_cmaps = {
         "all_mutation": ALL_MUTATION_CMAP,

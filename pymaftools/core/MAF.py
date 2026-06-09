@@ -8,6 +8,7 @@ import pandas as pd
 
 from .PivotTable import PivotTable
 from .SmallVariationTable import SmallVariationTable
+from .variant_groups import FUNCTIONAL_GROUP, FUNCTIONAL_ORDER
 
 if TYPE_CHECKING:
     from ..plot.MafPlot import MafPlot
@@ -325,6 +326,10 @@ class MAF(pd.DataFrame):
         ).fillna(False)
         mutation_table = SmallVariationTable(mutation_table)
         mutation_table.sample_metadata["mutations_count"] = self.mutations_count
+        # Cache the per-functional-group TMB breakdown (the stacked-TMB source a
+        # single pivot cell can't reconstruct). Aligns by sample label.
+        for col, values in self.tmb_by_functional_group.items():
+            mutation_table.sample_metadata[col] = values
 
         # Build feature_metadata from MAF rows (one row per unique mutation index)
         present_cols = [c for c in self._FEATURE_META_COLS if c in self.columns]
@@ -369,6 +374,37 @@ class MAF(pd.DataFrame):
             Series indexed by sample ID with mutation counts as values.
         """
         return self.groupby(self.sample_ID).size()
+
+    # Prefix for the per-functional-group TMB columns stored in sample_metadata.
+    TMB_PREFIX = "tmb_"
+
+    @property
+    def tmb_by_functional_group(self) -> pd.DataFrame:
+        """Per-sample mutation counts split by functional group.
+
+        Buckets ``Variant_Classification`` into the six coarse functional groups
+        (``core.variant_groups.FUNCTIONAL_GROUP``) and counts mutations per
+        sample per group. This is the stacked-TMB source that a single ``pivot``
+        cell cannot reconstruct (``to_mutation_table`` keeps only the *first*
+        class per gene x sample), so it is computed here while the raw events
+        are still in hand and cached into ``sample_metadata``.
+
+        Note: counts reflect *this MAF's* events. If the MAF was filtered (e.g.
+        nonsynonymous-only) before conversion, the breakdown is of that subset.
+
+        Returns
+        -------
+        pd.DataFrame
+            Indexed by sample ID; columns ``tmb_<group>`` in FUNCTIONAL_ORDER
+            (``tmb_Truncating``, ``tmb_Splice``, ...), integer counts.
+        """
+        groups = self.Variant_Classification.map(FUNCTIONAL_GROUP).fillna("Other")
+        counts = (
+            pd.crosstab(self.sample_ID, groups)
+            .reindex(columns=FUNCTIONAL_ORDER, fill_value=0)
+        )
+        counts.columns = [f"{self.TMB_PREFIX}{g}" for g in counts.columns]
+        return counts
 
     def sort_by_chrom(self) -> MAF:
         """
