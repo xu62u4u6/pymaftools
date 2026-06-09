@@ -452,7 +452,7 @@ def test_grouping_sections_aligned_tracks_with_shared_scale():
     assert len(heatmap_axes) == 2
     # the bar got a shared y-range fixed before the per-section slicing
     bar = next(tr for tr in op.tracks if isinstance(tr, BarTrack))
-    assert getattr(bar, "_shared_ymax", None) is not None
+    assert getattr(bar, "_shared_max", None) is not None
     # only the first bar section keeps the y-label
     assert sum(a.get_ylabel() == "TMB" for a in op.fig.axes) == 1
 

@@ -311,6 +311,25 @@ class OncoPlot(BasePlot):
             )
         return self
 
+    def add_track(self, track: Track) -> OncoPlot:
+        """Register an arbitrary pre-built :class:`Track` for ``render()``.
+
+        The escape hatch behind the curated ``add_*`` helpers: any ``Track``
+        subclass (e.g. a :class:`BarTrack` placed on any side) can be attached
+        here. Position and order follow ``(side, registration order)`` — the
+        track's ``side`` places it on top/bottom/left/right, and the order in
+        which tracks are added sets distance from the matrix (first added =
+        outermost). No separate ordering parameter is needed.
+
+        Examples
+        --------
+        >>> op.add_track(BarTrack(
+        ...     pt.sample_metadata[[f"tmb_{g}" for g in ColorManager.FUNCTIONAL_ORDER]],
+        ...     side="top", label="TMB", cmap=ColorManager.FUNCTIONAL_CMAP))
+        """
+        self.tracks.append(track)
+        return self
+
     def add_bar(
         self, bar_col: str = "TMB", side: str = "top", **kwargs
     ) -> OncoPlot:
@@ -764,7 +783,7 @@ class OncoPlot(BasePlot):
             t.render(fig.add_subplot(self.gs[main_row, main_col + 1 + i]))
 
     @staticmethod
-    def _fix_shared_scales(main_track, top, bottom, right) -> None:
+    def _fix_shared_scales(main_track, top, bottom, left, right) -> None:
         """Pin each non-categorical track's value range to its full data so the
         sections (which render sliced copies) stay on one consistent scale."""
         if isinstance(main_track, NumericMatrixTrack) and main_track.vmin is None:
@@ -776,7 +795,7 @@ class OncoPlot(BasePlot):
                 main_track.vmin = float(tbl.min().min())
                 main_track.vmax = float(tbl.max().max())
             main_track._vmin, main_track._vmax = main_track.vmin, main_track.vmax
-        for t in [*top, *bottom, *right]:
+        for t in [*top, *bottom, *left, *right]:
             if isinstance(t, NumericTrack) and t.vmin is None:
                 d = t.data
                 if t.cmap == "coolwarm":
@@ -788,7 +807,8 @@ class OncoPlot(BasePlot):
                 d = t.freq_data
                 t.vmin, t.vmax = float(d.min().min()), float(d.max().max())
             elif isinstance(t, BarTrack):
-                t._shared_ymax = float(max(t.values)) if len(t.values) else 1.0
+                totals = t.frame.sum(axis=1)
+                t._shared_max = float(totals.max()) if len(totals) else 1.0
 
     def _render_sectioned(
         self, fig, main_track, top, bottom, left, right, *,
@@ -807,7 +827,7 @@ class OncoPlot(BasePlot):
         show_st = bool(scfg and scfg["show_titles"])
         n_feat, n_samp = self.pivot_table.shape
 
-        self._fix_shared_scales(main_track, top, bottom, right)
+        self._fix_shared_scales(main_track, top, bottom, left, right)
 
         height_ratios: list[float] = []
         def add_row(h):
@@ -893,9 +913,9 @@ class OncoPlot(BasePlot):
         for ti, t in enumerate(top):
             for si, (_slbl, spos) in enumerate(ssecs):
                 ax = fig.add_subplot(self.gs[top_rows[ti], samp_cols[si]])
+                # render owns the value-axis limits (incl. BarTrack grow/shared
+                # scale); only the first section keeps the value axis visible.
                 t.subset(samp=spos).render(ax)
-                if isinstance(t, BarTrack):
-                    ax.set_ylim(0, getattr(t, "_shared_ymax", ax.get_ylim()[1]))
                 if si > 0:
                     ax.set_ylabel("")
                     ax.set_yticks([])
@@ -921,6 +941,8 @@ class OncoPlot(BasePlot):
             for fi, (_flbl, fpos) in enumerate(fsecs):
                 fig_ax = fig.add_subplot(self.gs[feat_rows[fi], left_cols[ti]])
                 t.subset(feat=fpos).render(fig_ax)
+                if fi < gf - 1:
+                    fig_ax.set_xticks([])
         for ti, t in enumerate(right):
             for fi, (_flbl, fpos) in enumerate(fsecs):
                 ax = fig.add_subplot(self.gs[feat_rows[fi], right_cols[ti]])

@@ -339,50 +339,147 @@ class NumericMatrixTrack(Track):
 
 
 class BarTrack(Track):
-    """Per-sample bar strip (e.g. TMB) drawn above the matrix."""
+    """Bar strip aligned to one matrix axis; single-series or stacked.
+
+    ``side`` in ``("top", "bottom")`` is sample-aligned and draws vertical bars
+    (``ax.bar``); ``("left", "right")`` is feature-aligned and draws horizontal
+    bars (``ax.barh``). ``grow`` controls direction: ``"out"`` (default) grows
+    *away* from the matrix, ``"in"`` toward it.
+
+    ``data`` is normalized to an internal ``frame`` whose rows are axis
+    positions (samples or features, in matrix order) and whose columns are
+    stack categories (column order = stack / legend order):
+
+    - a 1-D input (Series / ndarray) becomes a single-column frame — a single
+      series drawn in ``color`` with no legend;
+    - a DataFrame stacks its columns, coloured by ``cmap`` (which also drives
+      the legend), e.g. ``sample_metadata[["tmb_Truncating", ...]]``.
+    """
 
     side = "top"
 
     def __init__(
         self,
-        values,
-        label: str,
+        data,
+        label: str | None = None,
         *,
+        side: str = "top",
+        cmap: dict | None = None,
+        color: str = "gray",
+        grow: str = "out",
         bar_value: bool = False,
         fontsize: int = 6,
         ylabel_size: int = 8,
+        size: float = 1.0,
     ) -> None:
-        self.values = np.asarray(values)
+        if grow not in ("out", "in"):
+            raise ValueError(f"grow must be 'out' or 'in'; got {grow!r}")
+        self.frame = self._as_frame(data)
         self.label = label
+        self.side = side
+        self.cmap = cmap
+        self.color = color
+        self.grow = grow
         self.bar_value = bar_value
         self.fontsize = fontsize
         self.ylabel_size = ylabel_size
+        self.size = size
+        # Pinned value-axis max for grouped rendering (set by
+        # OncoPlot._fix_shared_scales so sliced sections share one scale).
+        self._shared_max: float | None = None
+
+    @staticmethod
+    def _as_frame(data) -> pd.DataFrame:
+        if isinstance(data, pd.DataFrame):
+            return data
+        if isinstance(data, pd.Series):
+            return data.to_frame()
+        return pd.DataFrame({"value": np.asarray(data)})
+
+    @property
+    def values(self) -> np.ndarray:
+        """Backward-compatible 1-D view: the per-position stacked total."""
+        return self.frame.sum(axis=1).to_numpy()
 
     def render(self, ax: Axes) -> Axes:
-        x = np.arange(len(self.values))
-        ax.bar(x, self.values, width=0.95, color="gray", edgecolor="white")
-        ax.set_xlim(-0.5, len(self.values) - 0.5)
-        if self.bar_value:
-            for i, value in enumerate(self.values):
-                # NOTE: the original OncoPlot.plot_bar formatted the whole array
-                # here (``f"{bar_values:.1f}"``), which raised on an ndarray;
-                # bar_value defaults False so it was never hit. Format the scalar.
-                ax.text(
-                    i, value + 2, f"{value:.1f}", ha="center", fontsize=self.fontsize
-                )
+        frame = self.frame
+        n = len(frame)
+        pos = np.arange(n)
+        horizontal = self.side in ("left", "right")
 
-        ax.spines["left"].set_visible(True)
-        ax.spines["top"].set_visible(False)
-        ax.spines["right"].set_visible(False)
-        ax.spines["bottom"].set_visible(False)
-        ax.set_xticks([])
-        ax.set_ylabel(self.label, fontsize=self.ylabel_size)
+        offset = np.zeros(n)
+        for col in frame.columns:
+            vals = frame[col].to_numpy(dtype=float)
+            color = self.cmap.get(col, self.color) if self.cmap else self.color
+            if horizontal:
+                ax.barh(pos, vals, left=offset, height=0.95, color=color,
+                        edgecolor="white")
+            else:
+                ax.bar(pos, vals, bottom=offset, width=0.95, color=color,
+                       edgecolor="white")
+            offset = offset + vals
+
+        vmax = self._shared_max if self._shared_max is not None else (
+            float(offset.max()) if n else 1.0
+        )
+        vmax = vmax if vmax and vmax > 0 else 1.0
+
+        if self.bar_value and frame.shape[1] == 1:
+            totals = frame.iloc[:, 0].to_numpy(dtype=float)
+            for i, value in enumerate(totals):
+                if horizontal:
+                    ax.text(value, i, f"{value:.1f}", va="center",
+                            fontsize=self.fontsize)
+                else:
+                    ax.text(i, value, f"{value:.1f}", ha="center",
+                            fontsize=self.fontsize)
+
+        if horizontal:
+            # position axis = y, pinned to matrix rows (row 0 on top)
+            ax.set_ylim(n - 0.5, -0.5)
+            ax.set_yticks([])
+            # value axis = x; "out" grows away from the matrix (left side mirrors)
+            invert = (self.side == "left") == (self.grow == "out")
+            ax.set_xlim(vmax, 0) if invert else ax.set_xlim(0, vmax)
+            if self.label:
+                ax.set_xlabel(self.label, fontsize=self.ylabel_size)
+            value_spine = "bottom"
+        else:
+            # position axis = x, aligned to matrix columns
+            ax.set_xlim(-0.5, n - 0.5)
+            ax.set_xticks([])
+            # value axis = y; "out" grows up for top, down for bottom
+            invert = (self.side == "bottom") == (self.grow == "out")
+            ax.set_ylim(vmax, 0) if invert else ax.set_ylim(0, vmax)
+            if self.label:
+                ax.set_ylabel(self.label, fontsize=self.ylabel_size)
+            value_spine = "left"
+
+        # Frameless house style: keep only a light value-axis spine.
+        for name, spine in ax.spines.items():
+            spine.set_visible(name == value_spine)
+        ax.spines[value_spine].set_color("#444444")
+        ax.spines[value_spine].set_linewidth(0.8)
+        ax.tick_params(labelsize=self.fontsize, length=2, width=0.5)
         return ax
+
+    def legend_entries(self) -> dict[str, dict] | None:
+        # A legend only makes sense for the stacked (cmap) form; a single series
+        # drawn in one ``color`` has nothing to key.
+        if not self.cmap:
+            return None
+        present = {c: self.cmap[c] for c in self.frame.columns if c in self.cmap}
+        if not present:
+            return None
+        return {self.label or "value": present}
 
     def subset(self, feat=None, samp=None) -> "BarTrack":
         new = copy.copy(self)
-        if samp is not None:
-            new.values = self.values[samp]
+        if self.side in ("top", "bottom"):
+            if samp is not None:
+                new.frame = self.frame.iloc[samp]
+        elif feat is not None:
+            new.frame = self.frame.iloc[feat]
         return new
 
 
