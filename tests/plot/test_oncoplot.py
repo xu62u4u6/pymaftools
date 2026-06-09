@@ -358,7 +358,7 @@ def test_add_xticklabel_rotation_and_fontsize(mutation_table):
     op = OncoPlot(mutation_table, figsize=(8, 6)).main().render()
     op.add_xticklabel(rotation=45, fontsize=7)
 
-    label = op._sample_gutter_axes[0].get_xticklabels()[0]
+    label = op._sample_gutter_axes[0].texts[0]
     assert label.get_rotation() == 45
     assert label.get_fontsize() == 7
 
@@ -553,10 +553,10 @@ def test_feature_names_render_in_gutter_not_on_matrix(mutation_table):
     genes = set(mutation_table.index)
     # the matrix no longer carries gene tick labels
     assert [t.get_text() for t in op.ax_heatmap.get_yticklabels()] == []
-    # they appear on some other (gutter) axis instead
+    # they appear as text on a dedicated (gutter) axis instead
     gutter_texts = set()
     for ax in op.fig.axes:
-        gutter_texts.update(t.get_text() for t in ax.get_yticklabels())
+        gutter_texts.update(t.get_text() for t in ax.texts)
     assert genes.issubset(gutter_texts)
 
 
@@ -567,7 +567,7 @@ def test_sample_labels_override_is_applied_positionally(mutation_table):
 
     shown = set()
     for ax in op._sample_gutter_axes:
-        shown.update(t.get_text() for t in ax.get_xticklabels())
+        shown.update(t.get_text() for t in ax.texts)
     assert {"alias0", "alias7"}.issubset(shown)
     # the real barcodes are not shown when overridden
     assert "S00" not in shown

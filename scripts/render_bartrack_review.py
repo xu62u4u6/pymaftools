@@ -54,9 +54,9 @@ def four_side_tracks(op, table):
         # LEFT: per-gene mutated-sample count, grows LEFT (out, mirror)
         .add_track(BarTrack(mutated_per_gene, side="left", label="n samp",
                             color=style.MUTED))
-        # BOTTOM: total burden, grows DOWN toward... use grow="in" to grow UP
+        # BOTTOM: total burden, grows DOWN (out, away from the matrix)
         .add_track(BarTrack(table.sample_metadata["mutations_count"],
-                            side="bottom", label="total", grow="in"))
+                            side="bottom", label="total", grow="out"))
     )
 
 

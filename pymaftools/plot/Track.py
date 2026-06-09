@@ -384,6 +384,9 @@ class BarTrack(Track):
         self.fontsize = fontsize
         self.ylabel_size = ylabel_size
         self.size = size
+        # grouped rendering draws one sliced copy per section; only the first
+        # keeps the value label (OncoPlot toggles this on the sliced copies).
+        self.show_label = True
         # Pinned value-axis max for grouped rendering (set by
         # OncoPlot._fix_shared_scales so sliced sections share one scale).
         self._shared_max: float | None = None
@@ -451,11 +454,15 @@ class BarTrack(Track):
             ax.set_ylim(vmax, 0) if invert else ax.set_ylim(0, vmax)
             value_spine = "left"
 
-        # Value-axis label as an in-cell title (not a spilling axis label), so it
-        # stays inside this track's block instead of colliding with a neighbour
-        # at a shared corner.
-        if self.label:
-            ax.set_title(self.label, fontsize=self.ylabel_size)
+        # Value label on the track's OUTWARD edge (away from the matrix), so it
+        # never intrudes into the heatmap or collides with another track's label
+        # at a shared corner. A bottom track's outward edge is below it (xlabel);
+        # the others read fine as a top title (their matrix side is up/left/right).
+        if self.label and self.show_label:
+            if self.side == "bottom":
+                ax.set_xlabel(self.label, fontsize=self.ylabel_size)
+            else:
+                ax.set_title(self.label, fontsize=self.ylabel_size)
 
         # Frameless house style: keep only a light value-axis spine.
         for name, spine in ax.spines.items():

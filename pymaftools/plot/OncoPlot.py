@@ -646,7 +646,7 @@ class OncoPlot(BasePlot):
         show_sample_labels: bool | None = None,
         feature_labels=None,
         sample_labels=None,
-        feature_gutter_size: float = 3.0,
+        feature_gutter_size: float | None = None,
         sample_gutter_size: float = 3.0,
     ) -> OncoPlot:
         """Derive the layout from registered tracks and draw them in one pass.
@@ -727,6 +727,17 @@ class OncoPlot(BasePlot):
         main_track.yticklabels = False
         self._sample_gutter_axes = []  # collected by the layout, restyled by add_xticklabel
 
+        # Size the feature gutter to roughly the longest gene name so names hug
+        # the matrix without a wide left blank (which would push a left track far
+        # from the matrix). Right-aligned, so a tight width keeps everything snug.
+        # Overridable via feature_gutter_size.
+        if feature_gutter_size is None:
+            max_len = (
+                max((len(str(x)) for x in feature_labels), default=1)
+                if show_feature_labels else 1
+            )
+            feature_gutter_size = max(1.5, max_len * 0.2)
+
         layout = self._render_sectioned if (
             self._feature_groups or self._sample_groups
         ) else self._render_simple
@@ -787,26 +798,33 @@ class OncoPlot(BasePlot):
     @staticmethod
     def _draw_label_gutter(ax, labels, *, axis: str, n: int, fontsize: int = 8,
                            rotation: float = 90) -> None:
-        """Draw axis labels in a dedicated (outermost) cell — the "block".
+        """Draw axis labels in a dedicated cell — the "block".
 
-        One mechanism for both axes: ``axis="y"`` draws feature (row) labels
-        hugging the cell's right edge; ``axis="x"`` draws sample (column) labels
-        below. Positions match the matrix (cell centres at ``i + 0.5``). Because
-        the gutter is the outermost cell on its side, any label overflow spills
-        into the empty figure margin rather than over a neighbouring track."""
+        Labels are anchored to the cell edge that touches the matrix and drawn
+        with ``ax.text`` (not tick labels, which overflow toward the neighbour):
+        - ``axis="y"`` (features): right-aligned at the cell's right edge so
+          names hug the matrix and extend left into the (own) cell;
+        - ``axis="x"`` (samples): anchored to the cell's top edge so names hang
+          just below the matrix instead of dropping to the bottom of the gutter.
+        Positions match the matrix (cell centres at ``i + 0.5``)."""
+        from matplotlib.transforms import blended_transform_factory
+
         if axis == "y":
+            ax.set_xlim(0, 1)
             ax.set_ylim(n, 0)  # inverted to match sns.heatmap row order
-            ax.set_yticks([i + 0.5 for i in range(len(labels))])
-            ax.set_yticklabels(labels, fontsize=fontsize)
-            ax.yaxis.tick_right()  # names sit against the matrix side
-            ax.tick_params(axis="y", length=0)
-            ax.set_xticks([])
+            trans = blended_transform_factory(ax.transAxes, ax.transData)
+            for i, label in enumerate(labels):
+                ax.text(0.96, i + 0.5, str(label), transform=trans,
+                        ha="right", va="center", fontsize=fontsize)
         else:
+            ax.set_ylim(0, 1)
             ax.set_xlim(-0.5, n - 0.5)
-            ax.set_xticks([i + 0.5 for i in range(len(labels))])
-            ax.set_xticklabels(labels, rotation=rotation, fontsize=fontsize)
-            ax.tick_params(axis="x", length=0)
-            ax.set_yticks([])
+            trans = blended_transform_factory(ax.transData, ax.transAxes)
+            for i, label in enumerate(labels):
+                ax.text(i + 0.5, 0.96, str(label), transform=trans,
+                        ha="center", va="top", rotation=rotation, fontsize=fontsize)
+        ax.set_xticks([])
+        ax.set_yticks([])
         for spine in ax.spines.values():
             spine.set_visible(False)
 
@@ -1004,21 +1022,25 @@ class OncoPlot(BasePlot):
             for si, (_slbl, spos) in enumerate(ssecs):
                 ax = fig.add_subplot(self.gs[top_rows[ti], samp_cols[si]])
                 # render owns the value-axis limits (incl. BarTrack grow/shared
-                # scale); only the first section keeps the value axis visible.
-                t.subset(samp=spos).render(ax)
+                # scale); only the first section keeps the value axis + label.
+                sub = t.subset(samp=spos)
+                if isinstance(sub, BarTrack):
+                    sub.show_label = si == 0
+                sub.render(ax)
                 if si > 0:
                     ax.set_ylabel("")
                     ax.set_yticks([])
-                    ax.set_title("")  # keep the track title on the first section only
                     ax.spines["left"].set_visible(False)
         for ti, t in enumerate(bottom):
             for si, (_slbl, spos) in enumerate(ssecs):
                 ax = fig.add_subplot(self.gs[bottom_rows[ti], samp_cols[si]])
-                t.subset(samp=spos).render(ax)
+                sub = t.subset(samp=spos)
+                if isinstance(sub, BarTrack):
+                    sub.show_label = si == 0
+                sub.render(ax)
                 if si > 0:
                     ax.set_yticks([])
                     ax.set_ylabel("")
-                    ax.set_title("")  # keep the track title on the first section only
                 ax.set_xticks([])  # sample names live in the bottom gutter
 
         # left / right tracks (feature sections)
@@ -1268,7 +1290,7 @@ class OncoPlot(BasePlot):
             Returns self for method chaining
         """
         for ax in getattr(self, "_sample_gutter_axes", []):
-            for label in ax.get_xticklabels():
+            for label in ax.texts:  # gutter labels are ax.text artists
                 label.set_rotation(rotation)
                 if fontsize is not None:
                     label.set_fontsize(fontsize)
