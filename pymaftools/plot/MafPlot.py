@@ -9,12 +9,6 @@ class MafPlot:
     def __init__(self, maf):
         self.maf = maf
 
-    def summary(self, **kwargs):
-        """Draw a compact MAF summary dashboard."""
-        from .wes import plot_maf_summary
-
-        return plot_maf_summary(self.maf, **kwargs)
-
     def titv(self, **kwargs):
         """Draw per-sample Ti/Tv substitution composition."""
         from .wes import plot_titv

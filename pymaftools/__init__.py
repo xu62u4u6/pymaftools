@@ -50,7 +50,6 @@ _LAZY_EXPORTS = {
     "mutation_burden_by_class": ".plot.wes",
     "plot_cohort_comparison_forest": ".plot.wes",
     "plot_forest": ".plot.wes",
-    "plot_maf_summary": ".plot.wes",
     "plot_rainfall": ".plot.wes",
     "plot_somatic_interactions": ".plot.wes",
     "plot_titv": ".plot.wes",

@@ -57,7 +57,7 @@ def test_maf_plot_accessor_is_maf_specific():
     )
 
     assert type(maf.plot).__name__ == "MafPlot"
-    assert hasattr(maf.plot, "summary")
+    assert hasattr(maf.plot, "overview")
 
 
 def test_cnv_accessor_exposes_band_ratio():

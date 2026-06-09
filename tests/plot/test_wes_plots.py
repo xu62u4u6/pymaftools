@@ -47,12 +47,12 @@ def _maf():
     return maf
 
 
-def test_maf_plot_accessor_draws_summary_titv_vaf_and_rainfall():
+def test_maf_plot_accessor_draws_overview_titv_vaf_and_rainfall():
     """MAF.plot covers common raw-MAF WES views without needing a PivotTable."""
     maf = _maf()
 
     figures = [
-        maf.plot.summary(top=3),
+        maf.plot.overview(figsize=(12, 8)),
         maf.plot.titv(),
         maf.plot.vaf(),
         maf.plot.rainfall(sample="S1"),
@@ -61,6 +61,11 @@ def test_maf_plot_accessor_draws_summary_titv_vaf_and_rainfall():
     assert all(fig.axes for fig in figures)
     for fig in figures:
         plt.close(fig)
+
+
+def test_maf_plot_summary_accessor_removed():
+    """The old raw classification dashboard is no longer a public accessor."""
+    assert not hasattr(_maf().plot, "summary")
 
 
 def test_overview_dashboard_and_primitives_render():
