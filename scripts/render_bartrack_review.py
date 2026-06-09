@@ -63,12 +63,14 @@ def four_side_tracks(op, table):
 def main():
     table = pymaftools.read_h5(DATA)
 
-    # (1) ungrouped, 60-sample subset so individual bars are legible
-    small = table.subset(samples=table.sample_metadata.index[:60])
+    # (1) ungrouped, 40-sample subset (under the sample-label auto-hide limit so
+    # names show). Demo the sample_labels override with short aliases.
+    small = table.subset(samples=table.sample_metadata.index[:40])
+    aliases = [f"P{i:02d}" for i in range(small.shape[1])]
     op = OncoPlot(small, figsize=(16, 9)).main()
-    four_side_tracks(op, small).render()
-    op.fig.savefig(OUT / "four_side_ungrouped_60.png", dpi=110, bbox_inches="tight")
-    print("saved four_side_ungrouped_60.png")
+    four_side_tracks(op, small).render(sample_labels=aliases)
+    op.fig.savefig(OUT / "four_side_ungrouped_40.png", dpi=110, bbox_inches="tight")
+    print("saved four_side_ungrouped_40.png")
 
     # (2) full 958 samples, grouped by subtype -> exercises sectioning + shared scale
     op2 = OncoPlot(table, figsize=(20, 10)).main()

@@ -441,8 +441,6 @@ class BarTrack(Track):
             # value axis = x; "out" grows away from the matrix (left side mirrors)
             invert = (self.side == "left") == (self.grow == "out")
             ax.set_xlim(vmax, 0) if invert else ax.set_xlim(0, vmax)
-            if self.label:
-                ax.set_xlabel(self.label, fontsize=self.ylabel_size)
             value_spine = "bottom"
         else:
             # position axis = x, aligned to matrix columns
@@ -451,9 +449,13 @@ class BarTrack(Track):
             # value axis = y; "out" grows up for top, down for bottom
             invert = (self.side == "bottom") == (self.grow == "out")
             ax.set_ylim(vmax, 0) if invert else ax.set_ylim(0, vmax)
-            if self.label:
-                ax.set_ylabel(self.label, fontsize=self.ylabel_size)
             value_spine = "left"
+
+        # Value-axis label as an in-cell title (not a spilling axis label), so it
+        # stays inside this track's block instead of colliding with a neighbour
+        # at a shared corner.
+        if self.label:
+            ax.set_title(self.label, fontsize=self.ylabel_size)
 
         # Frameless house style: keep only a light value-axis spine.
         for name, spine in ax.spines.items():

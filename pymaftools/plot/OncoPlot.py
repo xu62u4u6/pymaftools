@@ -644,6 +644,10 @@ class OncoPlot(BasePlot):
         wspace: float | None = None,
         hspace: float | None = None,
         show_sample_labels: bool | None = None,
+        feature_labels=None,
+        sample_labels=None,
+        feature_gutter_size: float = 3.0,
+        sample_gutter_size: float = 3.0,
     ) -> OncoPlot:
         """Derive the layout from registered tracks and draw them in one pass.
 
@@ -710,6 +714,19 @@ class OncoPlot(BasePlot):
         if show_sample_labels is None:
             show_sample_labels = self.pivot_table.shape[1] <= self._SAMPLE_LABEL_LIMIT
 
+        # Gene / sample names live in dedicated gutter blocks (default = matrix
+        # index, or a positional list-like override). The matrix hands off its
+        # own gene labels so they can't overflow into a left track.
+        feature_labels = self._resolve_labels(
+            feature_labels, self.pivot_table.index, "feature"
+        )
+        sample_labels = self._resolve_labels(
+            sample_labels, self.pivot_table.columns, "sample"
+        )
+        show_feature_labels = bool(getattr(main_track, "yticklabels", False))
+        main_track.yticklabels = False
+        self._sample_gutter_axes = []  # collected by the layout, restyled by add_xticklabel
+
         layout = self._render_sectioned if (
             self._feature_groups or self._sample_groups
         ) else self._render_simple
@@ -718,6 +735,10 @@ class OncoPlot(BasePlot):
             main_w=main_w, main_h=main_h, legend_width=legend_width,
             legend_pad=legend_pad, wspace=wspace, hspace=hspace,
             show_sample_labels=show_sample_labels,
+            show_feature_labels=show_feature_labels,
+            feature_labels=feature_labels, sample_labels=sample_labels,
+            feature_gutter_size=feature_gutter_size,
+            sample_gutter_size=sample_gutter_size,
         )
 
         # legends: single source of truth, gathered from every track —
@@ -747,27 +768,87 @@ class OncoPlot(BasePlot):
             self.plot_all_legends(colorbar_width=colorbar_width)
         return self
 
+    @staticmethod
+    def _resolve_labels(override, default, kind: str) -> list:
+        """Default to the matrix axis index, or a positional list-like override.
+
+        The override is applied position-for-position in matrix order, so its
+        length must match the axis (fail loud otherwise)."""
+        if override is None:
+            return list(default)
+        override = list(override)
+        if len(override) != len(default):
+            raise ValueError(
+                f"{kind}_labels has length {len(override)}, "
+                f"expected {len(default)} ({kind}s in the matrix)."
+            )
+        return override
+
+    @staticmethod
+    def _draw_label_gutter(ax, labels, *, axis: str, n: int, fontsize: int = 8,
+                           rotation: float = 90) -> None:
+        """Draw axis labels in a dedicated (outermost) cell — the "block".
+
+        One mechanism for both axes: ``axis="y"`` draws feature (row) labels
+        hugging the cell's right edge; ``axis="x"`` draws sample (column) labels
+        below. Positions match the matrix (cell centres at ``i + 0.5``). Because
+        the gutter is the outermost cell on its side, any label overflow spills
+        into the empty figure margin rather than over a neighbouring track."""
+        if axis == "y":
+            ax.set_ylim(n, 0)  # inverted to match sns.heatmap row order
+            ax.set_yticks([i + 0.5 for i in range(len(labels))])
+            ax.set_yticklabels(labels, fontsize=fontsize)
+            ax.yaxis.tick_right()  # names sit against the matrix side
+            ax.tick_params(axis="y", length=0)
+            ax.set_xticks([])
+        else:
+            ax.set_xlim(-0.5, n - 0.5)
+            ax.set_xticks([i + 0.5 for i in range(len(labels))])
+            ax.set_xticklabels(labels, rotation=rotation, fontsize=fontsize)
+            ax.tick_params(axis="x", length=0)
+            ax.set_yticks([])
+        for spine in ax.spines.values():
+            spine.set_visible(False)
+
     def _render_simple(
         self, fig, main_track, top, bottom, left, right, *,
         main_w, main_h, legend_width, legend_pad, wspace, hspace,
-        show_sample_labels=True,
+        show_sample_labels=True, show_feature_labels=True,
+        feature_labels=None, sample_labels=None,
+        feature_gutter_size=3.0, sample_gutter_size=3.0,
     ) -> None:
         """Ungrouped layout: one cell per track along each axis.
 
         (``show_sample_labels`` is accepted for a uniform layout interface; the
         ungrouped path draws sample tick labels only via ``add_xticklabel()``.)
         """
-        main_row, main_col = len(top), len(left)
+        n_feat, n_samp = self.pivot_table.shape
         has_pad = legend_pad > 0
-        ncols = len(left) + 1 + len(right) + (1 if has_pad else 0) + 1
-        legend_col = ncols - 1
-        height_ratios = [t.size for t in top] + [main_h] + [t.size for t in bottom]
+        fgut = 1 if show_feature_labels else 0  # feature-label gutter column
+        sgut = 1 if show_sample_labels else 0   # sample-label gutter row
+
+        # Columns: [left tracks] [feature gutter?] [main] [right tracks] [pad?] [legend]
+        gut_col = len(left) if fgut else None
+        main_col = len(left) + fgut
+        right_cols = [main_col + 1 + i for i in range(len(right))]
+        legend_col = main_col + 1 + len(right) + (1 if has_pad else 0)
         width_ratios = (
-            [t.size for t in left] + [main_w] + [t.size for t in right]
+            [t.size for t in left]
+            + ([feature_gutter_size] if fgut else [])
+            + [main_w] + [t.size for t in right]
             + ([legend_pad] if has_pad else []) + [legend_width]
         )
+
+        # Rows: [top tracks] [main] [bottom tracks] [sample gutter?]
+        main_row = len(top)
+        sgut_row = (main_row + 1 + len(bottom)) if sgut else None
+        height_ratios = (
+            [t.size for t in top] + [main_h] + [t.size for t in bottom]
+            + ([sample_gutter_size] if sgut else [])
+        )
+
         self.gs = GridSpec(
-            len(top) + 1 + len(bottom), ncols, width_ratios=width_ratios,
+            len(height_ratios), len(width_ratios), width_ratios=width_ratios,
             height_ratios=height_ratios, wspace=wspace, hspace=hspace, figure=fig,
         )
         self.ax_heatmap = fig.add_subplot(self.gs[main_row, main_col])
@@ -777,10 +858,21 @@ class OncoPlot(BasePlot):
             t.render(fig.add_subplot(self.gs[i, main_col]))
         for i, t in enumerate(bottom):
             t.render(fig.add_subplot(self.gs[main_row + 1 + i, main_col]))
+        # left[0] sits adjacent to the matrix (just left of the feature gutter)
         for i, t in enumerate(left):
-            t.render(fig.add_subplot(self.gs[main_row, main_col - 1 - i]))
+            t.render(fig.add_subplot(self.gs[main_row, len(left) - 1 - i]))
         for i, t in enumerate(right):
-            t.render(fig.add_subplot(self.gs[main_row, main_col + 1 + i]))
+            t.render(fig.add_subplot(self.gs[main_row, right_cols[i]]))
+
+        if fgut:
+            self._draw_label_gutter(
+                fig.add_subplot(self.gs[main_row, gut_col]),
+                feature_labels, axis="y", n=n_feat,
+            )
+        if sgut:
+            ax = fig.add_subplot(self.gs[sgut_row, main_col])
+            self._draw_label_gutter(ax, sample_labels, axis="x", n=n_samp)
+            self._sample_gutter_axes.append(ax)
 
     @staticmethod
     def _fix_shared_scales(main_track, top, bottom, left, right) -> None:
@@ -813,7 +905,9 @@ class OncoPlot(BasePlot):
     def _render_sectioned(
         self, fig, main_track, top, bottom, left, right, *,
         main_w, main_h, legend_width, legend_pad, wspace, hspace,
-        show_sample_labels=True,
+        show_sample_labels=True, show_feature_labels=True,
+        feature_labels=None, sample_labels=None,
+        feature_gutter_size=3.0, sample_gutter_size=3.0,
     ) -> None:
         """Grouped layout: split the matrix into sections with whitespace gaps,
         rendering a sliced copy of each track per section, plus group titles."""
@@ -842,6 +936,7 @@ class OncoPlot(BasePlot):
             if fi < gf - 1:
                 add_row(feat_gap)
         bottom_rows = [add_row(t.size) for t in bottom]
+        sgut_row = add_row(sample_gutter_size) if show_sample_labels else None
 
         width_ratios: list[float] = []
         def add_col(w):
@@ -869,6 +964,9 @@ class OncoPlot(BasePlot):
         # "Large\n(>20kb)") sit clear of the heatmap's gene tick labels.
         ftitle_col = add_col(5.0) if show_ft else None
         left_cols = [add_col(t.size) for t in left]
+        # feature-label gutter: between the left tracks and the matrix, so gene
+        # names hug the matrix instead of overflowing a left track.
+        fgut_col = add_col(feature_gutter_size) if show_feature_labels else None
         samp_cols = []
         sfreq_cols: list[int | None] = []
         for si, (_lbl, pos) in enumerate(ssecs):
@@ -894,19 +992,11 @@ class OncoPlot(BasePlot):
         for fi, (_flbl, fpos) in enumerate(fsecs):
             for si, (_slbl, spos) in enumerate(ssecs):
                 ax = fig.add_subplot(self.gs[feat_rows[fi], samp_cols[si]])
+                # gene names are drawn in the feature gutter, not the matrix
                 sub = main_track.subset(feat=fpos, samp=spos)
-                if si > 0:
-                    sub.yticklabels = False
                 sub.render(ax)
                 first_ax = first_ax or ax
-                if fi == gf - 1 and not bottom:
-                    if show_sample_labels:
-                        ax.set_xticks([j + 0.5 for j in range(len(spos))])
-                        ax.set_xticklabels(
-                            self.pivot_table.columns[spos], rotation=90, fontsize=8
-                        )
-                    else:
-                        ax.set_xticks([])
+                ax.set_xticks([])  # sample names live in the bottom gutter
         self.ax_heatmap = first_ax
 
         # top / bottom tracks (sample sections)
@@ -919,6 +1009,7 @@ class OncoPlot(BasePlot):
                 if si > 0:
                     ax.set_ylabel("")
                     ax.set_yticks([])
+                    ax.set_title("")  # keep the track title on the first section only
                     ax.spines["left"].set_visible(False)
         for ti, t in enumerate(bottom):
             for si, (_slbl, spos) in enumerate(ssecs):
@@ -927,14 +1018,8 @@ class OncoPlot(BasePlot):
                 if si > 0:
                     ax.set_yticks([])
                     ax.set_ylabel("")
-                if ti == len(bottom) - 1:
-                    if show_sample_labels:
-                        ax.set_xticks([j + 0.5 for j in range(len(spos))])
-                        ax.set_xticklabels(
-                            self.pivot_table.columns[spos], rotation=90, fontsize=8
-                        )
-                    else:
-                        ax.set_xticks([])
+                    ax.set_title("")  # keep the track title on the first section only
+                ax.set_xticks([])  # sample names live in the bottom gutter
 
         # left / right tracks (feature sections)
         for ti, t in enumerate(left):
@@ -949,6 +1034,21 @@ class OncoPlot(BasePlot):
                 t.subset(feat=fpos).render(ax)
                 if fi < gf - 1:
                     ax.set_xticks([])
+
+        # label gutters: one per section, labels sliced to the section
+        if fgut_col is not None:
+            for fi, (_flbl, fpos) in enumerate(fsecs):
+                ax = fig.add_subplot(self.gs[feat_rows[fi], fgut_col])
+                self._draw_label_gutter(
+                    ax, [feature_labels[i] for i in fpos], axis="y", n=len(fpos)
+                )
+        if sgut_row is not None:
+            for si, (_slbl, spos) in enumerate(ssecs):
+                ax = fig.add_subplot(self.gs[sgut_row, samp_cols[si]])
+                self._draw_label_gutter(
+                    ax, [sample_labels[i] for i in spos], axis="x", n=len(spos)
+                )
+                self._sample_gutter_axes.append(ax)
 
         # per-section sample frequency strips (group_samples(freq=True)):
         # each section's own freq column, on a shared 0-1 scale for comparison.
@@ -1154,48 +1254,24 @@ class OncoPlot(BasePlot):
     def add_xticklabel(
         self, fontsize: int | None = None, rotation: float = 90
     ) -> OncoPlot:
-        """
-        Add x-axis tick labels (sample names) to the bottom-most subplot.
+        """Legacy: restyle the auto-drawn sample-name gutter labels.
 
-        Finds the subplot in the bottom row and first column, then adds
-        sample names as x-axis tick labels.
-
-        Parameters
-        ----------
-        fontsize : int, optional
-            Font size for the sample labels (matplotlib default if None).
-        rotation : float, default 90
-            Rotation angle of the sample labels.
+        Sample names are now rendered in a dedicated bottom gutter block by
+        ``render()`` (pass ``sample_labels=`` to override them, or
+        ``show_sample_labels=`` to force on/off). This shim is kept for
+        backward compatibility: it re-applies ``rotation`` / ``fontsize`` to the
+        already-drawn gutter labels. Call it after ``render()``.
 
         Returns
         -------
         self : OncoPlot
             Returns self for method chaining
         """
-        # Get the maximum row number
-        max_row = max([spec.rowspan.stop for spec in self.gs]) - 1
-
-        # Find target axis
-        target_ax = None
-        for ax in self.fig.axes:
-            try:
-                subplotspec = ax.get_subplotspec()
-                if (
-                    subplotspec.rowspan.start == max_row
-                    and subplotspec.colspan.start == 0
-                ):
-                    target_ax = ax
-                    break
-            except AttributeError:
-                # Handle cases where get_subplotspec is not available
-                continue
-
-        # Add xtick labels and xticks
-        if target_ax:
-            target_ax.set_xticks([i + 0.5 for i in range(len(self.sample_metadata))])
-            target_ax.set_xticklabels(
-                self.sample_metadata.index, rotation=rotation, fontsize=fontsize
-            )
+        for ax in getattr(self, "_sample_gutter_axes", []):
+            for label in ax.get_xticklabels():
+                label.set_rotation(rotation)
+                if fontsize is not None:
+                    label.set_fontsize(fontsize)
         return self
 
     def numeric_heatmap(

@@ -74,10 +74,10 @@ def test_default_oncoplot_does_not_crash(mutation_table):
     op = OncoPlot.default_oncoplot(mutation_table, figsize=(8, 6))
 
     assert op.fig is not None
-    # 0 left + main + 1 right (freq) + spacer + legend = 4 cols;
-    # 1 top (bar) + main = 2 rows
-    assert op.gs.ncols == 4
-    assert op.gs.nrows == 2
+    # feature gutter + main + 1 right (freq) + spacer + legend = 5 cols;
+    # 1 top (bar) + main + sample gutter = 3 rows
+    assert op.gs.ncols == 5
+    assert op.gs.nrows == 3
 
 
 def test_mutation_heatmap_registers_track_then_renders(mutation_table):
@@ -120,7 +120,7 @@ def test_render_path_derives_layout_from_tracks(mutation_table):
     op = OncoPlot(mutation_table, figsize=(8, 6)).main().render()
 
     assert op.fig is not None
-    assert op.gs.ncols == 3  # heatmap + spacer + legend
+    assert op.gs.ncols == 4  # feature gutter + heatmap + spacer + legend
     assert len(op.ax_heatmap.collections) >= 1
     assert op.has_legend("Mutation")
 
@@ -276,10 +276,10 @@ def test_render_derives_multi_side_layout(mutation_table):
     )
     op.render()
 
-    # rows: 1 top + main + 1 bottom = 3
-    assert op.gs.nrows == 3
-    # cols: 0 left + main + 2 right + spacer + 1 legend = 5
-    assert op.gs.ncols == 5
+    # rows: 1 top + main + 1 bottom + sample gutter = 4
+    assert op.gs.nrows == 4
+    # cols: feature gutter + main + 2 right + spacer + 1 legend = 6
+    assert op.gs.ncols == 6
 
 
 def test_render_feature_annotation_legend_present(mutation_table):
@@ -353,12 +353,12 @@ def test_show_all_categories_restores_full_legend(mutation_table):
 
 
 def test_add_xticklabel_rotation_and_fontsize(mutation_table):
-    """P2#5: add_xticklabel must honour rotation and fontsize instead of a
-    hardcoded rotation=90."""
+    """P2#5: the legacy add_xticklabel must honour rotation and fontsize — now by
+    restyling the auto-drawn sample-gutter labels (not the heatmap axis)."""
     op = OncoPlot(mutation_table, figsize=(8, 6)).main().render()
     op.add_xticklabel(rotation=45, fontsize=7)
 
-    label = op.ax_heatmap.get_xticklabels()[0]
+    label = op._sample_gutter_axes[0].get_xticklabels()[0]
     assert label.get_rotation() == 45
     assert label.get_fontsize() == 7
 
@@ -453,8 +453,8 @@ def test_grouping_sections_aligned_tracks_with_shared_scale():
     # the bar got a shared y-range fixed before the per-section slicing
     bar = next(tr for tr in op.tracks if isinstance(tr, BarTrack))
     assert getattr(bar, "_shared_max", None) is not None
-    # only the first bar section keeps the y-label
-    assert sum(a.get_ylabel() == "TMB" for a in op.fig.axes) == 1
+    # only the first bar section keeps the value-axis title
+    assert sum(a.get_title() == "TMB" for a in op.fig.axes) == 1
 
 
 def test_real_tcga_lung_grouped_oncoplot_full_layout():
@@ -537,3 +537,66 @@ def test_pivottableplot_rename_backward_compat():
     from pymaftools.plot.PivotStatsPlot import PivotStatsPlot
 
     assert PivotTablePlot is PivotStatsPlot
+
+
+# --- label gutter "blocks" (step 2.5) -------------------------------------- #
+
+
+def test_feature_names_render_in_gutter_not_on_matrix(mutation_table):
+    """The regression: gene names go to a dedicated gutter, so a LEFT track can
+    no longer cover them (and they are off the heatmap axis)."""
+    op = OncoPlot(mutation_table, figsize=(8, 6)).main()
+    op.add_track(BarTrack(mutation_table.feature_metadata["freq"], side="left",
+                          label="freq"))
+    op.render()
+
+    genes = set(mutation_table.index)
+    # the matrix no longer carries gene tick labels
+    assert [t.get_text() for t in op.ax_heatmap.get_yticklabels()] == []
+    # they appear on some other (gutter) axis instead
+    gutter_texts = set()
+    for ax in op.fig.axes:
+        gutter_texts.update(t.get_text() for t in ax.get_yticklabels())
+    assert genes.issubset(gutter_texts)
+
+
+def test_sample_labels_override_is_applied_positionally(mutation_table):
+    """A list-like sample_labels override replaces the default sample index."""
+    aliases = [f"alias{i}" for i in range(mutation_table.shape[1])]
+    op = OncoPlot(mutation_table, figsize=(8, 6)).main().render(sample_labels=aliases)
+
+    shown = set()
+    for ax in op._sample_gutter_axes:
+        shown.update(t.get_text() for t in ax.get_xticklabels())
+    assert {"alias0", "alias7"}.issubset(shown)
+    # the real barcodes are not shown when overridden
+    assert "S00" not in shown
+
+
+def test_label_override_wrong_length_raises(mutation_table):
+    """A mismatched override length fails loud rather than silently misaligning."""
+    op = OncoPlot(mutation_table, figsize=(8, 6)).main()
+    with pytest.raises(ValueError, match="feature_labels has length"):
+        op.render(feature_labels=["only_one_gene"])
+
+
+def test_show_sample_labels_false_hides_the_sample_gutter(mutation_table):
+    """Forcing labels off leaves no sample gutter axis (the auto-hide path)."""
+    op = OncoPlot(mutation_table, figsize=(8, 6)).main().render(
+        show_sample_labels=False
+    )
+    assert op._sample_gutter_axes == []
+
+
+def test_grouped_mode_draws_one_sample_gutter_per_section(mutation_table):
+    """Grouped layout slices the gutter per section so labels stay aligned."""
+    op = (
+        OncoPlot(mutation_table, figsize=(9, 6))
+        .main()
+        .group_samples(by="subtype")
+        .render()
+    )
+    # exactly one sample-gutter axis per sample section (labels sliced per section)
+    n_sections = len(op._axis_sections("sample"))
+    assert n_sections >= 2
+    assert len(op._sample_gutter_axes) == n_sections
