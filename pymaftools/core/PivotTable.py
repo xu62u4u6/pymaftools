@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import warnings
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Literal, Optional, Self, Tuple, Union
+from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Union
 
 # Third-party imports
 import numpy as np
@@ -17,6 +17,7 @@ import pandas as pd
 from sklearn.decomposition import PCA
 from sklearn.metrics import pairwise_distances
 from sklearn.metrics.pairwise import cosine_similarity
+from typing_extensions import Self
 
 # Import for lazy loading in property accessor
 from typing import TYPE_CHECKING

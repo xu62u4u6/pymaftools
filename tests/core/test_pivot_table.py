@@ -2,11 +2,14 @@
 Tests for PivotTable core functionality
 """
 
+from typing import get_type_hints
+
 import pytest
 import pandas as pd
 import numpy as np
 import sqlite3
 import pymaftools
+from typing_extensions import Self
 from pymaftools.core.PivotTable import PivotTable
 from pymaftools.core.CopyNumberVariationTable import CopyNumberVariationTable
 from pymaftools.core.SmallVariationTable import SmallVariationTable
@@ -14,6 +17,9 @@ from pymaftools.core.SmallVariationTable import SmallVariationTable
 
 class TestPivotTableBasics:
     """Test basic PivotTable functionality"""
+
+    def test_subset_preserves_self_return_annotation(self):
+        assert get_type_hints(PivotTable.subset)["return"] is Self
     
     def test_pivot_table_creation(self, sample_mutation_data):
         """Test PivotTable creation from DataFrame"""
