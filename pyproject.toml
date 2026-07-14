@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=77.0,<83.0", "wheel", "setuptools-scm>=8"]
+requires = ["setuptools>=77.0,<83.0", "wheel>=0.43,<1.0", "setuptools-scm>=8,<10"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -34,14 +34,14 @@ dependencies = [
 
 [project.optional-dependencies]
 test = [
-  "pytest>=7.0.0",
-  "pytest-cov>=4.0.0",
-  "pytest-mock>=3.10.0"
+  "pytest>=7.0.0,<10.0",
+  "pytest-cov>=4.0.0,<8.0",
+  "pytest-mock>=3.10.0,<4.0"
 ]
 docs = [
-  "sphinx>=7.0",
-  "sphinx-rtd-theme>=2.0",
-  "sphinx-autodoc-typehints>=2.0",
+  "sphinx>=7.0,<10.0",
+  "sphinx-rtd-theme>=2.0,<4.0",
+  "sphinx-autodoc-typehints>=2.0,<4.0",
 ]
 anndata = [
   "anndata>=0.10,<1.0",
@@ -50,11 +50,11 @@ expression = [
   "pydeseq2>=0.4,<1.0",
 ]
 dev = [
-  "pytest>=7.0.0",
-  "pytest-cov>=4.0.0",
-  "pytest-mock>=3.10.0",
+  "pytest>=7.0.0,<10.0",
+  "pytest-cov>=4.0.0,<8.0",
+  "pytest-mock>=3.10.0,<4.0",
   "ruff==0.15.21",
-  "build",
+  "build>=1.2,<2.0",
   "twine>=6.0,<7.0"
 ]
 
@@ -84,5 +84,5 @@ version_file = "pymaftools/_version.py"
 
 [dependency-groups]
 dev = [
-    "pytest>=9.0.2",
+    "pytest>=9.0.2,<10.0",
 ]

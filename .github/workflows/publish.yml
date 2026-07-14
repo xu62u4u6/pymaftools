@@ -75,7 +75,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install build tools
-        run: pip install build "twine>=6.0,<7.0" "setuptools-scm>=8"
+        run: pip install "build>=1.2,<2.0" "twine>=6.0,<7.0" "setuptools-scm>=8,<10"
 
       - name: Verify tag-derived version
         run: test "$(python -m setuptools_scm)" = "${GITHUB_REF_NAME#v}"
