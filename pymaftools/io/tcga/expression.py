@@ -30,6 +30,8 @@ class TCGAExpressionBuilder(TCGATableBuilder):
         (chromosome_name, start_position, end_position) from Ensembl BioMart
         via :func:`pymaftools.utils.geneinfo.load_ensembl_map`.
         The first call downloads and caches the map; subsequent calls are fast.
+    sample_type : str or None, default "Primary Tumor"
+        Sample type to retain in the case-level matrix.
     """
 
     file_pattern = "*.rna_seq.augmented_star_gene_counts.tsv"
@@ -40,8 +42,9 @@ class TCGAExpressionBuilder(TCGATableBuilder):
         mapping,
         count_column: str = "unstranded",
         enrich_coordinates: bool = True,
+        sample_type: str | None = "Primary Tumor",
     ):
-        super().__init__(data_dir, mapping)
+        super().__init__(data_dir, mapping, sample_type=sample_type)
         self.count_column = count_column
         self.enrich_coordinates = enrich_coordinates
 
