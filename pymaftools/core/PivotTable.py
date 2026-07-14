@@ -1779,28 +1779,28 @@ class PivotTable(pd.DataFrame):
         -------
         PivotTable
             PivotTable with samples ordered by group membership.
+
+        Raises
+        ------
+        ValueError
+            If the metadata column is missing or ``group_order`` contains
+            duplicate values.
         """
-        subset_list = []
-        assert group_col in self.sample_metadata.columns
+        if group_col not in self.sample_metadata.columns:
+            raise ValueError(f"Column '{group_col}' not found in sample_metadata.")
+        if len(group_order) != len(set(group_order)):
+            raise ValueError("group_order must not contain duplicate values.")
+
+        ordered_samples = []
         for group in group_order:
-            subset_list.append(
-                self.subset(samples=self.sample_metadata[group_col] == group)
+            ordered_samples.extend(
+                self.sample_metadata.index[
+                    self.sample_metadata[group_col] == group
+                ].tolist()
             )
 
-        # Use the merge method but preserve the original class type
-        merged_table = PivotTable.merge(subset_list)
-
-        # Convert back to the original class type using _constructor
-        if not isinstance(self, PivotTable) or type(self) is not PivotTable:
-            # Use _constructor to preserve subclass type
-            constructor = self._constructor
-            table = constructor(merged_table)
-            table.feature_metadata = merged_table.feature_metadata
-            table.sample_metadata = merged_table.sample_metadata
-            table._validate_metadata()
-            return table
-        else:
-            return merged_table
+        remaining = self.columns[~self.columns.isin(ordered_samples)].tolist()
+        return self.subset(samples=ordered_samples + remaining)
 
     @staticmethod
     def prepare_data(maf: "MAF") -> "PivotTable":

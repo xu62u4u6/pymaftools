@@ -365,3 +365,24 @@ def test_read_maf_raises_when_no_sample_id_and_no_barcode(tmp_path):
 
     with pytest.raises(ValueError, match="Tumor_Sample_Barcode"):
         MAF.read_maf(maf_path)
+
+
+def test_read_maf_reports_missing_index_columns(tmp_path):
+    path = tmp_path / "missing-column.maf"
+    pd.DataFrame(
+        {
+            "Hugo_Symbol": ["TP53"],
+            "Start_Position": [1],
+            "Reference_Allele": ["A"],
+            "Tumor_Seq_Allele1": ["A"],
+            "Tumor_Seq_Allele2": ["T"],
+            "Tumor_Sample_Barcode": ["sample-1"],
+        }
+    ).to_csv(path, sep="\t", index=False)
+
+    with pytest.raises(ValueError, match="End_Position"):
+        MAF.read_maf(path)
+
+
+def test_correct_variant_classification_name_keeps_legacy_alias():
+    assert MAF.valid_variant_classification is MAF.vaild_variant_classfication

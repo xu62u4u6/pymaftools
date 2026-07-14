@@ -36,7 +36,7 @@ class MAF(pd.DataFrame):
     # GDC MAF file fields:
     # https://docs.gdc.cancer.gov/Encyclopedia/pages/Mutation_Annotation_Format_TCGAv2/
 
-    vaild_variant_classfication = [
+    valid_variant_classification = [
         "Frame_Shift_Del",
         "Frame_Shift_Ins",
         "In_Frame_Del",
@@ -57,6 +57,9 @@ class MAF(pd.DataFrame):
         "Targeted_Region",
     ]
     """list[str]: All recognised variant classification labels."""
+
+    # Deprecated misspelling retained for callers written against <=0.4.
+    vaild_variant_classfication = valid_variant_classification
 
     nonsynonymous_types = [
         "Frame_Shift_Del",
@@ -158,6 +161,14 @@ class MAF(pd.DataFrame):
         """
         skiprows = cls._count_leading_comment_lines(maf_path)
         maf = cls(pd.read_csv(maf_path, skiprows=skiprows, sep="\t"))
+        missing_index_columns = [
+            column for column in cls.index_col if column not in maf.columns
+        ]
+        if missing_index_columns:
+            raise ValueError(
+                f"MAF file '{maf_path}' is missing required column(s): "
+                f"{missing_index_columns}."
+            )
         if sample_ID is not None:
             maf["sample_ID"] = f"{preffix}{sample_ID}{suffix}"
         elif sample_col in maf.columns:
@@ -170,7 +181,7 @@ class MAF(pd.DataFrame):
         maf.index = maf.loc[:, cls.index_col].apply(
             lambda row: "|".join(row.astype(str)), axis=1
         )  # concat column
-        # maf = maf.filter_maf(cls.vaild_variant_classfication)
+        # maf = maf.filter_maf(cls.valid_variant_classification)
         return cls(maf)
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:

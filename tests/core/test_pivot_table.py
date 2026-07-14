@@ -277,6 +277,21 @@ class TestPivotTableSorting:
         assert sorted_table.shape == table.shape
         assert list(sorted_table.columns[-2:]) == list(table.columns[-2:])
 
+    def test_order_preserves_unlisted_groups_and_validates_inputs(
+        self, sample_pivot_table
+    ):
+        table = sample_pivot_table.copy()
+        table.sample_metadata.loc[table.columns[-1], "subtype"] = "OTHER"
+
+        ordered = table.order("subtype", ["LUSC", "LUAD"])
+
+        assert ordered.columns[-1] == table.columns[-1]
+        assert type(ordered) is type(table)
+        with pytest.raises(ValueError, match="not found"):
+            table.order("missing", ["LUAD"])
+        with pytest.raises(ValueError, match="duplicate"):
+            table.order("subtype", ["LUAD", "LUAD"])
+
 
 class TestPivotTableStatistics:
     """Test statistical methods"""
