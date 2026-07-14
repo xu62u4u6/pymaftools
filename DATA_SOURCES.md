@@ -8,7 +8,6 @@ source archive.
 | File | Source and transformation | SHA-256 |
 | --- | --- | --- |
 | `cytoBand.txt` | UCSC Genome Browser hg38 cytoband table, stored as the four-column interval/name/stain format consumed by the TCGA CNV readers. | `ce1b6033a5243e7c5022660b952d2ec33243e307e909afcaeec1894641a5208f` |
-| `ensembl_gene_map.tsv` | Ensembl BioMart human gene coordinate export. The schema records Ensembl gene ID, HGNC symbol, chromosome, start, end, and biotype. | `b318ee074d723faa6efe498f69e8842875239819f5cf3d008144575e06736faf` |
 | `ensembl_gene_sizes.tsv` | Small Ensembl canonical-transcript size cache produced by `scripts/download_gene_sizes.py` or its REST fallback. | `2da9ae5eec7881cb458e4c6b7a6b82832f6d6981e7cb83a8aecf6b02c0d9997e` |
 | `protein_domains.csv` | Tabular conversion of the `protein_domains.RDs` data distributed by the Bioconductor `maftools` project. | `03742f68e3fcda9f719bb6963ea5a84e656d586d52c34600f460a6d9e1e96335` |
 | `example_multisample.maf` | Derived subset of public, open-access TCGA-LUAD/LUSC masked somatic mutation data from the NCI Genomic Data Commons. | `60945b00d5313e685ea2c7a0f3b86ce20121824956715ddd6067a6b3f1ba25f1` |
@@ -22,6 +21,13 @@ source archive.
 - Ensembl BioMart: <https://www.ensembl.org/biomart/martview>
 - UCSC hg38 database downloads: <https://hgdownload.soe.ucsc.edu/goldenPath/hg38/database/>
 - Bioconductor maftools: <https://bioconductor.org/packages/maftools>
+
+## Runtime Caches
+
+`pymaftools/data/ensembl_gene_map.tsv` is a generated Ensembl BioMart cache. It
+is ignored by Git and is not included in release artifacts; its contents and
+checksum depend on the Ensembl response at download time. Delete it or call the
+relevant loader with `force=True` to refresh it.
 
 ## Reproducibility Limitation
 
