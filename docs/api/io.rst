@@ -19,6 +19,8 @@ VCF Parsing
 
 .. automodule:: pymaftools.io.vcf.parsers
    :members:
+   :exclude-members: VCFRecord
 
 .. automodule:: pymaftools.io.vcf.record
    :members:
+   :exclude-members: chrom, pos, ref, alt, filter, caller, tumor_dp, tumor_ad, tumor_af, normal_dp, normal_ad
