@@ -86,11 +86,19 @@ class OmicsStackingModel:
 
     def encode_y(self, y: np.ndarray | pd.Series) -> np.ndarray:
         """Encode labels to integer indices using ``class_order``."""
-        return self.le.transform(y)
+        class_to_index = {label: index for index, label in enumerate(self.class_order)}
+        labels = np.asarray(y)
+        unknown = set(labels) - set(class_to_index)
+        if unknown:
+            raise ValueError(f"Unknown class labels: {sorted(unknown)}")
+        return np.asarray([class_to_index[label] for label in labels], dtype=int)
 
     def decode_y(self, y_encoded: np.ndarray) -> np.ndarray:
         """Decode integer indices back to original labels."""
-        return self.le.inverse_transform(y_encoded)
+        encoded = np.asarray(y_encoded, dtype=int)
+        if ((encoded < 0) | (encoded >= len(self.class_order))).any():
+            raise ValueError("Encoded class index is outside class_order")
+        return np.asarray(self.class_order)[encoded]
 
     def fit(self, X: pd.DataFrame, y: np.ndarray | pd.Series) -> None:
         """
@@ -166,8 +174,10 @@ class OmicsStackingModel:
         Returns
         -------
         pd.DataFrame
-            Weights with omics as rows. Includes ``abs_mean`` and
-            ``abs_ratio`` columns for interpretability.
+            Weights with omics as rows. Binary weights retain their sign.
+            Multiclass weights are the L2 norm of each omics probability
+            coefficient block for each target class. Includes ``abs_mean``
+            and ``abs_ratio`` columns for interpretability.
 
         Raises
         ------
@@ -191,28 +201,46 @@ class OmicsStackingModel:
 
         if coefficients.shape[0] == 1:
             # Binary classification
+            if coefficients.shape[1] != len(omics_names):
+                raise ValueError(
+                    "Unexpected binary meta-feature count: "
+                    f"expected {len(omics_names)}, got {coefficients.shape[1]}"
+                )
             weights_df = pd.DataFrame(
                 coefficients.T,
                 index=omics_names,
                 columns=[f"{class_names[1]}_vs_{class_names[0]}"],
             )
         else:
-            # Multiclass classification
+            n_classes = len(class_names)
+            expected_features = len(omics_names) * n_classes
+            if coefficients.shape != (n_classes, expected_features):
+                raise ValueError(
+                    "Unexpected multiclass coefficient shape: "
+                    f"expected {(n_classes, expected_features)}, "
+                    f"got {coefficients.shape}"
+                )
+            coefficient_blocks = coefficients.reshape(
+                n_classes, len(omics_names), n_classes
+            )
             weights_df = pd.DataFrame(
-                coefficients.T,
+                np.linalg.norm(coefficient_blocks, axis=2).T,
                 index=omics_names,
                 columns=class_names,
             )
 
         weights_df["abs_mean"] = weights_df.abs().mean(axis=1)
-        weights_df["abs_ratio"] = weights_df["abs_mean"] / weights_df["abs_mean"].sum()
+        abs_total = weights_df["abs_mean"].sum()
+        weights_df["abs_ratio"] = (
+            weights_df["abs_mean"] / abs_total if abs_total else 0.0
+        )
         return weights_df
 
     def plot_final_coefficients(self) -> None:
         """Plot the final meta-learner coefficients as a heatmap."""
         df = self.get_omics_weights()
 
-        plot_df = df.drop(columns=["abs_mean"])
+        plot_df = df.drop(columns=["abs_mean", "abs_ratio"])
 
         table = PivotTable(plot_df.T)
         table.sample_metadata = pd.DataFrame({"omic": df.index})
@@ -299,7 +327,12 @@ class OmicsStackingModel:
 
         try:
             proba = self.model.predict_proba(X)
-            roc_auc = roc_auc_score(y_true_encoded, proba, multi_class="ovr")
+            if proba.shape[1] == 2:
+                roc_auc = roc_auc_score(y_true_encoded, proba[:, 1])
+            else:
+                roc_auc = roc_auc_score(
+                    y_true_encoded, proba, multi_class="ovr"
+                )
         except (ValueError, TypeError):
             roc_auc = None
 

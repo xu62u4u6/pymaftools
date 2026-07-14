@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import pytest
 
 from pymaftools.core.PivotTable import PivotTable
 from pymaftools.model.StackingModel import OmicsStackingModel
@@ -52,6 +53,41 @@ def test_fit_predict_predict_proba_and_evaluate():
     assert proba.shape == (len(y), 2)
     np.testing.assert_allclose(proba.sum(axis=1), np.ones(len(y)), atol=1e-6)
     assert {"accuracy", "f1", "precision", "recall", "roc_auc"}.issubset(metrics.keys())
+    assert metrics["roc_auc"] is not None
+
+    weights = model.get_omics_weights()
+    assert list(weights.index) == ["SNV", "CNV"]
+    assert "LUSC_vs_LUAD" in weights.columns
+    assert weights["abs_ratio"].sum() == pytest.approx(1.0)
+
+
+def test_class_order_controls_encoding_instead_of_lexical_order():
+    omics_dict, _, _ = _build_model_inputs()
+    model = OmicsStackingModel(omics_dict=omics_dict, class_order=["LUSC", "LUAD"])
+
+    encoded = model.encode_y(np.array(["LUSC", "LUAD", "LUSC"]))
+
+    np.testing.assert_array_equal(encoded, [0, 1, 0])
+    np.testing.assert_array_equal(model.decode_y(encoded), ["LUSC", "LUAD", "LUSC"])
+
+
+def test_multiclass_omics_weights_aggregate_probability_blocks():
+    omics_dict, X, _ = _build_model_inputs(n_samples=30)
+    y = np.array(["LUAD", "LUSC", "ASC"] * 10)
+    model = OmicsStackingModel(
+        omics_dict=omics_dict,
+        class_order=["LUAD", "LUSC", "ASC"],
+    )
+    model.fit(X, y)
+
+    weights = model.get_omics_weights()
+    metrics = model.evaluate(X, y, show=False)
+
+    assert weights.shape == (2, 5)
+    assert list(weights.columns[:3]) == ["LUAD", "LUSC", "ASC"]
+    assert (weights.iloc[:, :3] >= 0).all().all()
+    assert weights["abs_ratio"].sum() == pytest.approx(1.0)
+    assert metrics["roc_auc"] is not None
 
 
 def test_get_omics_feature_importance_returns_series_per_omics():
