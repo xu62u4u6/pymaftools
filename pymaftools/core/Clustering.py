@@ -45,7 +45,7 @@ def k_fold_clustering_evaluation(
     max_clusters: int = 50,
     metric: Literal["cosine", "hamming", "jaccard"] = "cosine",
     random_state: int = 42,
-    group_col: str = "subtype",
+    group_col: str | None = None,
     n_splits: int = 5,
 ) -> tuple[pd.DataFrame, dict[int, dict[int, pd.Series]]]:
     """
@@ -64,7 +64,8 @@ def k_fold_clustering_evaluation(
     random_state : int, optional
         Random seed for reproducibility, by default 42.
     group_col : str, optional
-        Column name in sample metadata used for grouping, by default 'subtype'.
+        Column in sample metadata used to stratify folds. If omitted, ordinary
+        shuffled K-fold splitting is used.
     n_splits : int, optional
         Number of cross-validation folds, by default 5.
 
@@ -84,18 +85,38 @@ def k_fold_clustering_evaluation(
         )
     if not 2 <= n_splits <= table.shape[1]:
         raise ValueError("n_splits must be between 2 and the number of samples")
-    group = table.sample_metadata[group_col].values
-    kf = KFold(n_splits=n_splits, shuffle=True, random_state=random_state)
+    if group_col is None:
+        splitter = KFold(
+            n_splits=n_splits, shuffle=True, random_state=random_state
+        )
+        splits = splitter.split(table.T.values)
+    else:
+        if group_col not in table.sample_metadata.columns:
+            raise ValueError(f"Column '{group_col}' not found in sample_metadata.")
+        groups = table.sample_metadata[group_col]
+        if groups.isna().any():
+            raise ValueError(f"Column '{group_col}' contains missing group labels.")
+        too_small = groups.value_counts()[lambda counts: counts < n_splits]
+        if not too_small.empty:
+            raise ValueError(
+                f"Every '{group_col}' group needs at least {n_splits} samples; "
+                f"too small: {too_small.to_dict()}."
+            )
+        splitter = StratifiedKFold(
+            n_splits=n_splits, shuffle=True, random_state=random_state
+        )
+        splits = splitter.split(table.T.values, groups.to_numpy())
+
     all_results = []
     cluster_label_dict = {}
     # only use (k-1)/k train part for clustering
-    for fold, (train_idx, _) in enumerate(kf.split(table.T.values, np.array(group))):
+    for fold, (train_idx, _) in enumerate(splits):
         print(f"Processing fold {fold + 1}/{n_splits}")
 
         sample_train = table.sample_metadata.iloc[train_idx].index
         table_train = table.subset(samples=sample_train)
         similarity_matrix = table_train.compute_similarity(method=metric)
-        distance_matrix_train = 1 - similarity_matrix  # dist = 1 - similarity
+        distance_matrix_train = (1 - similarity_matrix).clip(lower=0)
         # fill diagonal to 0
         for i in range(len(distance_matrix_train)):
             distance_matrix_train.iloc[i, i] = 0.0

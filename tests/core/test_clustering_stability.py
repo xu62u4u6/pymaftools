@@ -62,3 +62,34 @@ def test_k_fold_labels_retain_training_sample_ids():
         assert fold_labels.index.isin(table.columns).all()
         assert len(fold_labels) == 8
         assert np.issubdtype(fold_labels.dtype, np.integer)
+
+
+def test_k_fold_stratifies_only_when_group_column_is_requested():
+    rng = np.random.default_rng(8)
+    sample_ids = [f"sample-{i}" for i in range(12)]
+    table = PivotTable(pd.DataFrame(rng.random((6, 12)), columns=sample_ids))
+    table.sample_metadata["subtype"] = ["A"] * 6 + ["B"] * 6
+
+    _, labels = k_fold_clustering_evaluation(
+        table,
+        min_clusters=2,
+        max_clusters=2,
+        group_col="subtype",
+        n_splits=3,
+        random_state=2,
+    )
+
+    for fold_labels in labels[2].values():
+        held_out = table.columns.difference(fold_labels.index)
+        assert table.sample_metadata.loc[held_out, "subtype"].value_counts().to_dict() == {
+            "A": 2,
+            "B": 2,
+        }
+
+
+def test_k_fold_rejects_groups_smaller_than_number_of_splits():
+    table = PivotTable(pd.DataFrame(np.eye(6), columns=[f"s{i}" for i in range(6)]))
+    table.sample_metadata["subtype"] = ["A", "A", "B", "B", "B", "B"]
+
+    with np.testing.assert_raises_regex(ValueError, "needs at least 3 samples"):
+        k_fold_clustering_evaluation(table, group_col="subtype", n_splits=3)
