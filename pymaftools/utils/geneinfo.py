@@ -162,6 +162,7 @@ def get_gene_description_df(gene_symbols: list[str]) -> pd.DataFrame:
 
     return gene_description_df
 
+
 _DATA_DIR = Path(__file__).parent.parent / "data"
 _ENSEMBL_CACHE = _DATA_DIR / "ensembl_gene_map.tsv"
 _GENE_SIZE_CACHE = _DATA_DIR / "ensembl_gene_sizes.tsv"
@@ -187,9 +188,7 @@ def load_ensembl_map(force: bool = False) -> pd.DataFrame:
     from pybiomart import Server  # lazy import
 
     server = Server(host="http://www.ensembl.org")
-    dataset = (
-        server.marts["ENSEMBL_MART_ENSEMBL"].datasets["hsapiens_gene_ensembl"]
-    )
+    dataset = server.marts["ENSEMBL_MART_ENSEMBL"].datasets["hsapiens_gene_ensembl"]
     df = dataset.query(
         attributes=[
             "ensembl_gene_id",
@@ -283,7 +282,7 @@ _BIOMART_URL = "https://www.ensembl.org/biomart/martservice"
 # prefers a canonical flag when one is supplied).
 _GENE_SIZE_QUERY = (
     '<?xml version="1.0" encoding="UTF-8"?>'
-    '<!DOCTYPE Query>'
+    "<!DOCTYPE Query>"
     '<Query virtualSchemaName="default" formatter="TSV" header="0" '
     'uniqueRows="1" count="" datasetConfigVersion="0.6">'
     '<Dataset name="hsapiens_gene_ensembl" interface="default">'
@@ -291,7 +290,7 @@ _GENE_SIZE_QUERY = (
     '<Attribute name="external_gene_name"/>'
     '<Attribute name="transcript_length"/>'
     '<Attribute name="cds_length"/>'
-    '</Dataset></Query>'
+    "</Dataset></Query>"
 )
 
 _SIZE_ATTRS = (
@@ -380,7 +379,12 @@ def _fetch_gene_sizes(genes: list[str]) -> pd.DataFrame:
     ids = list(ens2sym)
     if not ids:
         return pd.DataFrame(
-            columns=["hugo_symbol", "ensembl_gene_id", "transcript_length", "cds_length"]
+            columns=[
+                "hugo_symbol",
+                "ensembl_gene_id",
+                "transcript_length",
+                "cds_length",
+            ]
         )
 
     query = (
@@ -389,7 +393,7 @@ def _fetch_gene_sizes(genes: list[str]) -> pd.DataFrame:
         'uniqueRows="1" datasetConfigVersion="0.6">'
         '<Dataset name="hsapiens_gene_ensembl" interface="default">'
         f'<Filter name="link_ensembl_gene_id" value="{",".join(ids)}"/>'
-        f'{_SIZE_ATTRS}</Dataset></Query>'
+        f"{_SIZE_ATTRS}</Dataset></Query>"
     )
     df = pd.read_csv(
         io.StringIO(_biomart_query(query)),

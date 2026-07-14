@@ -125,7 +125,12 @@ class TCGAExpressionBuilder(TCGATableBuilder):
             return feature_meta
 
         ensembl_map = load_ensembl_map()
-        coord_cols = ["ensembl_gene_id", "chromosome_name", "start_position", "end_position"]
+        coord_cols = [
+            "ensembl_gene_id",
+            "chromosome_name",
+            "start_position",
+            "end_position",
+        ]
         coords = (
             ensembl_map[coord_cols]
             .drop_duplicates(subset=["ensembl_gene_id"])

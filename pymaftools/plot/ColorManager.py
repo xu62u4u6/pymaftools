@@ -63,12 +63,12 @@ class ColorManager:
     FUNCTIONAL_ORDER = FUNCTIONAL_ORDER
 
     FUNCTIONAL_CMAP = {
-        "Missense": "#7F7F7F",   # grey (matches Missense_Mutation)
+        "Missense": "#7F7F7F",  # grey (matches Missense_Mutation)
         "Truncating": "#C0392B",  # deep red (LoF)
-        "Splice": "#D0875D",     # brown (matches Splice_Site)
-        "In-frame": "#ADDBEA",   # light blue (matches In_Frame_Del)
-        "Silent": "#D9D9D9",     # light grey
-        "Other": "#BBBBCC",      # muted non-coding
+        "Splice": "#D0875D",  # brown (matches Splice_Site)
+        "In-frame": "#ADDBEA",  # light blue (matches In_Frame_Del)
+        "Silent": "#D9D9D9",  # light grey
+        "Other": "#BBBBCC",  # muted non-coding
     }
 
     predefined_cmaps = {

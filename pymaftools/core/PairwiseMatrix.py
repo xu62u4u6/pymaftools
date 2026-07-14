@@ -215,9 +215,7 @@ class SimilarityMatrix(PairwiseMatrix):
                 else:
                     raise ValueError("tail must be 'right', 'left', or 'two'")
 
-                pvalues_df.loc[g1, g2] = (extreme + 1) / (
-                    len(permuted_vals) + 1
-                )
+                pvalues_df.loc[g1, g2] = (extreme + 1) / (len(permuted_vals) + 1)
 
         return pvalues_df
 
@@ -433,8 +431,7 @@ class SimilarityMatrix(PairwiseMatrix):
         ... )
         """
         warnings.warn(
-            "compare_group_pairs is deprecated; use "
-            "paired_similarity_permutation_test",
+            "compare_group_pairs is deprecated; use paired_similarity_permutation_test",
             DeprecationWarning,
             stacklevel=2,
         )

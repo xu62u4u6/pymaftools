@@ -11,7 +11,12 @@ from statsmodels.stats.multitest import multipletests
 
 
 BASE_CHANGE_ORDER = [
-    "C>A", "C>G", "C>T", "T>A", "T>C", "T>G",
+    "C>A",
+    "C>G",
+    "C>T",
+    "T>A",
+    "T>C",
+    "T>G",
 ]
 
 
@@ -154,13 +159,19 @@ def plot_rainfall(
         lambda row: offsets[row["Chromosome"]] + row["Start_Position"],
         axis=1,
     )
-    data["_chrom_order"] = data["Chromosome"].map(lambda chrom: _chrom_sort_key(chrom)[0])
-    data["_chrom_label"] = data["Chromosome"].map(lambda chrom: _chrom_sort_key(chrom)[1])
+    data["_chrom_order"] = data["Chromosome"].map(
+        lambda chrom: _chrom_sort_key(chrom)[0]
+    )
+    data["_chrom_label"] = data["Chromosome"].map(
+        lambda chrom: _chrom_sort_key(chrom)[1]
+    )
     data = data.sort_values(["_chrom_order", "_chrom_label", "Start_Position"])
     data["distance"] = data.groupby("Chromosome")["Start_Position"].diff()
     data = data.dropna(subset=["distance"])
     if data.empty:
-        raise ValueError("Rainfall plot requires at least two variants on one chromosome.")
+        raise ValueError(
+            "Rainfall plot requires at least two variants on one chromosome."
+        )
 
     fig, ax, legend_ax = style.fig_with_legend(figsize, legend_width=0.16)
     present = {}
@@ -186,21 +197,23 @@ def plot_rainfall(
 
 def infer_vaf(maf: pd.DataFrame, vaf_col: str | None = None) -> pd.Series:
     """Infer VAF from a named column or t_alt_count / t_depth."""
-    candidates = [vaf_col] if vaf_col else [
-        "t_vaf",
-        "VAF",
-        "Tumor_VAF",
-        "i_TumorVAF_WU",
-        "i_TumorVAF",
-        "tumor_vaf",
-    ]
+    candidates = (
+        [vaf_col]
+        if vaf_col
+        else [
+            "t_vaf",
+            "VAF",
+            "Tumor_VAF",
+            "i_TumorVAF_WU",
+            "i_TumorVAF",
+            "tumor_vaf",
+        ]
+    )
     for col in candidates:
         if col and col in maf.columns:
             vaf = pd.to_numeric(maf[col], errors="coerce")
             return (
-                vaf / 100
-                if vaf.max(skipna=True) and vaf.max(skipna=True) > 1
-                else vaf
+                vaf / 100 if vaf.max(skipna=True) and vaf.max(skipna=True) > 1 else vaf
             )
     if {"t_alt_count", "t_depth"}.issubset(maf.columns):
         alt = pd.to_numeric(maf["t_alt_count"], errors="coerce")
@@ -302,8 +315,7 @@ def plot_somatic_interactions(
         .sum(axis=1)
         .sort_values(ascending=False)
         .head(top)
-        .index
-        .tolist()
+        .index.tolist()
     )
     mat = pd.DataFrame(np.nan, index=genes, columns=genes)
     for _, row in stats.iterrows():
@@ -340,9 +352,7 @@ def plot_somatic_interactions(
     )
     ax.set_title("Somatic Interactions  (* FDR < %.2g)" % alpha)
     ax.tick_params(length=0)
-    style.add_vertical_colorbar(
-        ax, style.DIVERGING_CMAP, -vmax, vmax, label="log2 OR"
-    )
+    style.add_vertical_colorbar(ax, style.DIVERGING_CMAP, -vmax, vmax, label="log2 OR")
     fig.tight_layout()
     return fig, stats
 
@@ -499,6 +509,7 @@ plot_forest = plot_cohort_comparison_forest
 #  MAF overview dashboard primitives (each draws on a given ax; the accessor /
 #  overview composes them). Colours come from ColorManager's fixed palettes.
 # --------------------------------------------------------------------------- #
+
 
 def _functional_series(maf: pd.DataFrame) -> pd.Series:
     """Map ``Variant_Classification`` to a coarse functional group."""
@@ -678,9 +689,7 @@ def plot_gene_recurrence(maf: pd.DataFrame, ax=None, figsize=(7, 4)):
     sample_col = _get_sample_col(maf)
     _require_columns(maf, [sample_col, "Hugo_Symbol"])
     gene_samples = (
-        maf.drop_duplicates(["Hugo_Symbol", sample_col])
-        .groupby("Hugo_Symbol")
-        .size()
+        maf.drop_duplicates(["Hugo_Symbol", sample_col]).groupby("Hugo_Symbol").size()
     )
     recurrence = gene_samples.value_counts().sort_index()
 
@@ -784,7 +793,8 @@ def plot_overview(maf: pd.DataFrame, figsize=(15, 10)):
     with plt.rc_context(rc):
         fig = plt.figure(figsize=figsize)
         gs = fig.add_gridspec(
-            2, 4,
+            2,
+            4,
             height_ratios=[1.0, 1.0],
             # composition is 3 vertical bars -> ~40% narrower than its neighbours.
             width_ratios=[0.6, 1.0, 1.0, 0.34],
@@ -819,6 +829,13 @@ def plot_overview(maf: pd.DataFrame, figsize=(15, 10)):
         )
         if "snv_fraction" in stats:
             subtitle += f"  ·  {stats['snv_fraction'] * 100:.0f}% SNV"
-        fig.suptitle("MAF Overview", fontsize=16, fontweight="semibold", x=0.06, ha="left", y=0.97)
+        fig.suptitle(
+            "MAF Overview",
+            fontsize=16,
+            fontweight="semibold",
+            x=0.06,
+            ha="left",
+            y=0.97,
+        )
         fig.text(0.06, 0.915, subtitle, fontsize=11, ha="left", color=style.TEXT_COLOR)
     return fig

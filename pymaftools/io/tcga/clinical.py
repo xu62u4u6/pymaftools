@@ -28,7 +28,9 @@ class TCGAClinicalBuilder:
         self,
         data_dir: str | Path,
         mapping: str | Path | pd.DataFrame,
-        file_type: Literal["patient", "drug", "radiation", "follow_up", "nte"] = "patient",
+        file_type: Literal[
+            "patient", "drug", "radiation", "follow_up", "nte"
+        ] = "patient",
     ):
         self.data_dir = Path(data_dir)
         self.file_type = file_type

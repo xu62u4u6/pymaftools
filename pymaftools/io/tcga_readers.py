@@ -47,7 +47,6 @@ def read_manifest(manifest_path: str | Path) -> pd.DataFrame:
     return df.set_index("file_id")
 
 
-
 def build_uuid_to_case_mapping(manifest_path: str | Path) -> dict[str, str]:
     """
     Build a mapping from file_uuid to case_id using a manifest + GDC API.
@@ -95,7 +94,6 @@ def build_uuid_to_case_mapping(manifest_path: str | Path) -> dict[str, str]:
     return mapping
 
 
-
 def scan_gdc_directory(data_dir: str | Path, pattern: str) -> dict[str, Path]:
     """
     Scan a GDC download directory and find files matching a pattern.
@@ -132,7 +130,6 @@ def scan_gdc_directory(data_dir: str | Path, pattern: str) -> dict[str, Path]:
             # gdc-client layout: parent is UUID
             result[parent] = filepath
     return result
-
 
 
 def resolve_files_to_cases(
@@ -248,11 +245,15 @@ def read_star_counts(
     matrix = pd.DataFrame(series_dict)
 
     if strip_gene_version:
-        gene_info["gene_id"] = gene_info["gene_id"].str.replace(r"\.\d+$", "", regex=True)
+        gene_info["gene_id"] = gene_info["gene_id"].str.replace(
+            r"\.\d+$", "", regex=True
+        )
     feature_meta = gene_info.set_index("gene_id")[["gene_name", "gene_type"]]
     feature_meta = feature_meta[~feature_meta.index.duplicated(keep="first")]
 
-    sample_meta = pd.DataFrame({"case_id": list(series_dict.keys())}, index=list(series_dict.keys()))
+    sample_meta = pd.DataFrame(
+        {"case_id": list(series_dict.keys())}, index=list(series_dict.keys())
+    )
     qc_df = pd.DataFrame(qc_dict).T.reindex(sample_meta.index)
     sample_meta = pd.concat([sample_meta, qc_df], axis=1)
 
@@ -332,7 +333,9 @@ def seg_to_cytoband_table(
         cytoband_path = Path(__file__).resolve().parent.parent / "data" / "cytoBand.txt"
 
     bands = pd.read_csv(
-        cytoband_path, sep="\t", header=None,
+        cytoband_path,
+        sep="\t",
+        header=None,
         names=["chrom", "start", "end", "band", "stain"],
     )
     # Keep only standard chromosomes (chr1-22, chrX, chrY), drop alt/random contigs
@@ -351,9 +354,7 @@ def seg_to_cytoband_table(
         chrom, bstart, bend, label = b["chrom"], b["start"], b["end"], b["label"]
         # Find overlapping segments
         mask = (
-            (seg["Chromosome"] == chrom)
-            & (seg["Start"] < bend)
-            & (seg["End"] > bstart)
+            (seg["Chromosome"] == chrom) & (seg["Start"] < bend) & (seg["End"] > bstart)
         )
         overlap = seg.loc[mask].copy()
         if overlap.empty:
@@ -391,8 +392,7 @@ def seg_to_cytoband_table(
     table.sample_metadata = sample_meta
 
     print(
-        f"[seg_to_cytoband_table] {table.shape[0]} cytobands × "
-        f"{table.shape[1]} samples"
+        f"[seg_to_cytoband_table] {table.shape[0]} cytobands × {table.shape[1]} samples"
     )
     return table
 
@@ -455,7 +455,11 @@ def read_gene_level_cnv(
         df = pd.read_csv(filepath, sep="\t")
 
         if gene_info is None:
-            info_cols = [c for c in ["gene_id", "gene_name", "chromosome", "start", "end"] if c in df.columns]
+            info_cols = [
+                c
+                for c in ["gene_id", "gene_name", "chromosome", "start", "end"]
+                if c in df.columns
+            ]
             gene_info = df[info_cols].copy()
 
         gene_ids = df["gene_id"]
@@ -470,7 +474,9 @@ def read_gene_level_cnv(
 
     # Build feature metadata
     if strip_gene_version:
-        gene_info["gene_id"] = gene_info["gene_id"].str.replace(r"\.\d+$", "", regex=True)
+        gene_info["gene_id"] = gene_info["gene_id"].str.replace(
+            r"\.\d+$", "", regex=True
+        )
     feature_meta = gene_info.set_index("gene_id")
     feature_meta = feature_meta[~feature_meta.index.duplicated(keep="first")]
 
@@ -564,7 +570,9 @@ def read_methylation_betas(
 
     matrix = pd.DataFrame(series_dict)
     table = PivotTable(matrix)
-    table.sample_metadata = pd.DataFrame({"case_id": matrix.columns}, index=matrix.columns)
+    table.sample_metadata = pd.DataFrame(
+        {"case_id": matrix.columns}, index=matrix.columns
+    )
 
     print(
         f"[read_methylation_betas] Loaded {table.shape[0]} probes × "

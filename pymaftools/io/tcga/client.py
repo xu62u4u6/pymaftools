@@ -28,37 +28,37 @@ from tqdm import tqdm
 
 GDC_FILES_ENDPOINT = "https://api.gdc.cancer.gov/files"
 GDC_CASES_ENDPOINT = "https://api.gdc.cancer.gov/cases"
-GDC_DATA_ENDPOINT  = "https://api.gdc.cancer.gov/data"
+GDC_DATA_ENDPOINT = "https://api.gdc.cancer.gov/data"
 
 # Default data type configs (used when no config.toml is provided)
 DATA_TYPE_CONFIGS = {
     "expression": {
-        "data_type":    "Gene Expression Quantification",
+        "data_type": "Gene Expression Quantification",
         "workflow_type": "STAR - Counts",
-        "label":        "Gene Expression (STAR Counts)",
+        "label": "Gene Expression (STAR Counts)",
     },
     "mutation": {
         "data_type": "Masked Somatic Mutation",
-        "label":     "Somatic Mutation (MAF)",
+        "label": "Somatic Mutation (MAF)",
     },
     "cnv_seg": {
-        "data_type":    "Allele-specific Copy Number Segment",
+        "data_type": "Allele-specific Copy Number Segment",
         "workflow_type": "ASCAT3",
-        "label":        "Copy Number Segment (ASCAT3)",
+        "label": "Copy Number Segment (ASCAT3)",
     },
     "cnv_gene": {
-        "data_type":    "Gene Level Copy Number",
+        "data_type": "Gene Level Copy Number",
         "workflow_type": "ASCAT3",
-        "label":        "Copy Number Gene Level (ASCAT3)",
+        "label": "Copy Number Gene Level (ASCAT3)",
     },
     "methylation": {
-        "data_type":    "Methylation Beta Value",
+        "data_type": "Methylation Beta Value",
         "workflow_type": "SeSAMe Methylation Beta Estimation",
-        "label":        "DNA Methylation (SeSAMe)",
+        "label": "DNA Methylation (SeSAMe)",
     },
 }
 
-BATCH_SIZE  = 200
+BATCH_SIZE = 200
 MAX_RETRIES = 3
 
 
@@ -79,15 +79,15 @@ def parse_tcga_barcode(barcode: str) -> dict:
     """
     parts = barcode.split("-")
     result = {
-        "project":     parts[0],
-        "tss":         parts[1],
+        "project": parts[0],
+        "tss": parts[1],
         "participant": parts[2],
-        "case_id":     "-".join(parts[:3]),
+        "case_id": "-".join(parts[:3]),
     }
     if len(parts) > 3:
         result["sample_type"] = int(parts[3][:2])
-        result["vial"]        = parts[3][2:] if len(parts[3]) > 2 else None
-        result["is_tumor"]    = result["sample_type"] < 10
+        result["vial"] = parts[3][2:] if len(parts[3]) > 2 else None
+        result["is_tumor"] = result["sample_type"] < 10
     if len(parts) > 4:
         result["portion"] = parts[4][:2]
         result["analyte"] = parts[4][2:] if len(parts[4]) > 2 else None
@@ -173,11 +173,11 @@ class GDCClient:
             if p.exists():
                 self.token = p.read_text().strip()
 
-        self.data_types      = data_types or DATA_TYPE_CONFIGS
-        self.projects        = projects or []
+        self.data_types = data_types or DATA_TYPE_CONFIGS
+        self.projects = projects or []
         self.gdc_client_path = str(gdc_client_path) if gdc_client_path else None
-        self.threads         = threads
-        self.retries         = retries
+        self.threads = threads
+        self.retries = retries
 
     @classmethod
     def from_config(cls, config_path: str | Path = "config.toml") -> "GDCClient":
@@ -217,12 +217,12 @@ class GDCClient:
             cfg = tomllib.load(f)
         dl = cfg.get("download", {})
         return cls(
-            token_path      = dl.get("token"),
-            data_types      = cfg.get("data_types", DATA_TYPE_CONFIGS),
-            projects        = cfg.get("projects", []),
-            gdc_client_path = dl.get("gdc_client"),
-            threads         = dl.get("threads", 8),
-            retries         = dl.get("retries", 5),
+            token_path=dl.get("token"),
+            data_types=cfg.get("data_types", DATA_TYPE_CONFIGS),
+            projects=cfg.get("projects", []),
+            gdc_client_path=dl.get("gdc_client"),
+            threads=dl.get("threads", 8),
+            retries=dl.get("retries", 5),
         )
 
     # ── Internal helpers ─────────────────────────────────────────────────────
@@ -239,17 +239,32 @@ class GDCClient:
         filters = {
             "op": "and",
             "content": [
-                {"op": "=", "content": {"field": "cases.project.project_id", "value": project_id}},
+                {
+                    "op": "=",
+                    "content": {
+                        "field": "cases.project.project_id",
+                        "value": project_id,
+                    },
+                },
                 {"op": "=", "content": {"field": "data_type", "value": data_type}},
             ],
         }
         if workflow_type:
             filters["content"].append(
-                {"op": "=", "content": {"field": "analysis.workflow_type", "value": workflow_type}}
+                {
+                    "op": "=",
+                    "content": {
+                        "field": "analysis.workflow_type",
+                        "value": workflow_type,
+                    },
+                }
             )
         if case_ids:
             filters["content"].append(
-                {"op": "in", "content": {"field": "cases.submitter_id", "value": case_ids}}
+                {
+                    "op": "in",
+                    "content": {"field": "cases.submitter_id", "value": case_ids},
+                }
             )
         payload = {
             "filters": json.dumps(filters),
@@ -272,7 +287,10 @@ class GDCClient:
         results = []
         for attempt in range(1, MAX_RETRIES + 1):
             try:
-                filters = {"op": "in", "content": {"field": "file_id", "value": file_ids}}
+                filters = {
+                    "op": "in",
+                    "content": {"field": "file_id", "value": file_ids},
+                }
                 payload = {
                     "filters": json.dumps(filters),
                     "fields": fields,
@@ -286,7 +304,7 @@ class GDCClient:
                 if attempt == MAX_RETRIES:
                     raise
                 tqdm.write(f"  retry {attempt}: {e}")
-                time.sleep(2 ** attempt)
+                time.sleep(2**attempt)
         return results
 
     @staticmethod
@@ -297,7 +315,7 @@ class GDCClient:
             for h in hits:
                 f.write(
                     f"{h['file_id']}\t{h['file_name']}\t"
-                    f"{h.get('md5sum','')}\t{h['file_size']}\t{h.get('state','')}\n"
+                    f"{h.get('md5sum', '')}\t{h['file_size']}\t{h.get('state', '')}\n"
                 )
 
     def _find_gdc_client(self) -> str:
@@ -306,7 +324,10 @@ class GDCClient:
         found = shutil.which("gdc-client")
         if found:
             return found
-        for candidate in [Path("tools/gdc-client"), Path.home() / ".local/bin/gdc-client"]:
+        for candidate in [
+            Path("tools/gdc-client"),
+            Path.home() / ".local/bin/gdc-client",
+        ]:
             if candidate.exists():
                 return str(candidate)
         raise FileNotFoundError(
@@ -384,8 +405,8 @@ class GDCClient:
         Path
             Output manifest directory.
         """
-        projects  = projects or self.projects
-        outdir    = Path(outdir)
+        projects = projects or self.projects
+        outdir = Path(outdir)
         outdir.mkdir(parents=True, exist_ok=True)
 
         print("=== Generating full manifests ===\n")
@@ -400,10 +421,18 @@ class GDCClient:
 
             self._write_manifest(label_hits, outdir / f"manifest_{label}.tsv")
             for h in label_hits:
-                records.append({"file_id": h["file_id"], "filename": h["file_name"], "dtype": label})
+                records.append(
+                    {
+                        "file_id": h["file_id"],
+                        "filename": h["file_name"],
+                        "dtype": label,
+                    }
+                )
 
             total_gb = sum(h["file_size"] for h in label_hits) / 1e9
-            print(f"  → manifest_{label}.tsv ({len(label_hits)} files, {total_gb:.1f} GB)\n")
+            print(
+                f"  → manifest_{label}.tsv ({len(label_hits)} files, {total_gb:.1f} GB)\n"
+            )
 
         mapping_df = self.build_file_mapping(records)
         mapping_df.to_csv(mapping_path, sep="\t", index=False)
@@ -428,25 +457,33 @@ class GDCClient:
         print(f"\nBuilding file mapping ({len(unique_ids)} files)...")
 
         mapping: dict[str, tuple] = {}
-        for i in tqdm(range(0, len(unique_ids), BATCH_SIZE), desc="Querying GDC", unit="batch"):
-            batch = unique_ids[i: i + BATCH_SIZE]
+        for i in tqdm(
+            range(0, len(unique_ids), BATCH_SIZE), desc="Querying GDC", unit="batch"
+        ):
+            batch = unique_ids[i : i + BATCH_SIZE]
             for hit in self._batch_query_metadata(batch):
-                fid        = hit["file_id"]
-                case_id    = sample_type = project = None
+                fid = hit["file_id"]
+                case_id = sample_type = project = None
                 if hit.get("cases"):
-                    c           = hit["cases"][0]
-                    case_id     = c.get("submitter_id")
-                    project     = (c.get("project") or {}).get("project_id")
-                    samples     = c.get("samples", [])
-                    preferred   = _pick_preferred_sample(samples)
+                    c = hit["cases"][0]
+                    case_id = c.get("submitter_id")
+                    project = (c.get("project") or {}).get("project_id")
+                    samples = c.get("samples", [])
+                    preferred = _pick_preferred_sample(samples)
                     if preferred:
                         sample_type = preferred.get("sample_type")
                 mapping[fid] = (case_id, sample_type, project)
 
         df = pd.DataFrame(records)
-        df["case_id"]     = df["file_id"].map(lambda x: mapping.get(x, (None, None, None))[0])
-        df["sample_type"] = df["file_id"].map(lambda x: mapping.get(x, (None, None, None))[1])
-        df["project"]     = df["file_id"].map(lambda x: mapping.get(x, (None, None, None))[2])
+        df["case_id"] = df["file_id"].map(
+            lambda x: mapping.get(x, (None, None, None))[0]
+        )
+        df["sample_type"] = df["file_id"].map(
+            lambda x: mapping.get(x, (None, None, None))[1]
+        )
+        df["project"] = df["file_id"].map(
+            lambda x: mapping.get(x, (None, None, None))[2]
+        )
         return df
 
     # ── Manifest alignment ────────────────────────────────────────────────────
@@ -524,7 +561,8 @@ class GDCClient:
         for label in self.data_types:
             df = manifests[label]
             keep = {
-                fid for fid, info in file_map.items()
+                fid
+                for fid, info in file_map.items()
                 if info.get("dtype") == label and info.get("case_id") in aligned
             }
             filtered = df[df["file_id"].isin(keep)]
@@ -534,7 +572,7 @@ class GDCClient:
                 for _, row in filtered.iterrows():
                     f.write(
                         f"{row['file_id']}\t{row['filename']}\t"
-                        f"{row.get('md5','')}\t{row.get('size',0)}\t{row.get('state','')}\n"
+                        f"{row.get('md5', '')}\t{row.get('size', 0)}\t{row.get('state', '')}\n"
                     )
             print(f"  {label}: {len(filtered)} files → {out}")
 
@@ -544,10 +582,12 @@ class GDCClient:
             for info in file_map.values()
             if info.get("case_id") in aligned and info.get("project")
         }
-        aligned_df = pd.DataFrame([
-            {"submitter_id": c, "project": project_map.get(c, "unknown")}
-            for c in sorted(aligned)
-        ])
+        aligned_df = pd.DataFrame(
+            [
+                {"submitter_id": c, "project": project_map.get(c, "unknown")}
+                for c in sorted(aligned)
+            ]
+        )
         aligned_df.to_csv(aligned_cases_path, sep="\t", index=False)
         print(f"\nSaved: {aligned_cases_path}")
         print(aligned_df["project"].value_counts().to_string())
@@ -564,10 +604,10 @@ class GDCClient:
         mapping_df = pd.read_csv(mapping_path, sep="\t")
         file_map = {
             row["file_id"]: {
-                "dtype":       row["dtype"],
-                "case_id":     row["case_id"],
+                "dtype": row["dtype"],
+                "case_id": row["case_id"],
                 "sample_type": row["sample_type"],
-                "project":     row.get("project"),
+                "project": row.get("project"),
             }
             for _, row in mapping_df.iterrows()
         }
@@ -576,19 +616,19 @@ class GDCClient:
             path = full_dir / f"manifest_{label}.tsv"
             if not path.exists():
                 raise FileNotFoundError(f"Full manifest not found: {path}")
-            manifests[label] = (
-                pd.read_csv(path, sep="\t").rename(columns={"id": "file_id"})
+            manifests[label] = pd.read_csv(path, sep="\t").rename(
+                columns={"id": "file_id"}
             )
         return manifests, file_map
 
-    def _load_portal_data(
-        self, portal_path: Path
-    ) -> tuple[dict, dict]:
+    def _load_portal_data(self, portal_path: Path) -> tuple[dict, dict]:
         """Load portal manifest, query GDC for metadata, classify by dtype."""
-        dtype_to_label = {dt["data_type"]: label for label, dt in self.data_types.items()}
+        dtype_to_label = {
+            dt["data_type"]: label for label, dt in self.data_types.items()
+        }
 
         portal_df = pd.read_csv(portal_path, sep="\t")
-        file_ids  = portal_df["id"].tolist()
+        file_ids = portal_df["id"].tolist()
         print(f"Portal manifest: {len(file_ids)} files\n")
 
         missing = self._preview_portal_dtypes(portal_df, dtype_to_label)
@@ -599,55 +639,61 @@ class GDCClient:
 
         print(f"\nQuerying GDC metadata ({len(file_ids)} files)...")
         meta: dict[str, dict] = {}
-        for i in tqdm(range(0, len(file_ids), BATCH_SIZE), desc="Fetching", unit="batch"):
-            batch = file_ids[i: i + BATCH_SIZE]
+        for i in tqdm(
+            range(0, len(file_ids), BATCH_SIZE), desc="Fetching", unit="batch"
+        ):
+            batch = file_ids[i : i + BATCH_SIZE]
             for hit in self._batch_query_metadata(batch):
-                fid         = hit["file_id"]
-                case_id     = sample_type = project = None
+                fid = hit["file_id"]
+                case_id = sample_type = project = None
                 if hit.get("cases"):
-                    c           = hit["cases"][0]
-                    case_id     = c.get("submitter_id")
-                    project     = (c.get("project") or {}).get("project_id")
-                    samples     = c.get("samples", [])
-                    preferred   = _pick_preferred_sample(samples)
+                    c = hit["cases"][0]
+                    case_id = c.get("submitter_id")
+                    project = (c.get("project") or {}).get("project_id")
+                    samples = c.get("samples", [])
+                    preferred = _pick_preferred_sample(samples)
                     if preferred:
                         sample_type = preferred.get("sample_type")
                 meta[fid] = {
-                    "filename":    hit.get("file_name", ""),
-                    "md5":         hit.get("md5sum", ""),
-                    "size":        hit.get("file_size", 0),
-                    "state":       hit.get("state", ""),
-                    "data_type":   hit.get("data_type", ""),
-                    "case_id":     case_id,
+                    "filename": hit.get("file_name", ""),
+                    "md5": hit.get("md5sum", ""),
+                    "size": hit.get("file_size", 0),
+                    "state": hit.get("state", ""),
+                    "data_type": hit.get("data_type", ""),
+                    "case_id": case_id,
                     "sample_type": sample_type,
-                    "project":     project,
+                    "project": project,
                 }
 
         manifests_rows: dict[str, list] = {label: [] for label in self.data_types}
         file_map: dict[str, dict] = {}
 
         for fid in file_ids:
-            m     = meta.get(fid)
+            m = meta.get(fid)
             if not m:
                 continue
             label = dtype_to_label.get(m["data_type"])
             if not label:
                 continue
-            manifests_rows[label].append({
-                "file_id":  fid,
-                "filename": m["filename"],
-                "md5":      m["md5"],
-                "size":     m["size"],
-                "state":    m["state"],
-            })
+            manifests_rows[label].append(
+                {
+                    "file_id": fid,
+                    "filename": m["filename"],
+                    "md5": m["md5"],
+                    "size": m["size"],
+                    "state": m["state"],
+                }
+            )
             file_map[fid] = {
-                "dtype":       label,
-                "case_id":     m["case_id"],
+                "dtype": label,
+                "case_id": m["case_id"],
                 "sample_type": m["sample_type"],
-                "project":     m["project"],
+                "project": m["project"],
             }
 
-        manifests = {label: pd.DataFrame(rows) for label, rows in manifests_rows.items()}
+        manifests = {
+            label: pd.DataFrame(rows) for label, rows in manifests_rows.items()
+        }
         return manifests, file_map
 
     def _preview_portal_dtypes(
@@ -656,10 +702,10 @@ class GDCClient:
         """Quick filename-based preview; returns list of missing dtype labels."""
         patterns = {
             "aliquot_ensemble_masked": "mutation",
-            "ascat3.gene_level":       "cnv_gene",
+            "ascat3.gene_level": "cnv_gene",
             "ascat3.allelic_specific": "cnv_seg",
-            "sesame.level3betas":      "methylation",
-            "star_gene_counts":        "expression",
+            "sesame.level3betas": "methylation",
+            "star_gene_counts": "expression",
         }
         counts: dict[str, int] = {}
         for fname in portal_df["filename"]:
@@ -696,13 +742,18 @@ class GDCClient:
             Clinical table indexed by case_id.
         """
         fields = [
-            "submitter_id", "project.project_id",
-            "demographic.gender", "demographic.vital_status",
-            "demographic.days_to_death", "demographic.age_at_index",
+            "submitter_id",
+            "project.project_id",
+            "demographic.gender",
+            "demographic.vital_status",
+            "demographic.days_to_death",
+            "demographic.age_at_index",
             "diagnoses.ajcc_pathologic_stage",
-            "diagnoses.ajcc_pathologic_t", "diagnoses.ajcc_pathologic_n",
+            "diagnoses.ajcc_pathologic_t",
+            "diagnoses.ajcc_pathologic_n",
             "diagnoses.ajcc_pathologic_m",
-            "diagnoses.primary_diagnosis", "diagnoses.morphology",
+            "diagnoses.primary_diagnosis",
+            "diagnoses.morphology",
             "diagnoses.tissue_or_organ_of_origin",
             "diagnoses.days_to_last_follow_up",
             "exposures.tobacco_smoking_status",
@@ -710,7 +761,7 @@ class GDCClient:
         ]
         all_hits = []
         for i in range(0, len(case_ids), 200):
-            batch = case_ids[i: i + 200]
+            batch = case_ids[i : i + 200]
             filters = {"op": "in", "content": {"field": "submitter_id", "value": batch}}
             payload = {
                 "filters": json.dumps(filters),
@@ -726,25 +777,27 @@ class GDCClient:
         for h in all_hits:
             demo = h.get("demographic", {}) or {}
             diag = (h.get("diagnoses") or [{}])[0]
-            exp  = (h.get("exposures")  or [{}])[0]
-            rows.append({
-                "case_id":             h.get("submitter_id"),
-                "project":             (h.get("project") or {}).get("project_id"),
-                "gender":              demo.get("gender"),
-                "age":                 demo.get("age_at_index"),
-                "vital_status":        demo.get("vital_status"),
-                "days_to_death":       demo.get("days_to_death"),
-                "primary_diagnosis":   diag.get("primary_diagnosis"),
-                "morphology":          diag.get("morphology"),
-                "stage":               diag.get("ajcc_pathologic_stage"),
-                "T":                   diag.get("ajcc_pathologic_t"),
-                "N":                   diag.get("ajcc_pathologic_n"),
-                "M":                   diag.get("ajcc_pathologic_m"),
-                "tissue_origin":       diag.get("tissue_or_organ_of_origin"),
-                "days_to_last_followup": diag.get("days_to_last_follow_up"),
-                "smoking_status":      exp.get("tobacco_smoking_status"),
-                "pack_years":          exp.get("pack_years_smoked"),
-            })
+            exp = (h.get("exposures") or [{}])[0]
+            rows.append(
+                {
+                    "case_id": h.get("submitter_id"),
+                    "project": (h.get("project") or {}).get("project_id"),
+                    "gender": demo.get("gender"),
+                    "age": demo.get("age_at_index"),
+                    "vital_status": demo.get("vital_status"),
+                    "days_to_death": demo.get("days_to_death"),
+                    "primary_diagnosis": diag.get("primary_diagnosis"),
+                    "morphology": diag.get("morphology"),
+                    "stage": diag.get("ajcc_pathologic_stage"),
+                    "T": diag.get("ajcc_pathologic_t"),
+                    "N": diag.get("ajcc_pathologic_n"),
+                    "M": diag.get("ajcc_pathologic_m"),
+                    "tissue_origin": diag.get("tissue_or_organ_of_origin"),
+                    "days_to_last_followup": diag.get("days_to_last_follow_up"),
+                    "smoking_status": exp.get("tobacco_smoking_status"),
+                    "pack_years": exp.get("pack_years_smoked"),
+                }
+            )
 
         return pd.DataFrame(rows).set_index("case_id").sort_index()
 
@@ -757,21 +810,23 @@ class GDCClient:
         case_ids: Optional[list[str]] = None,
     ) -> pd.DataFrame:
         """Get file metadata for a project + data type, optionally filtered by cases."""
-        cfg  = self.data_types[data_type_key]
+        cfg = self.data_types[data_type_key]
         hits = self._query_files(
             project_id, cfg["data_type"], cfg.get("workflow_type"), case_ids=case_ids
         )
         rows = []
         for h in hits:
             case_id = h["cases"][0]["submitter_id"] if h.get("cases") else None
-            rows.append({
-                "file_id":   h["file_id"],
-                "file_name": h["file_name"],
-                "file_size": h["file_size"],
-                "md5sum":    h.get("md5sum", ""),
-                "state":     h.get("state", ""),
-                "case_id":   case_id,
-            })
+            rows.append(
+                {
+                    "file_id": h["file_id"],
+                    "file_name": h["file_name"],
+                    "file_size": h["file_size"],
+                    "md5sum": h.get("md5sum", ""),
+                    "state": h.get("state", ""),
+                    "case_id": case_id,
+                }
+            )
         return pd.DataFrame(rows)
 
     @staticmethod
@@ -779,7 +834,7 @@ class GDCClient:
         manifest_path: Path, dl_dir: Path
     ) -> tuple[Path, int, int]:
         """Filter manifest to skip already-downloaded file UUIDs."""
-        df     = pd.read_csv(manifest_path, sep="\t", dtype=str)
+        df = pd.read_csv(manifest_path, sep="\t", dtype=str)
         id_col = "id" if "id" in df.columns else df.columns[0]
 
         existing = set()
@@ -787,17 +842,21 @@ class GDCClient:
             for child in dl_dir.iterdir():
                 if child.is_dir() and child.name != "logs":
                     data_files = [
-                        f for f in child.iterdir()
+                        f
+                        for f in child.iterdir()
                         if f.is_file() and f.name != "annotations.txt"
                     ]
                     if data_files:
                         existing.add(child.name)
 
-        n_total    = len(df)
+        n_total = len(df)
         df_filtered = df[~df[id_col].isin(existing)]
-        n_skipped  = n_total - len(df_filtered)
+        n_skipped = n_total - len(df_filtered)
 
-        filtered_path = manifest_path.parent / f"{manifest_path.stem}_remaining{manifest_path.suffix}"
+        filtered_path = (
+            manifest_path.parent
+            / f"{manifest_path.stem}_remaining{manifest_path.suffix}"
+        )
         df_filtered.to_csv(filtered_path, sep="\t", index=False)
         return filtered_path, n_total, n_skipped
 
@@ -811,17 +870,24 @@ class GDCClient:
             )
             n_remaining = n_total - n_skipped
             if n_skipped:
-                print(f"\n  {label}: {n_skipped}/{n_total} already downloaded, {n_remaining} remaining")
+                print(
+                    f"\n  {label}: {n_skipped}/{n_total} already downloaded, {n_remaining} remaining"
+                )
             if n_remaining == 0:
                 print(f"  Skipping {label}: all done")
                 continue
 
             cmd = [
-                self._find_gdc_client(), "download",
-                "-m", str(filtered),
-                "-d", str(dl_dir),
-                "-n", str(self.threads),
-                "--retry-amount", str(self.retries),
+                self._find_gdc_client(),
+                "download",
+                "-m",
+                str(filtered),
+                "-d",
+                str(dl_dir),
+                "-n",
+                str(self.threads),
+                "--retry-amount",
+                str(self.retries),
             ]
             if self.token:
                 token_file = outdir / ".gdc-token"
@@ -855,9 +921,9 @@ class GDCClient:
         manifest_dir : str or Path, optional
             Where to write intermediate manifests. Defaults to ``{outdir}/manifests``.
         """
-        keys     = data_types or list(self.data_types.keys())
-        outdir   = Path(outdir)
-        mdir     = Path(manifest_dir) if manifest_dir else outdir / "manifests"
+        keys = data_types or list(self.data_types.keys())
+        outdir = Path(outdir)
+        mdir = Path(manifest_dir) if manifest_dir else outdir / "manifests"
 
         manifests = self.generate_manifests(case_ids, project_id, keys, str(mdir))
         self._download_gdc_client(manifests, outdir)
@@ -877,17 +943,19 @@ class GDCClient:
         outdir: str = "manifests",
     ) -> dict[str, Path]:
         """Generate GDC download manifests for specific aligned cases."""
-        keys   = data_types or list(self.data_types.keys())
+        keys = data_types or list(self.data_types.keys())
         outdir = Path(outdir)
         outdir.mkdir(parents=True, exist_ok=True)
         manifests = {}
         for key in keys:
-            df           = self.get_file_metadata(project_id, key, case_ids)
+            df = self.get_file_metadata(project_id, key, case_ids)
             manifest_path = outdir / f"manifest_{key}.tsv"
             with open(manifest_path, "w") as f:
                 f.write("id\tfilename\tmd5\tsize\tstate\n")
                 for _, row in df.iterrows():
-                    f.write(f"{row['file_id']}\t{row['file_name']}\t{row['md5sum']}\t{row['file_size']}\t{row['state']}\n")
+                    f.write(
+                        f"{row['file_id']}\t{row['file_name']}\t{row['md5sum']}\t{row['file_size']}\t{row['state']}\n"
+                    )
             total_mb = df["file_size"].sum() / 1e6
             print(f"  {key}: {len(df)} files, {total_mb:.1f} MB → {manifest_path}")
             manifests[key] = manifest_path

@@ -58,7 +58,9 @@ def filter_by_statistical_test(
         "anova": lambda groups: f_oneway(*groups),
     }
     if method not in test_funcs:
-        raise ValueError(f"Unsupported method '{method}'. Choose from {list(test_funcs)}.")
+        raise ValueError(
+            f"Unsupported method '{method}'. Choose from {list(test_funcs)}."
+        )
 
     two_group_only = {"ttest", "mann_whitney"}
     pt = table.copy()
@@ -67,7 +69,9 @@ def filter_by_statistical_test(
     unique_groups = groups_series.dropna().unique()
 
     if method in two_group_only and len(unique_groups) != 2:
-        raise ValueError(f"'{method}' requires exactly 2 groups, got {len(unique_groups)}.")
+        raise ValueError(
+            f"'{method}' requires exactly 2 groups, got {len(unique_groups)}."
+        )
 
     p_values = []
     for feature in numeric.index:

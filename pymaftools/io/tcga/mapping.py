@@ -78,18 +78,24 @@ def resolve_files(
             file_id = fname_to_fid.get(filepath.name)
         else:
             # gdc-client layout: parent dir is UUID
-            file_id = parent if parent in mapping_df.index else fname_to_fid.get(filepath.name)
+            file_id = (
+                parent
+                if parent in mapping_df.index
+                else fname_to_fid.get(filepath.name)
+            )
 
         if file_id is None or file_id not in mapping_df.index:
             continue
 
         row = mapping_df.loc[file_id]
-        results.append({
-            "case_id": row["case_id"],
-            "sample_type": row.get("sample_type"),
-            "data_type": row.get("data_type"),
-            "file_id": file_id,
-            "filepath": filepath,
-        })
+        results.append(
+            {
+                "case_id": row["case_id"],
+                "sample_type": row.get("sample_type"),
+                "data_type": row.get("data_type"),
+                "file_id": file_id,
+                "filepath": filepath,
+            }
+        )
 
     return sorted(results, key=lambda x: (x["case_id"], x["filepath"].name))

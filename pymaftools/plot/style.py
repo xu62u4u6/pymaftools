@@ -12,13 +12,13 @@ from __future__ import annotations
 from matplotlib.axes import Axes
 
 # Single-series accents (bars / histograms that carry no category meaning).
-ACCENT = "#4C78A8"   # primary blue
+ACCENT = "#4C78A8"  # primary blue
 ACCENT_2 = "#F58518"  # secondary orange
-MUTED = "#9AA0A6"     # neutral grey
+MUTED = "#9AA0A6"  # neutral grey
 
 # House continuous colormaps.
-SEQUENTIAL_CMAP = "Blues"   # magnitudes / counts (0..max)
-DIVERGING_CMAP = "RdBu_r"   # signed values centred on 0 (log2 OR, deltas)
+SEQUENTIAL_CMAP = "Blues"  # magnitudes / counts (0..max)
+DIVERGING_CMAP = "RdBu_r"  # signed values centred on 0 (log2 OR, deltas)
 
 # Shared line / text colours.
 SPINE_COLOR = "#444444"

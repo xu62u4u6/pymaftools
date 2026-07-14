@@ -13,7 +13,12 @@ def calculate_feature_frequency(table) -> pd.Series:
     return binary_table.sum(axis=1).astype(float) / binary_table.shape[1]
 
 
-def add_freq(table, base_table_cls, groups: Optional[dict] = None, group_col: Optional[str] = None):
+def add_freq(
+    table,
+    base_table_cls,
+    groups: Optional[dict] = None,
+    group_col: Optional[str] = None,
+):
     """Add overall and optional group-specific frequency columns."""
     table._validate_metadata()
 
@@ -24,8 +29,7 @@ def add_freq(table, base_table_cls, groups: Optional[dict] = None, group_col: Op
             raise ValueError(f"group_col '{group_col}' not found in sample_metadata.")
         labels = table.sample_metadata[group_col]
         groups = {
-            str(v): table.subset(samples=labels == v)
-            for v in labels.dropna().unique()
+            str(v): table.subset(samples=labels == v) for v in labels.dropna().unique()
         }
     groups = groups or {}
 

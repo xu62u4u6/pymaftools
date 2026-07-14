@@ -85,9 +85,7 @@ class SignatureTablePlot(PivotStatsPlot):
         # Explicit colour per signature, so the stacked bars and the legend card
         # share one mapping.
         cmap = plt.get_cmap(colormap)
-        sig_colors = {
-            sig: to_hex(cmap(i % cmap.N)) for i, sig in enumerate(df.columns)
-        }
+        sig_colors = {sig: to_hex(cmap(i % cmap.N)) for i, sig in enumerate(df.columns)}
 
         legend_ax = None
         if ax is None:

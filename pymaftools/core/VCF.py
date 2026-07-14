@@ -154,7 +154,7 @@ class VCF(pd.DataFrame):
         path : str
             Output file path (uncompressed VCF).
         """
-        tumor_id  = self.header.get("tumor_sample", "TUMOR")
+        tumor_id = self.header.get("tumor_sample", "TUMOR")
         normal_id = self.header.get("normal_sample", "NORMAL")
         has_normal = normal_id is not None and "normal_dp" in self.columns
 
@@ -172,27 +172,45 @@ class VCF(pd.DataFrame):
         ]
         sample_cols = [normal_id, tumor_id] if has_normal else [tumor_id]
         lines.append(
-            "\t".join(["#CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO", "FORMAT"] + sample_cols)
+            "\t".join(
+                [
+                    "#CHROM",
+                    "POS",
+                    "ID",
+                    "REF",
+                    "ALT",
+                    "QUAL",
+                    "FILTER",
+                    "INFO",
+                    "FORMAT",
+                ]
+                + sample_cols
+            )
         )
 
         for idx, row in self.iterrows():
             t_ref = int(row.get("tumor_ref", row["tumor_dp"] - row["tumor_ad"]))
-            t_ad  = int(row["tumor_ad"])
-            t_dp  = int(row["tumor_dp"])
-            t_af  = round(float(row["tumor_af"]), 4)
+            t_ad = int(row["tumor_ad"])
+            t_dp = int(row["tumor_dp"])
+            t_af = round(float(row["tumor_af"]), 4)
             tumor_fmt = f"0/1:{t_dp}:{t_ref},{t_ad}:{t_af}"
 
             if has_normal and row.get("normal_dp") is not None:
                 n_ref = int(row.get("normal_ref", row["normal_dp"] - row["normal_ad"]))
-                n_ad  = int(row["normal_ad"])
-                n_dp  = int(row["normal_dp"])
+                n_ad = int(row["normal_ad"])
+                n_dp = int(row["normal_dp"])
                 normal_fmt = f"0/0:{n_dp}:{n_ref},{n_ad}:0.0"
             else:
                 normal_fmt = None
 
-            chrom, pos, ref, alt = str(row["chrom"]), str(int(row["pos"])), str(row["ref"]), str(row["alt"])
+            chrom, pos, ref, alt = (
+                str(row["chrom"]),
+                str(int(row["pos"])),
+                str(row["ref"]),
+                str(row["alt"]),
+            )
             fixed = [chrom, pos, ".", ref, alt, ".", "PASS", ".", "GT:DP:AD:AF"]
-            samples = ([normal_fmt, tumor_fmt] if normal_fmt is not None else [tumor_fmt])
+            samples = [normal_fmt, tumor_fmt] if normal_fmt is not None else [tumor_fmt]
             lines.append("\t".join(fixed + samples))
 
         with open(path, "w", encoding="utf-8") as fh:
@@ -253,9 +271,8 @@ class VCF(pd.DataFrame):
             return empty
 
         combined = pd.concat(vcfs)
-        callers_per_variant = (
-            combined.groupby(level=0)["caller"]
-            .apply(lambda x: ";".join(x.unique()))
+        callers_per_variant = combined.groupby(level=0)["caller"].apply(
+            lambda x: ";".join(x.unique())
         )
         caller_count = combined.groupby(level=0)["caller"].nunique()
 

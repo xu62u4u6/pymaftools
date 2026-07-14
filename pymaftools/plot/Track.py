@@ -415,15 +415,19 @@ class BarTrack(Track):
             vals = frame[col].to_numpy(dtype=float)
             color = self.cmap.get(col, self.color) if self.cmap else self.color
             if horizontal:
-                ax.barh(pos, vals, left=offset, height=0.95, color=color,
-                        edgecolor="white")
+                ax.barh(
+                    pos, vals, left=offset, height=0.95, color=color, edgecolor="white"
+                )
             else:
-                ax.bar(pos, vals, bottom=offset, width=0.95, color=color,
-                       edgecolor="white")
+                ax.bar(
+                    pos, vals, bottom=offset, width=0.95, color=color, edgecolor="white"
+                )
             offset = offset + vals
 
-        vmax = self._shared_max if self._shared_max is not None else (
-            float(offset.max()) if n else 1.0
+        vmax = (
+            self._shared_max
+            if self._shared_max is not None
+            else (float(offset.max()) if n else 1.0)
         )
         vmax = vmax if vmax and vmax > 0 else 1.0
 
@@ -431,11 +435,13 @@ class BarTrack(Track):
             totals = frame.iloc[:, 0].to_numpy(dtype=float)
             for i, value in enumerate(totals):
                 if horizontal:
-                    ax.text(value, i, f"{value:.1f}", va="center",
-                            fontsize=self.fontsize)
+                    ax.text(
+                        value, i, f"{value:.1f}", va="center", fontsize=self.fontsize
+                    )
                 else:
-                    ax.text(i, value, f"{value:.1f}", ha="center",
-                            fontsize=self.fontsize)
+                    ax.text(
+                        i, value, f"{value:.1f}", ha="center", fontsize=self.fontsize
+                    )
 
         if horizontal:
             # position axis = y, pinned to matrix rows (row 0 on top)

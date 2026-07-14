@@ -89,7 +89,9 @@ class TCGACNVSegmentBuilder(TCGATableBuilder):
             cytoband_path = _CYTOBAND_PATH
 
         bands = pd.read_csv(
-            cytoband_path, sep="\t", header=None,
+            cytoband_path,
+            sep="\t",
+            header=None,
             names=["chrom", "start", "end", "band", "stain"],
         )
         # Standard chromosomes only
@@ -123,7 +125,9 @@ class TCGACNVSegmentBuilder(TCGATableBuilder):
                 overlap.assign(_ol_len=ol_len.values)
                 .groupby("case_id")
                 .apply(
-                    lambda g: (g["Segment_Mean"] * g["_ol_len"]).sum() / g["_ol_len"].sum(),
+                    lambda g: (
+                        (g["Segment_Mean"] * g["_ol_len"]).sum() / g["_ol_len"].sum()
+                    ),
                     include_groups=False,
                 )
                 .rename(label)
@@ -134,7 +138,9 @@ class TCGACNVSegmentBuilder(TCGATableBuilder):
         matrix.index.name = "cytoband"
 
         # Feature metadata
-        feature_meta = bands.set_index("label")[["chrom", "start", "end", "stain"]].copy()
+        feature_meta = bands.set_index("label")[
+            ["chrom", "start", "end", "stain"]
+        ].copy()
         feature_meta = feature_meta.rename(columns={"chrom": "chromosome"})
         feature_meta["arm"] = feature_meta.index.str.extract(r"chr\w+([pq])")[0].values
         feature_meta = feature_meta.reindex(matrix.index)

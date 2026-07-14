@@ -302,21 +302,51 @@ class MAF(pd.DataFrame):
     # Columns to carry into mutation-level feature_metadata
     _FEATURE_META_COLS = [
         # position / structure
-        "Hugo_Symbol", "Chromosome", "Start_Position", "End_Position", "Strand",
-        "EXON", "INTRON", "cDNA_position", "CDS_position", "Protein_position",
+        "Hugo_Symbol",
+        "Chromosome",
+        "Start_Position",
+        "End_Position",
+        "Strand",
+        "EXON",
+        "INTRON",
+        "cDNA_position",
+        "CDS_position",
+        "Protein_position",
         # variant identity
-        "Variant_Type", "Variant_Classification", "VARIANT_CLASS",
-        "Reference_Allele", "Tumor_Seq_Allele2",
-        "Consequence", "One_Consequence", "CONTEXT",
+        "Variant_Type",
+        "Variant_Classification",
+        "VARIANT_CLASS",
+        "Reference_Allele",
+        "Tumor_Seq_Allele2",
+        "Consequence",
+        "One_Consequence",
+        "CONTEXT",
         # functional impact
-        "IMPACT", "HGVSc", "HGVSp_Short", "Amino_acids", "Codons",
-        "SIFT", "PolyPhen", "DOMAINS",
+        "IMPACT",
+        "HGVSc",
+        "HGVSp_Short",
+        "Amino_acids",
+        "Codons",
+        "SIFT",
+        "PolyPhen",
+        "DOMAINS",
         # gene-level annotation
-        "Entrez_Gene_Id", "Gene", "BIOTYPE", "TRANSCRIPT_STRAND",
-        "HGNC_ID", "RefSeq", "MANE", "APPRIS",
+        "Entrez_Gene_Id",
+        "Gene",
+        "BIOTYPE",
+        "TRANSCRIPT_STRAND",
+        "HGNC_ID",
+        "RefSeq",
+        "MANE",
+        "APPRIS",
         # clinical / databases
-        "hotspot", "COSMIC", "Existing_variation", "CLIN_SIG",
-        "GENE_PHENO", "dbSNP_RS", "callers",
+        "hotspot",
+        "COSMIC",
+        "Existing_variation",
+        "CLIN_SIG",
+        "GENE_PHENO",
+        "dbSNP_RS",
+        "callers",
     ]
 
     def to_mutation_table(self) -> "SmallVariationTable":
@@ -413,9 +443,8 @@ class MAF(pd.DataFrame):
             (``tmb_Truncating``, ``tmb_Splice``, ...), integer counts.
         """
         groups = self.Variant_Classification.map(FUNCTIONAL_GROUP).fillna("Other")
-        counts = (
-            pd.crosstab(self.sample_ID, groups)
-            .reindex(columns=FUNCTIONAL_ORDER, fill_value=0)
+        counts = pd.crosstab(self.sample_ID, groups).reindex(
+            columns=FUNCTIONAL_ORDER, fill_value=0
         )
         counts.columns = [f"{self.TMB_PREFIX}{g}" for g in counts.columns]
         return counts

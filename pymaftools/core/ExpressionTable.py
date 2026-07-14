@@ -58,10 +58,14 @@ class ExpressionTable(PivotTable):
 
         group_values = self.sample_metadata[group_col]
         missing_groups = [
-            group for group in (target, control) if group not in set(group_values.dropna())
+            group
+            for group in (target, control)
+            if group not in set(group_values.dropna())
         ]
         if missing_groups:
-            raise ValueError(f"Group value(s) not found in '{group_col}': {missing_groups}")
+            raise ValueError(
+                f"Group value(s) not found in '{group_col}': {missing_groups}"
+            )
 
         counts_frame = pd.DataFrame(self)
         numeric_counts = counts_frame.apply(pd.to_numeric, errors="coerce")
@@ -70,7 +74,9 @@ class ExpressionTable(PivotTable):
             or (numeric_counts < 0).any().any()
             or not np.equal(numeric_counts, np.floor(numeric_counts)).all().all()
         ):
-            raise ValueError("DESeq2 requires non-negative integer counts without missing values.")
+            raise ValueError(
+                "DESeq2 requires non-negative integer counts without missing values."
+            )
 
         try:
             from pydeseq2.dds import DeseqDataSet

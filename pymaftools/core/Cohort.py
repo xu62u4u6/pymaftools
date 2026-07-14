@@ -139,8 +139,11 @@ class Cohort:
         if self.sample_metadata is not None:
             shared = set(meta.columns) & set(self.sample_metadata.columns)
             conflict = {
-                col for col in shared
-                if not meta[col].reindex(self.sample_metadata.index).equals(self.sample_metadata[col])
+                col
+                for col in shared
+                if not meta[col]
+                .reindex(self.sample_metadata.index)
+                .equals(self.sample_metadata[col])
             }
             if conflict:
                 renamed = ", ".join(
@@ -153,7 +156,9 @@ class Cohort:
                     UserWarning,
                     stacklevel=2,
                 )
-                meta = meta.rename(columns={col: f"{table_name}_{col}" for col in conflict})
+                meta = meta.rename(
+                    columns={col: f"{table_name}_{col}" for col in conflict}
+                )
 
         self.add_sample_metadata(meta, source=table_name)
 
@@ -345,9 +350,9 @@ class Cohort:
                         table_name = row["table_name"]
                         sql_table_name = row["sql_table_name"]
                         kind = row["type"]
-                        table = self.tables[
-                            table_name
-                        ].copy().rename_index_and_columns()
+                        table = (
+                            self.tables[table_name].copy().rename_index_and_columns()
+                        )
 
                         if kind == "data":
                             table.to_sql(
@@ -362,9 +367,7 @@ class Cohort:
                                 sql_table_name, conn, if_exists="replace", index=True
                             )
 
-                    registry.to_sql(
-                        "registry", conn, if_exists="replace", index=False
-                    )
+                    registry.to_sql("registry", conn, if_exists="replace", index=False)
         print(f"[Cohort] saved to {db_path}")
 
     @classmethod
@@ -449,9 +452,7 @@ class Cohort:
                             "class_name": type(table).__name__,
                             "storage_key": f"tables/table_{index:06d}",
                         }
-                        for index, (table_name, table) in enumerate(
-                            self.tables.items()
-                        )
+                        for index, (table_name, table) in enumerate(self.tables.items())
                     ],
                     columns=["table_name", "class_name", "storage_key"],
                 )

@@ -1177,7 +1177,9 @@ class PivotTable(pd.DataFrame):
         """
         from . import pivot_frequency
 
-        return pivot_frequency.add_freq(self, PivotTable, groups=groups, group_col=group_col)
+        return pivot_frequency.add_freq(
+            self, PivotTable, groups=groups, group_col=group_col
+        )
 
     def add_exon_size(
         self,
@@ -1218,9 +1220,7 @@ class PivotTable(pd.DataFrame):
         from ..utils.geneinfo import get_exon_size
 
         table = self.copy()
-        sizes = get_exon_size(
-            table.index, metric=metric, force_download=force_download
-        )
+        sizes = get_exon_size(table.index, metric=metric, force_download=force_download)
         table.feature_metadata[col] = sizes.reindex(table.index).values
         return table
 

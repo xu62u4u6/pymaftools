@@ -86,9 +86,7 @@ def k_fold_clustering_evaluation(
     if not 2 <= n_splits <= table.shape[1]:
         raise ValueError("n_splits must be between 2 and the number of samples")
     if group_col is None:
-        splitter = KFold(
-            n_splits=n_splits, shuffle=True, random_state=random_state
-        )
+        splitter = KFold(n_splits=n_splits, shuffle=True, random_state=random_state)
         splits = splitter.split(table.T.values)
     else:
         if group_col not in table.sample_metadata.columns:
@@ -226,9 +224,7 @@ def align_cluster_label_dict(
                 target.loc[common_samples].to_numpy(),
                 n_clusters=int(k),
             )
-            mapping = dict(
-                zip(target.loc[common_samples].to_numpy(), common_aligned)
-            )
+            mapping = dict(zip(target.loc[common_samples].to_numpy(), common_aligned))
             aligned[fold] = target.map(lambda label: mapping.get(label, label))
 
         aligned_df = pd.concat(aligned, axis=1)

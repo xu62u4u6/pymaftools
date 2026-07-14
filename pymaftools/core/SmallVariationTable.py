@@ -28,8 +28,14 @@ class SmallVariationTable(PivotTable):
 
     # Gene-level annotation columns — taken from first mutation per gene
     _GENE_LEVEL_COLS = [
-        "Entrez_Gene_Id", "Gene", "BIOTYPE", "TRANSCRIPT_STRAND",
-        "HGNC_ID", "RefSeq", "MANE", "APPRIS",
+        "Entrez_Gene_Id",
+        "Gene",
+        "BIOTYPE",
+        "TRANSCRIPT_STRAND",
+        "HGNC_ID",
+        "RefSeq",
+        "MANE",
+        "APPRIS",
     ]
 
     # Mutation-level columns that need aggregation to gene level
@@ -65,9 +71,7 @@ class SmallVariationTable(PivotTable):
         gene_col = self.feature_metadata["Hugo_Symbol"]
 
         # Collapse data matrix: group rows by gene, apply merge_mutations per sample
-        gene_matrix = self.groupby(gene_col).agg(
-            lambda col: MAF.merge_mutations(col)
-        )
+        gene_matrix = self.groupby(gene_col).agg(lambda col: MAF.merge_mutations(col))
         result = SmallVariationTable(gene_matrix)
         result.sample_metadata = self.sample_metadata.copy()
 

@@ -59,7 +59,11 @@ class TCGACNVGeneBuilder(TCGATableBuilder):
             df = pd.read_csv(f["filepath"], sep="\t")
 
             if gene_info is None:
-                info_cols = [c for c in ["gene_id", "gene_name", "chromosome", "start", "end"] if c in df.columns]
+                info_cols = [
+                    c
+                    for c in ["gene_id", "gene_name", "chromosome", "start", "end"]
+                    if c in df.columns
+                ]
                 gene_info = df[info_cols].copy()
 
             gene_ids = df["gene_id"]
@@ -76,7 +80,9 @@ class TCGACNVGeneBuilder(TCGATableBuilder):
 
         # Feature metadata
         if self.strip_gene_version:
-            gene_info["gene_id"] = gene_info["gene_id"].str.replace(r"\.\d+$", "", regex=True)
+            gene_info["gene_id"] = gene_info["gene_id"].str.replace(
+                r"\.\d+$", "", regex=True
+            )
         feature_meta = gene_info.set_index("gene_id")
         feature_meta = feature_meta[~feature_meta.index.duplicated(keep="first")]
 

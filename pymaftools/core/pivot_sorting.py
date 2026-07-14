@@ -7,7 +7,9 @@ from typing import List
 import pandas as pd
 
 
-def sort_features(table, by: str | List[str] = "freq", ascending: bool | List[bool] = False):
+def sort_features(
+    table, by: str | List[str] = "freq", ascending: bool | List[bool] = False
+):
     """Sort features by one or more feature metadata columns."""
     cols = [by] if isinstance(by, str) else list(by)
     missing = [c for c in cols if c not in table.feature_metadata.columns]
@@ -20,6 +22,7 @@ def sort_features(table, by: str | List[str] = "freq", ascending: bool | List[bo
 
 def sort_samples_by_mutations(table, top: int = 10):
     """Sort samples by mutation patterns encoded from the top features."""
+
     def binary_sort_key(column: pd.Series) -> int:
         binary_str = "".join(column.astype(int).astype(str))
         return int(binary_str, 2)

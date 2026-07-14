@@ -117,7 +117,9 @@ class OncoPlot(BasePlot):
         self.line_color = line_color
         self.cmap = self.color_manager.get_cmap(cmap) if isinstance(cmap, str) else cmap
         self.figsize = figsize
-        self.width_ratios = [25, 1, 1, 2] if width_ratios is None else list(width_ratios)
+        self.width_ratios = (
+            [25, 1, 1, 2] if width_ratios is None else list(width_ratios)
+        )
         self.height_ratios = [1, 20] if height_ratios is None else list(height_ratios)
         self.wspace = wspace
         self.hspace = hspace
@@ -280,7 +282,9 @@ class OncoPlot(BasePlot):
         )
         return self
 
-    def main(self, kind: str = "mutation", cmap_dict: dict | None = None, **kwargs) -> OncoPlot:
+    def main(
+        self, kind: str = "mutation", cmap_dict: dict | None = None, **kwargs
+    ) -> OncoPlot:
         """Register the main matrix track for the declarative ``render()`` path.
 
         Parameters
@@ -308,9 +312,7 @@ class OncoPlot(BasePlot):
         elif kind in ("cnv", "numeric"):
             self.tracks.append(NumericMatrixTrack(self.pivot_table, **kwargs))
         else:
-            raise ValueError(
-                f"Unknown kind {kind!r}; expected 'mutation' or 'cnv'."
-            )
+            raise ValueError(f"Unknown kind {kind!r}; expected 'mutation' or 'cnv'.")
         return self
 
     def add_track(self, track: Track) -> OncoPlot:
@@ -332,9 +334,7 @@ class OncoPlot(BasePlot):
         self.tracks.append(track)
         return self
 
-    def add_bar(
-        self, bar_col: str = "TMB", side: str = "top", **kwargs
-    ) -> OncoPlot:
+    def add_bar(self, bar_col: str = "TMB", side: str = "top", **kwargs) -> OncoPlot:
         """Register a per-sample bar track (e.g. TMB) for ``render()``."""
         if bar_col not in self.sample_metadata.columns:
             hint = " Please do table.calculate_tmb() first." if bar_col == "TMB" else ""
@@ -737,20 +737,33 @@ class OncoPlot(BasePlot):
         if feature_gutter_size is None:
             max_len = (
                 max((len(str(x)) for x in feature_labels), default=1)
-                if show_feature_labels else 1
+                if show_feature_labels
+                else 1
             )
             feature_gutter_size = max(1.5, max_len * 0.2)
 
-        layout = self._render_sectioned if (
-            self._feature_groups or self._sample_groups
-        ) else self._render_simple
+        layout = (
+            self._render_sectioned
+            if (self._feature_groups or self._sample_groups)
+            else self._render_simple
+        )
         layout(
-            fig, main_track, top, bottom, left, right,
-            main_w=main_w, main_h=main_h, legend_width=legend_width,
-            legend_pad=legend_pad, wspace=wspace, hspace=hspace,
+            fig,
+            main_track,
+            top,
+            bottom,
+            left,
+            right,
+            main_w=main_w,
+            main_h=main_h,
+            legend_width=legend_width,
+            legend_pad=legend_pad,
+            wspace=wspace,
+            hspace=hspace,
             show_sample_labels=show_sample_labels,
             show_feature_labels=show_feature_labels,
-            feature_labels=feature_labels, sample_labels=sample_labels,
+            feature_labels=feature_labels,
+            sample_labels=sample_labels,
             feature_gutter_size=feature_gutter_size,
             sample_gutter_size=sample_gutter_size,
         )
@@ -761,7 +774,9 @@ class OncoPlot(BasePlot):
         for track in self.tracks:
             for name, color_dict in (track.legend_entries() or {}).items():
                 self.add_legend(name, color_dict)
-            spec = track.colorbar_legend() if hasattr(track, "colorbar_legend") else None
+            spec = (
+                track.colorbar_legend() if hasattr(track, "colorbar_legend") else None
+            )
             if spec:
                 self.legend_manager.add_numeric_legend(
                     spec["label"], spec["colormap"], spec["vmin"], spec["vmax"]
@@ -799,8 +814,9 @@ class OncoPlot(BasePlot):
         return override
 
     @staticmethod
-    def _draw_label_gutter(ax, labels, *, axis: str, n: int, fontsize: int = 8,
-                           rotation: float = 90) -> None:
+    def _draw_label_gutter(
+        ax, labels, *, axis: str, n: int, fontsize: int = 8, rotation: float = 90
+    ) -> None:
         """Draw axis labels in a dedicated cell — the "block".
 
         Labels are anchored to the cell edge that touches the matrix and drawn
@@ -817,26 +833,56 @@ class OncoPlot(BasePlot):
             ax.set_ylim(n, 0)  # inverted to match sns.heatmap row order
             trans = blended_transform_factory(ax.transAxes, ax.transData)
             for i, label in enumerate(labels):
-                ax.text(0.96, i + 0.5, str(label), transform=trans,
-                        ha="right", va="center", fontsize=fontsize)
+                ax.text(
+                    0.96,
+                    i + 0.5,
+                    str(label),
+                    transform=trans,
+                    ha="right",
+                    va="center",
+                    fontsize=fontsize,
+                )
         else:
             ax.set_ylim(0, 1)
             ax.set_xlim(-0.5, n - 0.5)
             trans = blended_transform_factory(ax.transData, ax.transAxes)
             for i, label in enumerate(labels):
-                ax.text(i + 0.5, 0.96, str(label), transform=trans,
-                        ha="center", va="top", rotation=rotation, fontsize=fontsize)
+                ax.text(
+                    i + 0.5,
+                    0.96,
+                    str(label),
+                    transform=trans,
+                    ha="center",
+                    va="top",
+                    rotation=rotation,
+                    fontsize=fontsize,
+                )
         ax.set_xticks([])
         ax.set_yticks([])
         for spine in ax.spines.values():
             spine.set_visible(False)
 
     def _render_simple(
-        self, fig, main_track, top, bottom, left, right, *,
-        main_w, main_h, legend_width, legend_pad, wspace, hspace,
-        show_sample_labels=True, show_feature_labels=True,
-        feature_labels=None, sample_labels=None,
-        feature_gutter_size=3.0, sample_gutter_size=3.0,
+        self,
+        fig,
+        main_track,
+        top,
+        bottom,
+        left,
+        right,
+        *,
+        main_w,
+        main_h,
+        legend_width,
+        legend_pad,
+        wspace,
+        hspace,
+        show_sample_labels=True,
+        show_feature_labels=True,
+        feature_labels=None,
+        sample_labels=None,
+        feature_gutter_size=3.0,
+        sample_gutter_size=3.0,
     ) -> None:
         """Ungrouped layout: one cell per track along each axis.
 
@@ -846,7 +892,7 @@ class OncoPlot(BasePlot):
         n_feat, n_samp = self.pivot_table.shape
         has_pad = legend_pad > 0
         fgut = 1 if show_feature_labels else 0  # feature-label gutter column
-        sgut = 1 if show_sample_labels else 0   # sample-label gutter row
+        sgut = 1 if show_sample_labels else 0  # sample-label gutter row
 
         # Columns: [left tracks] [feature gutter?] [main] [right tracks] [pad?] [legend]
         gut_col = len(left) if fgut else None
@@ -856,21 +902,30 @@ class OncoPlot(BasePlot):
         width_ratios = (
             [t.size for t in left]
             + ([feature_gutter_size] if fgut else [])
-            + [main_w] + [t.size for t in right]
-            + ([legend_pad] if has_pad else []) + [legend_width]
+            + [main_w]
+            + [t.size for t in right]
+            + ([legend_pad] if has_pad else [])
+            + [legend_width]
         )
 
         # Rows: [top tracks] [main] [bottom tracks] [sample gutter?]
         main_row = len(top)
         sgut_row = (main_row + 1 + len(bottom)) if sgut else None
         height_ratios = (
-            [t.size for t in top] + [main_h] + [t.size for t in bottom]
+            [t.size for t in top]
+            + [main_h]
+            + [t.size for t in bottom]
             + ([sample_gutter_size] if sgut else [])
         )
 
         self.gs = GridSpec(
-            len(height_ratios), len(width_ratios), width_ratios=width_ratios,
-            height_ratios=height_ratios, wspace=wspace, hspace=hspace, figure=fig,
+            len(height_ratios),
+            len(width_ratios),
+            width_ratios=width_ratios,
+            height_ratios=height_ratios,
+            wspace=wspace,
+            hspace=hspace,
+            figure=fig,
         )
         self.ax_heatmap = fig.add_subplot(self.gs[main_row, main_col])
         self.ax_legend = fig.add_subplot(self.gs[main_row, legend_col])
@@ -888,7 +943,9 @@ class OncoPlot(BasePlot):
         if fgut:
             self._draw_label_gutter(
                 fig.add_subplot(self.gs[main_row, gut_col]),
-                feature_labels, axis="y", n=n_feat,
+                feature_labels,
+                axis="y",
+                n=n_feat,
             )
         if sgut:
             ax = fig.add_subplot(self.gs[sgut_row, main_col])
@@ -924,11 +981,26 @@ class OncoPlot(BasePlot):
                 t._shared_max = float(totals.max()) if len(totals) else 1.0
 
     def _render_sectioned(
-        self, fig, main_track, top, bottom, left, right, *,
-        main_w, main_h, legend_width, legend_pad, wspace, hspace,
-        show_sample_labels=True, show_feature_labels=True,
-        feature_labels=None, sample_labels=None,
-        feature_gutter_size=3.0, sample_gutter_size=3.0,
+        self,
+        fig,
+        main_track,
+        top,
+        bottom,
+        left,
+        right,
+        *,
+        main_w,
+        main_h,
+        legend_width,
+        legend_pad,
+        wspace,
+        hspace,
+        show_sample_labels=True,
+        show_feature_labels=True,
+        feature_labels=None,
+        sample_labels=None,
+        feature_gutter_size=3.0,
+        sample_gutter_size=3.0,
     ) -> None:
         """Grouped layout: split the matrix into sections with whitespace gaps,
         rendering a sliced copy of each track per section, plus group titles."""
@@ -945,6 +1017,7 @@ class OncoPlot(BasePlot):
         self._fix_shared_scales(main_track, top, bottom, left, right)
 
         height_ratios: list[float] = []
+
         def add_row(h):
             height_ratios.append(h)
             return len(height_ratios) - 1
@@ -960,6 +1033,7 @@ class OncoPlot(BasePlot):
         sgut_row = add_row(sample_gutter_size) if show_sample_labels else None
 
         width_ratios: list[float] = []
+
         def add_col(w):
             width_ratios.append(w)
             return len(width_ratios) - 1
@@ -1004,8 +1078,13 @@ class OncoPlot(BasePlot):
         legend_col = add_col(legend_width)
 
         self.gs = GridSpec(
-            len(height_ratios), len(width_ratios), width_ratios=width_ratios,
-            height_ratios=height_ratios, wspace=wspace, hspace=hspace, figure=fig,
+            len(height_ratios),
+            len(width_ratios),
+            width_ratios=width_ratios,
+            height_ratios=height_ratios,
+            wspace=wspace,
+            hspace=hspace,
+            figure=fig,
         )
 
         # main matrix sub-axes (gf x gs)
@@ -1095,30 +1174,45 @@ class OncoPlot(BasePlot):
         # group titles
         if show_st:
             x, ha = {
-                "start": (0.0, "left"), "center": (0.5, "center"), "end": (1.0, "right"),
+                "start": (0.0, "left"),
+                "center": (0.5, "center"),
+                "end": (1.0, "right"),
             }[scfg["title_align"]]
             for si, (slbl, _spos) in enumerate(ssecs):
                 ax = fig.add_subplot(self.gs[stitle_row, samp_cols[si]])
                 ax.axis("off")
                 ax.text(
-                    x, 0.0, str(slbl), ha=ha, va="bottom",
-                    fontsize=scfg["title_fontsize"], fontweight="bold",
+                    x,
+                    0.0,
+                    str(slbl),
+                    ha=ha,
+                    va="bottom",
+                    fontsize=scfg["title_fontsize"],
+                    fontweight="bold",
                 )
         if show_ft:
             y, va = {
-                "start": (1.0, "top"), "center": (0.5, "center"), "end": (0.0, "bottom"),
+                "start": (1.0, "top"),
+                "center": (0.5, "center"),
+                "end": (0.0, "bottom"),
             }[fcfg["title_align"]]
             for fi, (flbl, _fpos) in enumerate(fsecs):
                 ax = fig.add_subplot(self.gs[feat_rows[fi], ftitle_col])
                 ax.axis("off")
                 ax.text(
-                    0.25, y, str(flbl), rotation=90, ha="center", va=va,
-                    fontsize=fcfg["title_fontsize"], fontweight="bold",
+                    0.25,
+                    y,
+                    str(flbl),
+                    rotation=90,
+                    ha="center",
+                    va=va,
+                    fontsize=fcfg["title_fontsize"],
+                    fontweight="bold",
                 )
 
         # legend spans the matrix rows
         self.ax_legend = fig.add_subplot(
-            self.gs[feat_rows[0]:feat_rows[-1] + 1, legend_col]
+            self.gs[feat_rows[0] : feat_rows[-1] + 1, legend_col]
         )
 
     def plot_bar(

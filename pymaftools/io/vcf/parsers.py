@@ -114,42 +114,38 @@ def parse_info(
         if format_str == "GT:GQ:DP:RD:AD:FREQ:DP4":
             if alt_index != 0:
                 raise ValueError("VarScan FORMAT does not encode per-ALT depths.")
-            dp  = int(values[2])
+            dp = int(values[2])
             ref = int(values[3])  # RD
-            ad  = int(values[4])  # alt only
-            af  = float(values[5].rstrip("%")) / 100
+            ad = int(values[4])  # alt only
+            af = float(values[5].rstrip("%")) / 100
             return dp, ref, ad, af
 
         # mutect2: GT:AD:AF:DP:... (AD = Number=R → ref,alt)
         if "AD" in parsed and (("AF" in parsed) or ("DP" in parsed)):
             ad_values = [int(x) for x in parsed["AD"].split(",")]
             ref = ad_values[0]
-            ad  = ad_values[alt_index + 1]
-            dp  = int(parsed["DP"]) if "DP" in parsed else sum(ad_values)
+            ad = ad_values[alt_index + 1]
+            dp = int(parsed["DP"]) if "DP" in parsed else sum(ad_values)
             af_values = parsed.get("AF", "").split(",")
-            af = (
-                float(af_values[alt_index])
-                if "AF" in parsed
-                else _safe_af(ad, dp)
-            )
+            af = float(af_values[alt_index]) if "AF" in parsed else _safe_af(ad, dp)
             return dp, ref, ad, af
 
         # muse: GT:DP:AD:BQ:SS (AD = ref,alt)
         if format_str == "GT:DP:AD:BQ:SS":
-            dp  = int(parsed["DP"])
+            dp = int(parsed["DP"])
             ad_values = [int(x) for x in parsed["AD"].split(",")]
             ref = ad_values[0]
-            ad  = ad_values[alt_index + 1]
-            af  = _safe_af(ad, dp)
+            ad = ad_values[alt_index + 1]
+            af = _safe_af(ad, dp)
             return dp, ref, ad, af
 
         # pindel: GT:AD (AD = ref,alt)
         if format_str == "GT:AD":
             ad_values = [int(x) for x in parsed["AD"].split(",")]
             ref = ad_values[0]
-            ad  = ad_values[alt_index + 1]
-            dp  = sum(ad_values)
-            af  = _safe_af(ad, dp)
+            ad = ad_values[alt_index + 1]
+            dp = sum(ad_values)
+            af = _safe_af(ad, dp)
             return dp, ref, ad, af
 
     except (IndexError, KeyError, TypeError, ValueError) as exc:
@@ -257,6 +253,7 @@ def parse_vcf_rows(vcf_path: str, caller: str) -> list[dict]:
     }
 
     import re
+
     _tumor_meta_re = re.compile(r"^##tumor_sample=(.+)$", re.IGNORECASE)
     _normal_meta_re = re.compile(r"^##normal_sample=(.+)$", re.IGNORECASE)
 

@@ -246,9 +246,7 @@ class LegendManager:
             )
             cbar = target_ax.figure.colorbar(sm, cax=cax, orientation="horizontal")
             cbar.set_ticks([info["vmin"], info["vmax"]])
-            cbar.set_ticklabels(
-                [f"{info['vmin']:.3g}", f"{info['vmax']:.3g}"]
-            )
+            cbar.set_ticklabels([f"{info['vmin']:.3g}", f"{info['vmax']:.3g}"])
             cbar.ax.tick_params(labelsize=fontsize, length=2, width=0.5, pad=1)
             cbar.outline.set_linewidth(0)
             # leave room for the colorbar and its tick labels below

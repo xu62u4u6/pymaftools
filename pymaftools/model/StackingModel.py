@@ -64,9 +64,7 @@ class OmicsStackingModel:
         duplicate_features = {
             feature
             for feature, count in Counter(
-                feature
-                for table in omics_dict.values()
-                for feature in table.index
+                feature for table in omics_dict.values() for feature in table.index
             ).items()
             if count > 1
         }
@@ -376,9 +374,7 @@ class OmicsStackingModel:
             if proba.shape[1] == 2:
                 roc_auc = roc_auc_score(y_true_encoded, proba[:, 1])
             else:
-                roc_auc = roc_auc_score(
-                    y_true_encoded, proba, multi_class="ovr"
-                )
+                roc_auc = roc_auc_score(y_true_encoded, proba, multi_class="ovr")
         except (ValueError, TypeError):
             roc_auc = None
 
