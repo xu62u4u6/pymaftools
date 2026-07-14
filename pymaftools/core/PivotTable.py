@@ -239,6 +239,10 @@ class PivotTable(pd.DataFrame):
         """
         Save PivotTable to SQLite database format.
 
+        .. deprecated:: 0.5.0
+            Use :meth:`to_h5` instead. SQLite has a practical limit of about
+            2,000 columns and is unsuitable for high-dimensional omics tables.
+
         Parameters
         ----------
         db_path : str
@@ -246,6 +250,12 @@ class PivotTable(pd.DataFrame):
         """
         from . import pivot_io
 
+        warnings.warn(
+            "PivotTable.to_sqlite() is deprecated; use to_h5() instead. "
+            "SQLite cannot reliably store high-dimensional omics matrices.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         pivot_io.to_sqlite(self, db_path)
 
     def to_h5(
@@ -276,6 +286,9 @@ class PivotTable(pd.DataFrame):
         """
         Load PivotTable from SQLite database format.
 
+        .. deprecated:: 0.5.0
+            Use :meth:`read_h5` instead.
+
         Parameters
         ----------
         db_path : str
@@ -288,6 +301,11 @@ class PivotTable(pd.DataFrame):
         """
         from . import pivot_io
 
+        warnings.warn(
+            "PivotTable.read_sqlite() is deprecated; use read_h5() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return pivot_io.read_sqlite(cls, db_path)
 
     @classmethod

@@ -5,6 +5,7 @@ Tests for PivotTable core functionality
 import pytest
 import pandas as pd
 import numpy as np
+import sqlite3
 import pymaftools
 from pymaftools.core.PivotTable import PivotTable
 from pymaftools.core.SmallVariationTable import SmallVariationTable
@@ -90,6 +91,36 @@ class TestPivotTableBasics:
 
         assert db_path.read_bytes() == b"existing database"
         assert list(tmp_path.iterdir()) == [db_path]
+
+    def test_sqlite_connections_are_closed(
+        self, sample_pivot_table, tmp_path, monkeypatch
+    ):
+        from pymaftools.core import pivot_io
+
+        connections = []
+        original_connect = sqlite3.connect
+
+        class TrackingConnection(sqlite3.Connection):
+            was_closed = False
+
+            def close(self):
+                self.was_closed = True
+                super().close()
+
+        def tracked_connect(*args, **kwargs):
+            kwargs["factory"] = TrackingConnection
+            connection = original_connect(*args, **kwargs)
+            connections.append(connection)
+            return connection
+
+        monkeypatch.setattr(pivot_io.sqlite3, "connect", tracked_connect)
+        db_path = tmp_path / "pivot.db"
+
+        sample_pivot_table.to_sqlite(db_path)
+        PivotTable.read_sqlite(db_path)
+
+        assert len(connections) == 2
+        assert all(connection.was_closed for connection in connections)
     
     def test_subset_functionality(self, sample_pivot_table):
         """Test subset method"""

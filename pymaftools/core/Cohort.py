@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import closing
 import pandas as pd
 import copy
 import warnings
@@ -338,27 +339,32 @@ class Cohort:
 
         registry = self.to_sql_registry()
         with atomic_output_path(db_path) as temporary_path:
-            with sqlite3.connect(str(temporary_path)) as conn:
-                for _, row in registry.iterrows():
-                    table_name = row["table_name"]
-                    sql_table_name = row["sql_table_name"]
-                    kind = row["type"]
-                    table = self.tables[table_name].copy().rename_index_and_columns()
+            with closing(sqlite3.connect(str(temporary_path))) as conn:
+                with conn:
+                    for _, row in registry.iterrows():
+                        table_name = row["table_name"]
+                        sql_table_name = row["sql_table_name"]
+                        kind = row["type"]
+                        table = self.tables[
+                            table_name
+                        ].copy().rename_index_and_columns()
 
-                    if kind == "data":
-                        table.to_sql(
-                            sql_table_name, conn, if_exists="replace", index=True
-                        )
-                    elif kind == "sample_metadata":
-                        table.sample_metadata.to_sql(
-                            sql_table_name, conn, if_exists="replace", index=True
-                        )
-                    elif kind == "feature_metadata":
-                        table.feature_metadata.to_sql(
-                            sql_table_name, conn, if_exists="replace", index=True
-                        )
+                        if kind == "data":
+                            table.to_sql(
+                                sql_table_name, conn, if_exists="replace", index=True
+                            )
+                        elif kind == "sample_metadata":
+                            table.sample_metadata.to_sql(
+                                sql_table_name, conn, if_exists="replace", index=True
+                            )
+                        elif kind == "feature_metadata":
+                            table.feature_metadata.to_sql(
+                                sql_table_name, conn, if_exists="replace", index=True
+                            )
 
-                registry.to_sql("registry", conn, if_exists="replace", index=False)
+                    registry.to_sql(
+                        "registry", conn, if_exists="replace", index=False
+                    )
         print(f"[Cohort] saved to {db_path}")
 
     @classmethod
@@ -386,34 +392,32 @@ class Cohort:
             DeprecationWarning,
             stacklevel=2,
         )
-        conn = sqlite3.connect(db_path)
-        registry_df = pd.read_sql("SELECT * FROM registry", conn)
+        with closing(sqlite3.connect(db_path)) as conn:
+            registry_df = pd.read_sql("SELECT * FROM registry", conn)
 
-        cohort_name = registry_df["cohort_name"].iloc[0]
-        cohort = cls(cohort_name)
+            cohort_name = registry_df["cohort_name"].iloc[0]
+            cohort = cls(cohort_name)
 
-        for table_name in registry_df["table_name"].unique():
-            data = pd.read_sql(
-                f"SELECT * FROM '{table_name}'", conn, index_col="feature"
-            )
-            sample_metadata = pd.read_sql(
-                f"SELECT * FROM '{table_name}__sample_metadata'",
-                conn,
-                index_col="sample",
-            )
-            feature_metadata = pd.read_sql(
-                f"SELECT * FROM '{table_name}__feature_metadata'",
-                conn,
-                index_col="feature",
-            )
+            for table_name in registry_df["table_name"].unique():
+                data = pd.read_sql(
+                    f"SELECT * FROM '{table_name}'", conn, index_col="feature"
+                )
+                sample_metadata = pd.read_sql(
+                    f"SELECT * FROM '{table_name}__sample_metadata'",
+                    conn,
+                    index_col="sample",
+                )
+                feature_metadata = pd.read_sql(
+                    f"SELECT * FROM '{table_name}__feature_metadata'",
+                    conn,
+                    index_col="feature",
+                )
 
-            pivot = PivotTable(data)
-            pivot.sample_metadata = sample_metadata
-            pivot.feature_metadata = feature_metadata
+                pivot = PivotTable(data)
+                pivot.sample_metadata = sample_metadata
+                pivot.feature_metadata = feature_metadata
 
-            cohort.add_table(pivot, table_name)
-
-        conn.close()
+                cohort.add_table(pivot, table_name)
         print(f"[Cohort] loaded from {db_path}")
         return cohort
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import closing
 import sqlite3
 from pathlib import Path
 from typing import Any
@@ -17,12 +18,15 @@ def to_sqlite(table, db_path: str) -> None:
     table_to_save = table.copy().rename_index_and_columns()
     table_to_save = table_to_save.replace(False, "WT")
     with atomic_output_path(db_path) as temporary_path:
-        with sqlite3.connect(str(temporary_path)) as conn:
-            table_to_save.to_sql("data", conn, index=True)
-            table_to_save.sample_metadata.to_sql("sample_metadata", conn, index=True)
-            table_to_save.feature_metadata.to_sql(
-                "feature_metadata", conn, index=True
-            )
+        with closing(sqlite3.connect(str(temporary_path))) as conn:
+            with conn:
+                table_to_save.to_sql("data", conn, index=True)
+                table_to_save.sample_metadata.to_sql(
+                    "sample_metadata", conn, index=True
+                )
+                table_to_save.feature_metadata.to_sql(
+                    "feature_metadata", conn, index=True
+                )
     print(f"[PivotTable] saved to {db_path}")
 
 
@@ -51,24 +55,22 @@ def to_h5(
 
 def read_sqlite(table_cls, db_path: str):
     """Load a PivotTable-like object from SQLite."""
-    conn = sqlite3.connect(db_path)
+    with closing(sqlite3.connect(db_path)) as conn:
+        data = pd.read_sql("SELECT * FROM 'data'", conn, index_col="feature")
+        data.columns.name = "sample"
 
-    data = pd.read_sql("SELECT * FROM 'data'", conn, index_col="feature")
-    data.columns.name = "sample"
-
-    sample_metadata = pd.read_sql(
-        "SELECT * FROM 'sample_metadata'", conn, index_col="sample"
-    )
-    feature_metadata = pd.read_sql(
-        "SELECT * FROM 'feature_metadata'", conn, index_col="feature"
-    )
+        sample_metadata = pd.read_sql(
+            "SELECT * FROM 'sample_metadata'", conn, index_col="sample"
+        )
+        feature_metadata = pd.read_sql(
+            "SELECT * FROM 'feature_metadata'", conn, index_col="feature"
+        )
 
     table = table_cls(data)
     table = table.replace("WT", False)
     table.sample_metadata = sample_metadata
     table.feature_metadata = feature_metadata
     table._validate_metadata()
-    conn.close()
     print(f"[PivotTable] loaded from {db_path}")
     return table
 

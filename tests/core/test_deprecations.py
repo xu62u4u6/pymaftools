@@ -57,3 +57,16 @@ def test_vcf_from_file_alias_warns_and_delegates():
 
     assert result == "sentinel"
     stub.assert_called_once_with("x.vcf", "mutect2")
+
+
+def test_pivot_sqlite_warns_in_favor_of_hdf5(tmp_path):
+    table = PivotTable(pd.DataFrame({"s1": [True]}, index=["TP53"]))
+    db_path = tmp_path / "pivot.db"
+
+    with pytest.warns(DeprecationWarning, match="to_h5"):
+        table.to_sqlite(db_path)
+    with pytest.warns(DeprecationWarning, match="read_h5"):
+        restored = PivotTable.read_sqlite(db_path)
+
+    assert restored.shape == table.shape
+    assert bool(restored.iloc[0, 0]) is True
