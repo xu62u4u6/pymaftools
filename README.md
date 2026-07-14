@@ -422,6 +422,9 @@ matching AD and AF values retained for each row.
 
 ## Development and Testing
 
+Bundled fixture and annotation provenance is recorded in
+[DATA_SOURCES.md](DATA_SOURCES.md), including checksums and known lineage gaps.
+
 ```bash
 # Install with test dependencies
 pip install -e .[test]

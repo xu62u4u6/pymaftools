@@ -18,6 +18,7 @@ release-facing metadata, then create the matching tag:
 - [ ] `CHANGELOG.md` → Add new version section at top
 - [ ] `.claude/skills/pymaftools/SKILL.md` → Update if API changed
 - [ ] Confirm `python -m setuptools_scm` reports `X.Y.Z` at tag `vX.Y.Z`
+- [ ] `DATA_SOURCES.md` checksums/provenance match every bundled data change
 
 ## 3. Documentation
 
