@@ -50,7 +50,7 @@ jobs:
           installed_version="$(python -c "from importlib.metadata import version; print(version('pymaftools'))")"
           test "$installed_version" = "$version"
           grep -q "^version: $version$" CITATION.cff
-          grep -q "Version $version" CHANGELOG.md
+          python scripts/extract_release_notes.py "$version" --output release-notes.md
 
       - name: Lint and format
         run: |
@@ -171,17 +171,24 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v6
+
       - uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist/
+
+      - name: Extract release notes
+        run: >-
+          python scripts/extract_release_notes.py "${GITHUB_REF_NAME#v}"
+          --output release-notes.md
 
       - name: Create GitHub Release
         run: >-
           gh release create "$GITHUB_REF_NAME" dist/*
           --verify-tag
           --title "pymaftools ${GITHUB_REF_NAME#v}"
-          --generate-notes
+          --notes-file release-notes.md
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
