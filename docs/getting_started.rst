@@ -40,6 +40,28 @@ the package, so this runs as-is after ``pip install``:
    )
    op.save("oncoplot.png", dpi=300)
 
+Saving Results
+--------------
+
+Use HDF5 for both individual tables and multi-omics cohorts. It preserves data
+and metadata without SQLite's practical limit of roughly 2,000 columns.
+
+.. code-block:: python
+
+   from pymaftools import Cohort, PivotTable
+
+   table.to_h5("mutation_table.h5")
+   table = PivotTable.read_h5("mutation_table.h5")
+
+   cohort.to_hdf5("cohort.h5")
+   cohort = Cohort.read_hdf5("cohort.h5")
+
+.. note::
+
+   ``to_sqlite`` and ``read_sqlite`` are deprecated as of 0.5.0. They remain
+   available for existing files during the deprecation period, but should not
+   be used for new high-dimensional datasets.
+
 Reading MAF Files
 -----------------
 

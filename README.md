@@ -330,9 +330,9 @@ cohort.add_table(cnv_table, "cnv")
 cohort.add_table(expr_table, "expression")
 cohort.add_sample_metadata(clinical_df)
 
-# Save/load
-cohort.to_sqlite("cohort.db")
-cohort = Cohort.read_sqlite("cohort.db")
+# Save/load with HDF5. Unlike SQLite, this supports high-dimensional tables.
+cohort.to_hdf5("cohort.h5")
+cohort = Cohort.read_hdf5("cohort.h5")
 ```
 
 ### Machine Learning
@@ -386,16 +386,21 @@ op = (pivot_table.plot.oncoplot()
 ### 3. How to save and load analysis results?
 
 ```python
-# SQLite format (PivotTable and Cohort)
-pivot_table.to_sqlite("results.db")
-loaded = PivotTable.read_sqlite("results.db")
+# HDF5 is the canonical persistence format for high-dimensional omics data.
+pivot_table.to_h5("results.h5")
+loaded = PivotTable.read_h5("results.h5")
 
-cohort.to_sqlite("cohort.db")
-loaded = Cohort.read_sqlite("cohort.db")
+cohort.to_hdf5("cohort.h5")
+loaded = Cohort.read_hdf5("cohort.h5")
 
 # Save figures
 oncoplot.save("oncoplot.png", dpi=300)
 ```
+
+SQLite persistence is deprecated as of 0.5.0 because SQLite has a practical
+limit of roughly 2,000 columns, which is too low for expression and other
+high-dimensional omics matrices. Existing SQLite files remain readable during
+the deprecation period.
 
 ## Development and Testing
 

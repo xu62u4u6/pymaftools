@@ -53,8 +53,8 @@ pt = pt.sort_samples_by_group(group_col="subtype", group_order=["A", "B"], top=1
 pt_sub = pt.subset(features=["TP53", "KRAS"], samples=sample_list)
 
 # Persistence
-pt.to_sqlite("data.db")
-pt = PivotTable.read_sqlite("data.db")
+pt.to_h5("data.h5")
+pt = PivotTable.read_h5("data.h5")
 
 # Visualization (lazy-loaded accessor)
 pt.plot.plot_pca_samples(group_col="subtype")
@@ -111,8 +111,8 @@ cohort.to_hdf5("cohort.h5")
 cohort = Cohort.read_hdf5("cohort.h5")
 # HDF5 stores per table: data (matrix), feature_metadata, sample_metadata
 
-# SQLite (deprecated, ~2000 column limit)
-cohort.to_sqlite("cohort.db")
+# SQLite persistence is deprecated because its ~2000-column limit is too low
+# for high-dimensional omics matrices. Use HDF5 for new files.
 ```
 
 **Key behavior:** `add_table()` automatically subsets the table to `cohort.sample_IDs`. Set sample_IDs first via `add_sample_metadata()`, then add tables without pre-filtering.

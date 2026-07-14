@@ -77,6 +77,24 @@ Inspecting the structure
    table.sample_metadata.head()      # per-sample annotations (TMB, subtype, ...)
    table.sample_metadata["mutations_count"]   # added by to_gene_table
 
+Persistence
+-----------
+
+HDF5 is the canonical persistence format. It preserves the matrix, concrete
+``PivotTable`` subclass, feature metadata, and sample metadata.
+
+.. code-block:: python
+
+   from pymaftools import PivotTable, read_h5
+
+   table.to_h5("mutation_table.h5")
+   restored = PivotTable.read_h5("mutation_table.h5")
+   restored = read_h5("mutation_table.h5")  # equivalent top-level helper
+
+SQLite persistence is deprecated as of 0.5.0 because its practical limit of
+roughly 2,000 columns is unsuitable for expression and other high-dimensional
+omics matrices.
+
 Subsetting
 ----------
 
