@@ -1526,19 +1526,21 @@ class PivotTable(pd.DataFrame):
         """
         Convert PivotTable to binary format.
 
-        Converts all non-False values to True, creating a binary representation
-        of the mutation data.
+        Converts observed non-False values to True, creating a binary
+        representation of the mutation data. Missing values are treated as
+        absence and converted to False.
 
         Returns
         -------
         PivotTable
             Bool PivotTable where True indicates mutation presence.
         """
-        binary_pivot_table = self.copy()
-        # Convert to boolean and ensure proper dtype
-        binary_data = (binary_pivot_table != False).astype(bool)  # noqa: E712
-        binary_pivot_table[:] = binary_data
-        return binary_pivot_table
+        binary_data = self.notna() & self.ne(False)
+        return self._from_dataframe(
+            binary_data.astype(bool),
+            self.feature_metadata,
+            self.sample_metadata,
+        )
 
     def mutation_enrichment_test(
         self,

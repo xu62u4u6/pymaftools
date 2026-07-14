@@ -221,7 +221,20 @@ class TestPivotTableStatistics:
         # Check that all columns are boolean type
         assert all(dtype == bool for dtype in binary_table.dtypes)
         assert binary_table.shape == table.shape
-        assert (binary_table == (table != False)).all().all()
+        expected = table.notna() & table.ne(False)
+        assert binary_table.equals(expected)
+
+    def test_to_binary_table_treats_missing_values_as_absent(self, sample_pivot_table):
+        """Missing observations must not be counted as mutations."""
+        table = sample_pivot_table.copy()
+        table.iloc[0, 0] = np.nan
+
+        binary_table = table.to_binary_table()
+
+        assert binary_table.iloc[0, 0] == False  # noqa: E712
+        assert binary_table.to_numpy().dtype == bool
+        assert binary_table.sample_metadata.equals(table.sample_metadata)
+        assert binary_table.feature_metadata.equals(table.feature_metadata)
     
     def test_PCA_calculation(self, sample_pivot_table):
         """Test PCA calculation"""
