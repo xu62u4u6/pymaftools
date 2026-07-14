@@ -34,7 +34,7 @@ def table_to_distance(table: PivotTable) -> np.ndarray:
     numpy.ndarray
         Distance matrix computed as 1 minus cosine similarity.
     """
-    similarity = table.T.compute_similarity(method="cosine")
+    similarity = table.compute_similarity(method="cosine")
     distance = 1 - similarity.values
     return distance
 
@@ -46,7 +46,8 @@ def k_fold_clustering_evaluation(
     metric: Literal["cosine", "hamming", "jaccard"] = "cosine",
     random_state: int = 42,
     group_col: str = "subtype",
-) -> tuple[pd.DataFrame, dict[int, dict[int, np.ndarray]]]:
+    n_splits: int = 5,
+) -> tuple[pd.DataFrame, dict[int, dict[int, pd.Series]]]:
     """
     Evaluate the optimal number of clusters using K-fold cross-validation.
 
@@ -64,31 +65,36 @@ def k_fold_clustering_evaluation(
         Random seed for reproducibility, by default 42.
     group_col : str, optional
         Column name in sample metadata used for grouping, by default 'subtype'.
+    n_splits : int, optional
+        Number of cross-validation folds, by default 5.
 
     Returns
     -------
     pd.DataFrame
         DataFrame containing silhouette scores for each fold and cluster count.
-    dict[int, dict[int, numpy.ndarray]]
-        Mapping of cluster count k to fold-wise cluster labels.
+    dict[int, dict[int, pandas.Series]]
+        Mapping of cluster count k to fold-wise cluster labels indexed by
+        sample identifier.
     """
-    group = table.sample_metadata[group_col].values
-    kf = KFold(n_splits=5, shuffle=True, random_state=random_state)
     if not isinstance(table, PivotTable):
         raise ValueError("Input table must be a PivotTable instance.")
     if min_clusters < 2 or max_clusters < min_clusters:
         raise ValueError(
             "min_clusters must be at least 2 and max_clusters must be greater than or equal to min_clusters."
         )
+    if not 2 <= n_splits <= table.shape[1]:
+        raise ValueError("n_splits must be between 2 and the number of samples")
+    group = table.sample_metadata[group_col].values
+    kf = KFold(n_splits=n_splits, shuffle=True, random_state=random_state)
     all_results = []
     cluster_label_dict = {}
     # only use (k-1)/k train part for clustering
     for fold, (train_idx, _) in enumerate(kf.split(table.T.values, np.array(group))):
-        print(f"Processing fold {fold + 1}/5")
+        print(f"Processing fold {fold + 1}/{n_splits}")
 
         sample_train = table.sample_metadata.iloc[train_idx].index
         table_train = table.subset(samples=sample_train)
-        similarity_matrix = table_train.T.compute_similarity(method=metric)
+        similarity_matrix = table_train.compute_similarity(method=metric)
         distance_matrix_train = 1 - similarity_matrix  # dist = 1 - similarity
         # fill diagonal to 0
         for i in range(len(distance_matrix_train)):
@@ -96,15 +102,26 @@ def k_fold_clustering_evaluation(
 
         # test different number of clusters
         for k in tqdm(range(min_clusters, max_clusters + 1), desc=f"Fold {fold + 1}"):
+            if k >= len(sample_train):
+                continue
             model = AgglomerativeClustering(
                 n_clusters=k, metric="precomputed", linkage="average"
             )
             labels = model.fit_predict(distance_matrix_train)
             if k not in cluster_label_dict:
                 cluster_label_dict[k] = {}
-            cluster_label_dict[k][fold + 1] = labels
+            cluster_label_dict[k][fold + 1] = pd.Series(
+                labels,
+                index=sample_train,
+                name=fold + 1,
+                dtype=int,
+            )
 
-            score = silhouette_score(table_train, labels, metric=metric)
+            score = silhouette_score(
+                distance_matrix_train,
+                labels,
+                metric="precomputed",
+            )
 
             all_results.append(
                 {"fold": fold + 1, "n_clusters": k, "silhouette_score": score}
@@ -142,15 +159,17 @@ def align_clusters(
 
 
 def align_cluster_label_dict(
-    cluster_label_dict: dict[int, dict[int, np.ndarray]],
+    cluster_label_dict: dict[int, dict[int, pd.Series | np.ndarray]],
 ) -> dict[int, pd.DataFrame]:
     """
     Align cluster labels across folds using fold 1 as the reference.
 
     Parameters
     ----------
-    cluster_label_dict : dict[int, dict[int, numpy.ndarray]]
-        Mapping of cluster count k to a dict of fold number to label array.
+    cluster_label_dict : dict[int, dict[int, pandas.Series or numpy.ndarray]]
+        Mapping of cluster count k to a dict of fold number to labels. Series
+        indexes identify samples; arrays are supported for backwards
+        compatibility and use a positional RangeIndex.
         Structure: ``{k: {fold: labels}}``.
 
     Returns
@@ -161,17 +180,37 @@ def align_cluster_label_dict(
     aligned_fold_df_dict = {}
 
     for k, fold_dict in cluster_label_dict.items():
-        fold_df = pd.DataFrame(fold_dict)
-        ref_labels = fold_df.iloc[:, 0].values
-        aligned_df = pd.DataFrame(index=fold_df.index)
+        if not fold_dict:
+            aligned_fold_df_dict[k] = pd.DataFrame()
+            continue
 
-        for col in fold_df.columns:
-            if col == fold_df.columns[0]:
-                aligned_df[col] = fold_df[col]
-            else:
-                aligned_df[col] = align_clusters(
-                    ref_labels, fold_df[col].values, n_clusters=int(k)
+        labels_by_fold = {
+            fold: labels if isinstance(labels, pd.Series) else pd.Series(labels)
+            for fold, labels in fold_dict.items()
+        }
+        reference_fold = next(iter(labels_by_fold))
+        reference = labels_by_fold[reference_fold]
+        aligned = {reference_fold: reference}
+
+        for fold, target in labels_by_fold.items():
+            if fold == reference_fold:
+                continue
+            common_samples = reference.index.intersection(target.index)
+            if common_samples.empty:
+                raise ValueError(
+                    f"Folds {reference_fold!r} and {fold!r} have no samples in common"
                 )
+            common_aligned = align_clusters(
+                reference.loc[common_samples].to_numpy(),
+                target.loc[common_samples].to_numpy(),
+                n_clusters=int(k),
+            )
+            mapping = dict(
+                zip(target.loc[common_samples].to_numpy(), common_aligned)
+            )
+            aligned[fold] = target.map(lambda label: mapping.get(label, label))
+
+        aligned_df = pd.concat(aligned, axis=1)
 
         aligned_fold_df_dict[k] = aligned_df
 
@@ -227,7 +266,13 @@ def calculate_ari_matrix(
 
     for i in range(n):
         for j in range(n):
-            ari_matrix.iloc[i, j] = adjusted_rand_score(df.iloc[:, i], df.iloc[:, j])
+            common = df.iloc[:, [i, j]].dropna()
+            if common.empty:
+                ari_matrix.iloc[i, j] = np.nan
+            else:
+                ari_matrix.iloc[i, j] = adjusted_rand_score(
+                    common.iloc[:, 0], common.iloc[:, 1]
+                )
 
     return ari_matrix
 
