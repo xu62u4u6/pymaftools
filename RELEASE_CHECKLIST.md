@@ -7,16 +7,17 @@ Every version release should go through this checklist.
 - [ ] All tests pass: `uv run --extra test pytest tests/ -v --tb=short`
 - [ ] Lint clean: `uvx ruff check pymaftools/`
 - [ ] Format clean: `uvx ruff format --check pymaftools/`
-- [ ] Coverage meets CI threshold: `pytest --cov=pymaftools --cov-fail-under=40`
+- [ ] Coverage meets CI threshold: `pytest --cov=pymaftools --cov-fail-under=60`
 
 ## 2. Version Bump
 
-Update version in **all** of these files:
+The package version is derived from the Git tag by ``setuptools-scm``. Update
+release-facing metadata, then create the matching tag:
 
-- [ ] `pyproject.toml` → `version = "X.Y.Z"`
 - [ ] `CITATION.cff` → `version: X.Y.Z` and `date-released: YYYY-MM-DD`
 - [ ] `CHANGELOG.md` → Add new version section at top
 - [ ] `.claude/skills/pymaftools/SKILL.md` → Update if API changed
+- [ ] Confirm `python -m setuptools_scm` reports `X.Y.Z` at tag `vX.Y.Z`
 
 ## 3. Documentation
 
@@ -28,8 +29,11 @@ Update version in **all** of these files:
 ## 4. Build & Verify
 
 ```bash
-# Use deploy.sh (clean build + check + upload)
+# Build and check locally (does not upload)
 bash deploy.sh
+
+# Upload only from the clean, exact release tag
+bash deploy.sh --upload
 ```
 
 Or manually:
@@ -63,4 +67,4 @@ uv venv /tmp/test-install && \
 
 - [ ] Verify on PyPI: `pip install pymaftools==X.Y.Z`
 - [ ] Verify docs deployed: `https://dionic.xyz/pymaftools/`
-- [ ] Bump version to next dev: `X.Y.(Z+1).dev0` (optional)
+- [ ] Confirm post-tag development builds receive the next setuptools-scm dev version
