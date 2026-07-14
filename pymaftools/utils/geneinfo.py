@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import time
+from pathlib import Path
 
 import requests
 import pandas as pd
@@ -160,9 +161,6 @@ def get_gene_description_df(gene_symbols: list[str]) -> pd.DataFrame:
     gene_description_df.rename(columns={"index": "Gene"}, inplace=True)
 
     return gene_description_df
-
-
-from pathlib import Path
 
 _DATA_DIR = Path(__file__).parent.parent / "data"
 _ENSEMBL_CACHE = _DATA_DIR / "ensembl_gene_map.tsv"

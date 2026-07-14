@@ -14,13 +14,9 @@ Examples
 
 from __future__ import annotations
 
-import gzip
-import io
 import json
-import os
 import shutil
 import subprocess
-import tarfile
 import time
 import tomllib
 from pathlib import Path
@@ -677,7 +673,7 @@ class GDCClient:
             mark = "" if label in dtype_to_label.values() else " ← not in config"
             print(f"  {label}: {n}{mark}")
 
-        missing = [l for l in dtype_to_label.values() if l not in counts]
+        missing = [label for label in dtype_to_label.values() if label not in counts]
         if missing:
             print(f"\n  WARNING: missing data types: {missing}")
             print("  Add them to your portal cart before continuing.")

@@ -79,8 +79,6 @@ def plot_titv(
     show_sample_labels: bool | None = None,
 ):
     """Draw Ti/Tv six-class substitution composition per sample."""
-    import matplotlib.pyplot as plt
-
     from .ColorManager import ColorManager
     from . import style
 
@@ -126,8 +124,6 @@ def plot_rainfall(
     point_size: float = 10,
 ):
     """Draw inter-mutation distance across genomic coordinates."""
-    import matplotlib.pyplot as plt
-
     from .ColorManager import ColorManager
     from . import style
 
@@ -706,8 +702,6 @@ def plot_gene_recurrence(maf: pd.DataFrame, ax=None, figsize=(7, 4)):
 def plot_top_genes(maf: pd.DataFrame, ax=None, top: int = 10, figsize=(7, 4)):
     """Top recurrently-mutated genes as horizontal bars, stacked by functional
     consequence (shares the overview's Consequence palette/legend)."""
-    import matplotlib.pyplot as plt
-
     from .ColorManager import ColorManager
     from . import style
 
