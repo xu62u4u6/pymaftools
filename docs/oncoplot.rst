@@ -189,18 +189,11 @@ genes (TTN, MUC16, SYNE1) from compact recurrent drivers (TP53).
 
 .. code-block:: python
 
-   from pathlib import Path
-
    import numpy as np
    import pandas as pd
-   import pymaftools
-   from pymaftools import read_h5
+   from pymaftools import load_example_table
 
-   # Resolve the bundled fixture from the installed package, so this works from
-   # any working directory (a bare "pymaftools/data/..." only resolves at the
-   # repo root).
-   data_dir = Path(pymaftools.__file__).parent / "data"
-   table = read_h5(data_dir / "example_tcga_lung_mutation_grouped.h5")
+   table = load_example_table()
 
    # keep recurrently-mutated genes, look up exon size, bin into bands
    genes = table.feature_metadata.index[table.feature_metadata["freq"] >= 0.2]

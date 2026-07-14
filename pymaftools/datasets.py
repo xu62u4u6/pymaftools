@@ -25,6 +25,7 @@ _EXAMPLE_MAFS = {
     "multisample": "example_multisample.maf",  # 6 tumor samples in one file
     "single_sample": "example_single_sample.maf",  # one per-aliquot file
 }
+_EXAMPLE_TABLE = "example_tcga_lung_mutation_grouped.h5"
 
 
 def example_maf_path(name: str = "multisample") -> Path:
@@ -65,3 +66,15 @@ def load_example_maf(name: str = "multisample", **kwargs):
     from .core.MAF import MAF
 
     return MAF.read_maf(os.fspath(example_maf_path(name)), **kwargs)
+
+
+def example_table_path() -> Path:
+    """Return the path to the bundled TCGA lung mutation HDF5 table."""
+    return _DATA_DIR / _EXAMPLE_TABLE
+
+
+def load_example_table():
+    """Load the bundled TCGA lung mutation table from HDF5."""
+    from .core.PivotTable import PivotTable
+
+    return PivotTable.read_h5(example_table_path())

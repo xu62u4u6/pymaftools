@@ -130,7 +130,7 @@ with metadata automatically kept in sync.
    These snippets are illustrative — the bundled ``multisample`` MAF has no
    ``subtype`` column and its genes are not ``TP53``/``KRAS``/``EGFR``. Use
    names/columns from your own data, or load the bundled HDF5 fixture
-   (``read_h5("pymaftools/data/example_tcga_lung_mutation_grouped.h5")``), which
+   (``load_example_table()``), which
    has ``subtype``. See :doc:`pivottable` for details.
 
 .. code-block:: python

@@ -111,8 +111,8 @@ with both metadata frames kept in sync automatically.
    runnable cohort that already has ``subtype`` (plus ``LUAD_freq``/``LUSC_freq``),
    load the bundled HDF5 fixture instead::
 
-       from pymaftools import read_h5
-       table = read_h5("pymaftools/data/example_tcga_lung_mutation_grouped.h5")
+       from pymaftools import load_example_table
+       table = load_example_table()
 
 .. code-block:: python
 

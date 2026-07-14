@@ -5,7 +5,13 @@ MAFs with no external download (the gap the doc-only-user agent surfaced)."""
 
 import pytest
 
-from pymaftools import load_example_maf, example_maf_path
+from pymaftools import (
+    PivotTable,
+    example_maf_path,
+    example_table_path,
+    load_example_maf,
+    load_example_table,
+)
 from pymaftools.core.MAF import MAF
 
 
@@ -37,3 +43,14 @@ def test_load_example_single_sample_is_readable():
     maf = load_example_maf("single_sample")
     assert isinstance(maf, MAF)
     assert maf.to_pivot_table().shape[0] > 0
+
+
+def test_bundled_hdf5_table_has_installed_package_entry_points():
+    path = example_table_path()
+
+    assert path.exists()
+    assert path.suffix == ".h5"
+    table = load_example_table()
+    assert isinstance(table, PivotTable)
+    assert table.shape[0] > 0
+    assert table.shape[1] > 0

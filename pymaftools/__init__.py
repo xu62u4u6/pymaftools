@@ -16,7 +16,12 @@ from .core.MAF import MAF
 from .core.PivotTable import PivotTable, capture_size
 from .core.SignatureTable import SignatureTable
 from .core.SmallVariationTable import SmallVariationTable
-from .datasets import example_maf_path, load_example_maf
+from .datasets import (
+    example_maf_path,
+    example_table_path,
+    load_example_maf,
+    load_example_table,
+)
 
 __version__ = version("pymaftools")
 
@@ -94,6 +99,8 @@ __all__ = [
     "Cohort",
     "load_example_maf",
     "example_maf_path",
+    "load_example_table",
+    "example_table_path",
     "read_h5",
     *_LAZY_EXPORTS,
 ]
