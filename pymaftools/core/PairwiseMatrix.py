@@ -6,10 +6,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from matplotlib.patches import Rectangle
-from scipy.stats import mannwhitneyu
 from typing import Any
 import matplotlib.gridspec as gridspec
 import os
+import warnings
 
 
 class PairwiseMatrix(pd.DataFrame):
@@ -75,27 +75,47 @@ class SimilarityMatrix(PairwiseMatrix):
             Square DataFrame of shape ``(n_groups, n_groups)`` containing the
             mean pairwise similarity between each pair of groups.
         """
+        groups = np.asarray(groups)
+        if len(groups) != len(self):
+            raise ValueError("groups must contain one label per matrix row")
         if group_order is None:
-            group_order = groups.unique()
+            group_order = pd.unique(groups)
 
         result_df = pd.DataFrame(columns=group_order, index=group_order, dtype=float)
         n = len(group_order)
         for i in range(n):
             for j in range(n):
                 cohort1, cohort2 = group_order[i], group_order[j]
-                indices1, indices2 = (
-                    np.where(groups == cohort1)[0],
-                    np.where(groups == cohort2)[0],
+                values = self.get_pair_values(groups, (cohort1, cohort2))
+                result_df.loc[cohort1, cohort2] = (
+                    values.mean() if values.size else np.nan
                 )
-                pairwise_subset = self.iloc[indices1, indices2]
-                result_df.loc[cohort1, cohort2] = pairwise_subset.mean().mean()
         return result_df
+
+    def get_pair_values(
+        self,
+        groups: pd.Series | np.ndarray,
+        pair: tuple[str, str],
+    ) -> np.ndarray:
+        """Return unique, non-self similarity values for a group pair."""
+        groups = np.asarray(groups)
+        if len(groups) != len(self):
+            raise ValueError("groups must contain one label per matrix row")
+        indices1 = np.flatnonzero(groups == pair[0])
+        indices2 = np.flatnonzero(groups == pair[1])
+        subset = self.iloc[indices1, indices2].to_numpy(dtype=float)
+        if pair[0] == pair[1]:
+            values = subset[np.triu_indices_from(subset, k=1)]
+        else:
+            values = subset.ravel()
+        return values[~np.isnan(values)]
 
     def generate_permutation_list(
         self,
         groups: pd.Series,
         group_order: np.ndarray | list[str],
         n_permutations: int = 1000,
+        random_state: int | None = None,
     ) -> list[pd.DataFrame]:
         """
         Generate group similarity matrices under random label permutations.
@@ -115,11 +135,11 @@ class SimilarityMatrix(PairwiseMatrix):
             Each element is a group-mean similarity matrix computed from a
             random permutation of the group labels.
         """
+        rng = np.random.default_rng(random_state)
+        group_values = np.asarray(groups)
         permutation_list = []
         for _ in range(n_permutations):
-            shuffled_groups = groups.sample(frac=1, replace=False).reset_index(
-                drop=True
-            )
+            shuffled_groups = rng.permutation(group_values)
             permuted_similarity = self.get_mean_group_similarity(
                 shuffled_groups, group_order
             )
@@ -159,6 +179,8 @@ class SimilarityMatrix(PairwiseMatrix):
         ValueError
             If *tail* is not one of ``'right'``, ``'left'``, or ``'two'``.
         """
+        if not permutation_list:
+            raise ValueError("permutation_list must not be empty")
         pvalues_df = pd.DataFrame(index=group_order, columns=group_order, dtype=float)
 
         for g1 in group_order:
@@ -169,16 +191,20 @@ class SimilarityMatrix(PairwiseMatrix):
                 )
 
                 if tail == "right":
-                    pval = np.mean(permuted_vals >= true_val)
+                    extreme = np.count_nonzero(permuted_vals >= true_val)
                 elif tail == "left":
-                    pval = np.mean(permuted_vals <= true_val)
+                    extreme = np.count_nonzero(permuted_vals <= true_val)
                 elif tail == "two":
                     diff = np.abs(true_val - permuted_vals.mean())
-                    pval = np.mean(np.abs(permuted_vals - permuted_vals.mean()) >= diff)
+                    extreme = np.count_nonzero(
+                        np.abs(permuted_vals - permuted_vals.mean()) >= diff
+                    )
                 else:
                     raise ValueError("tail must be 'right', 'left', or 'two'")
 
-                pvalues_df.loc[g1, g2] = pval
+                pvalues_df.loc[g1, g2] = (extreme + 1) / (
+                    len(permuted_vals) + 1
+                )
 
         return pvalues_df
 
@@ -367,7 +393,7 @@ class SimilarityMatrix(PairwiseMatrix):
         self, groups: pd.Series, pair1: tuple[str, str], pair2: tuple[str, str]
     ) -> tuple[float, float]:
         """
-        Perform statistical test comparing affinity between two group pairs.
+        Deprecated compatibility wrapper for the permutation test.
 
         Parameters
         ----------
@@ -381,7 +407,7 @@ class SimilarityMatrix(PairwiseMatrix):
         Returns
         -------
         stat : float
-            Mann-Whitney U test statistic.
+            Difference in mean similarity (pair1 minus pair2).
         p_value : float
             P-value of the test.
 
@@ -391,22 +417,13 @@ class SimilarityMatrix(PairwiseMatrix):
         ...     groups, ('A', 'B'), ('A', 'C')
         ... )
         """
-        pair1_indices1, pair1_indices2 = (
-            np.where(groups == pair1[0])[0],
-            np.where(groups == pair1[1])[0],
+        warnings.warn(
+            "compare_group_pairs is deprecated; use "
+            "paired_similarity_permutation_test",
+            DeprecationWarning,
+            stacklevel=2,
         )
-        pair2_indices1, pair2_indices2 = (
-            np.where(groups == pair2[0])[0],
-            np.where(groups == pair2[1])[0],
-        )
-
-        pair1_subset = self.iloc[pair1_indices1, pair1_indices2]
-        pair2_subset = self.iloc[pair2_indices1, pair2_indices2]
-
-        stat, p = mannwhitneyu(
-            pair1_subset.to_numpy().flatten(), pair2_subset.to_numpy().flatten()
-        )
-        return stat, p
+        return self.paired_similarity_permutation_test(groups, pair1, pair2)
 
     def to_edges_dataframe(
         self, label: str, freq_threshold: float = 0.1
@@ -431,30 +448,20 @@ class SimilarityMatrix(PairwiseMatrix):
         --------
         >>> edges_df = affinity_matrix.to_edges_dataframe('similarity', 0.2)
         """
-        edges_dataframe = (
-            self.melt(
-                ignore_index=False,  # preserve index
-                var_name="target",
-                value_name="frequency",
-            )
-            .reset_index()
-            .rename(columns={"Hugo_Symbol": "source"})
+        if self.shape[0] != self.shape[1] or not self.index.equals(self.columns):
+            raise ValueError("Pairwise matrix must have matching square axes")
+        row_positions, column_positions = np.triu_indices(len(self), k=1)
+        labels = self.index.to_numpy()
+        frequencies = self.to_numpy()[row_positions, column_positions]
+        keep = frequencies >= freq_threshold
+        return pd.DataFrame(
+            {
+                "source": labels[row_positions[keep]],
+                "target": labels[column_positions[keep]],
+                "frequency": frequencies[keep],
+                "label": label,
+            }
         )
-
-        # filter low frequency edges
-        filtered_edges_dataframe = edges_dataframe[
-            edges_dataframe.frequency >= freq_threshold
-        ]
-
-        # remove self-loops
-        filtered_edges_dataframe = filtered_edges_dataframe[
-            ~(filtered_edges_dataframe.source == filtered_edges_dataframe.target)
-        ]
-
-        # add label attribute to edges
-        filtered_edges_dataframe["label"] = label
-
-        return filtered_edges_dataframe
 
     def to_networkx_graph(
         self, label: str, freq_threshold: float = 0.1
@@ -786,7 +793,7 @@ class SimilarityMatrix(PairwiseMatrix):
         group_cmap: dict[str, str] = {"LUAD": "orange", "ASC": "green", "LUSC": "blue"},
         group_avg_cmap: str = "Blues",
         group_pvalues_cmap: str = "Reds_r",
-        save_dir: str = "./figures/Similarity",
+        save_dir: str | None = "./figures/Similarity",
         dpi: int = 300,
         file_format: str = "tiff",
         heatmap_show_only_x_ticks: bool = False,
@@ -796,6 +803,8 @@ class SimilarityMatrix(PairwiseMatrix):
             ("ASC", "LUSC"),
         ],
         annot_size: int = 14,
+        n_permutations: int = 1000,
+        random_state: int | None = None,
     ) -> dict[str, Any]:
         """
         Run a full similarity analysis pipeline and produce a composite figure.
@@ -841,6 +850,10 @@ class SimilarityMatrix(PairwiseMatrix):
             Two group pairs for a Mann-Whitney U test comparison.
         annot_size : int, default=14
             Font size for heatmap annotations.
+        n_permutations : int, default=1000
+            Number of label permutations for group-level tests.
+        random_state : int, optional
+            Random seed for reproducible permutation tests.
 
         Returns
         -------
@@ -849,18 +862,23 @@ class SimilarityMatrix(PairwiseMatrix):
             ``'group_similarity'``, ``'pval_matrix'``,
             ``'pairwise_utest_p'``, ``'pair1'``, and ``'pair2'``.
         """
-        os.makedirs(save_dir, exist_ok=True)
+        if save_dir:
+            os.makedirs(save_dir, exist_ok=True)
         # Ensure title is not None to avoid errors when calling replace()
         if title is None:
             title = "Untitled"
         filename_base = title.replace(" ", "_")
 
         similarity_matrix = table.compute_similarity(method=method)
+        groups = pd.Series(np.asarray(groups), index=similarity_matrix.index)
         true_group_similarity = similarity_matrix.get_mean_group_similarity(
             groups, group_order=group_order
         )
         permutated_group_similarities = similarity_matrix.generate_permutation_list(
-            groups, group_order=group_order, n_permutations=1000
+            groups,
+            group_order=group_order,
+            n_permutations=n_permutations,
+            random_state=random_state,
         )
         group_pvalues_df = SimilarityMatrix.calculate_group_similarity_pvalues(
             true_group_similarity,
@@ -952,11 +970,15 @@ class SimilarityMatrix(PairwiseMatrix):
         )
 
         # utest for pairwise group comparisons
+        stat = p = None
+        pair1_subset = pair2_subset = None
         if utest_group_pairs is not None:
-            stat, p = similarity_matrix.paired_similarity_utest(
-                groups=table.sample_metadata.subtype.values,
+            stat, p = similarity_matrix.paired_similarity_permutation_test(
+                groups=groups,
                 pair1=utest_group_pairs[0],
                 pair2=utest_group_pairs[1],
+                n_permutations=n_permutations,
+                random_state=random_state,
             )
             print(
                 f"{title}: {utest_group_pairs[0]} vs {utest_group_pairs[1]} P-value: {p}"
@@ -977,6 +999,7 @@ class SimilarityMatrix(PairwiseMatrix):
             )
         else:
             plt.show()
+        plt.close(fig)
 
         return {
             "similarity_matrix": similarity_matrix,
@@ -1032,10 +1055,11 @@ class SimilarityMatrix(PairwiseMatrix):
         pair2: tuple[str, str],
     ) -> tuple[float, float]:
         """
-        Compare similarity distributions of two group pairs with a U test.
+        Deprecated compatibility wrapper for the permutation test.
 
-        Performs a two-sample Mann-Whitney U test on the flattened similarity
-        values of *pair1* versus *pair2*.
+        Pairwise similarities sharing samples are not independent, so a
+        Mann-Whitney U test is invalid here. This method now delegates to
+        :meth:`paired_similarity_permutation_test`.
 
         Parameters
         ----------
@@ -1049,13 +1073,44 @@ class SimilarityMatrix(PairwiseMatrix):
         Returns
         -------
         stat : float
-            Mann-Whitney U test statistic.
+            Difference in mean similarity (pair1 minus pair2).
         p : float
             Two-sided p-value.
         """
-        pair1_subset, pair2_subset = self.get_pairs_subset(groups, pair1, pair2)
-
-        stat, p = mannwhitneyu(
-            pair1_subset.to_numpy().flatten(), pair2_subset.to_numpy().flatten()
+        warnings.warn(
+            "paired_similarity_utest is deprecated; use "
+            "paired_similarity_permutation_test",
+            DeprecationWarning,
+            stacklevel=2,
         )
-        return stat, p
+        return self.paired_similarity_permutation_test(groups, pair1, pair2)
+
+    def paired_similarity_permutation_test(
+        self,
+        groups: pd.Series | np.ndarray,
+        pair1: tuple[str, str],
+        pair2: tuple[str, str],
+        n_permutations: int = 1000,
+        random_state: int | None = None,
+    ) -> tuple[float, float]:
+        """Compare two group-pair means by permuting sample labels."""
+        if n_permutations < 1:
+            raise ValueError("n_permutations must be at least 1")
+        group_values = np.asarray(groups)
+
+        def difference(labels: np.ndarray) -> float:
+            pair1_values = self.get_pair_values(labels, pair1)
+            pair2_values = self.get_pair_values(labels, pair2)
+            if not pair1_values.size or not pair2_values.size:
+                raise ValueError("Each group pair must contain at least one value")
+            return float(pair1_values.mean() - pair2_values.mean())
+
+        observed = difference(group_values)
+        rng = np.random.default_rng(random_state)
+        permuted = np.asarray(
+            [difference(rng.permutation(group_values)) for _ in range(n_permutations)]
+        )
+        p_value = (np.count_nonzero(np.abs(permuted) >= abs(observed)) + 1) / (
+            n_permutations + 1
+        )
+        return observed, p_value
