@@ -8,6 +8,7 @@ import numpy as np
 import sqlite3
 import pymaftools
 from pymaftools.core.PivotTable import PivotTable
+from pymaftools.core.CopyNumberVariationTable import CopyNumberVariationTable
 from pymaftools.core.SmallVariationTable import SmallVariationTable
 
 
@@ -302,6 +303,36 @@ class TestPivotTableStatistics:
         assert binary_table.to_numpy().dtype == bool
         assert binary_table.sample_metadata.equals(table.sample_metadata)
         assert binary_table.feature_metadata.equals(table.feature_metadata)
+
+    def test_to_binary_table_requires_threshold_for_continuous_data(self):
+        table = PivotTable([[0.2, -1.5], [2.0, np.nan]])
+
+        with pytest.raises(ValueError, match="explicit threshold"):
+            table.to_binary_table()
+
+        binary = table.to_binary_table(threshold=1.0, comparison="abs_gt")
+
+        expected = pd.DataFrame([[False, True], [True, False]])
+        assert binary.equals(expected)
+
+    def test_to_binary_table_rejects_threshold_for_categorical_data(self):
+        table = PivotTable([["AMP", False]])
+
+        with pytest.raises(ValueError, match="fully numeric"):
+            table.to_binary_table(threshold=1.0)
+
+    def test_cnv_binary_conversion_handles_discrete_and_continuous_values(self):
+        discrete = CopyNumberVariationTable([[-2, 0, 1]])
+        assert discrete.to_binary_table().equals(
+            pd.DataFrame([[True, False, True]])
+        )
+
+        continuous = CopyNumberVariationTable([[-0.4, 0.1, 0.8]])
+        with pytest.raises(ValueError, match="explicit threshold"):
+            continuous.to_binary_table()
+        assert continuous.to_binary_table(threshold=0.3).equals(
+            pd.DataFrame([[True, False, True]])
+        )
     
     def test_PCA_calculation(self, sample_pivot_table):
         """Test PCA calculation"""

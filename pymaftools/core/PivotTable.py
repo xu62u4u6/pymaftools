@@ -1540,20 +1540,78 @@ class PivotTable(pd.DataFrame):
 
         return CooccurrenceMatrix(cooccur_matrix)
 
-    def to_binary_table(self) -> "PivotTable":
+    def to_binary_table(
+        self,
+        threshold: float | None = None,
+        comparison: Literal["gt", "ge", "lt", "le", "abs_gt"] = "gt",
+    ) -> "PivotTable":
         """
         Convert PivotTable to binary format.
 
-        Converts observed non-False values to True, creating a binary
-        representation of the mutation data. Missing values are treated as
-        absence and converted to False.
+        Boolean, 0/1, and categorical event tables are converted directly.
+        Continuous numeric tables require an explicit threshold so that values
+        are not silently interpreted as event presence. Missing values are
+        always treated as absence.
+
+        Parameters
+        ----------
+        threshold : float, optional
+            Numeric cutoff used for continuous data. Required when the table
+            contains numeric values other than 0 and 1.
+        comparison : {"gt", "ge", "lt", "le", "abs_gt"}, default "gt"
+            Comparison to apply against ``threshold``.
 
         Returns
         -------
         PivotTable
             Bool PivotTable where True indicates mutation presence.
+
+        Raises
+        ------
+        ValueError
+            If continuous numeric data is present without a threshold, the
+            comparison is invalid, or thresholding is requested for
+            non-numeric data.
         """
-        binary_data = self.notna() & self.ne(False)
+        comparisons = {
+            "gt": lambda data: data > threshold,
+            "ge": lambda data: data >= threshold,
+            "lt": lambda data: data < threshold,
+            "le": lambda data: data <= threshold,
+            "abs_gt": lambda data: data.abs() > threshold,
+        }
+        if comparison not in comparisons:
+            raise ValueError(
+                f"Unknown comparison '{comparison}'. Expected one of "
+                f"{sorted(comparisons)}."
+            )
+
+        if threshold is None:
+            numeric_columns = [
+                column
+                for column, dtype in self.dtypes.items()
+                if pd.api.types.is_numeric_dtype(dtype)
+                and not pd.api.types.is_bool_dtype(dtype)
+            ]
+            numeric_values = pd.unique(
+                pd.DataFrame(self.loc[:, numeric_columns]).to_numpy().ravel()
+            )
+            numeric_values = numeric_values[pd.notna(numeric_values)]
+            if len(numeric_values) and not set(numeric_values).issubset({0, 1}):
+                raise ValueError(
+                    "Continuous numeric data requires an explicit threshold, "
+                    "for example to_binary_table(threshold=1.0)."
+                )
+            binary_data = self.notna() & self.ne(False) & self.ne(0)
+        else:
+            try:
+                numeric_data = self.apply(pd.to_numeric, errors="raise")
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    "Threshold conversion requires a fully numeric PivotTable."
+                ) from exc
+            binary_data = numeric_data.notna() & comparisons[comparison](numeric_data)
+
         return self._from_dataframe(
             binary_data.astype(bool),
             self.feature_metadata,

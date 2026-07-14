@@ -39,6 +39,36 @@ class CopyNumberVariationTable(PivotTable):
 
         return CopyNumberVariationTablePlot(self)
 
+    def to_binary_table(
+        self,
+        threshold: float | None = None,
+        comparison: str = "abs_gt",
+    ) -> PivotTable:
+        """Convert discrete GISTIC calls or thresholded numeric CNV values.
+
+        Standard GISTIC calls (-2 through 2) are events whenever non-zero.
+        Continuous copy-number values require an explicit threshold.
+        """
+        if threshold is None:
+            numeric_columns = [
+                column
+                for column, dtype in self.dtypes.items()
+                if pd.api.types.is_numeric_dtype(dtype)
+                and not pd.api.types.is_bool_dtype(dtype)
+            ]
+            numeric_values = pd.unique(
+                pd.DataFrame(self.loc[:, numeric_columns]).to_numpy().ravel()
+            )
+            numeric_values = numeric_values[pd.notna(numeric_values)]
+            if len(numeric_values) and set(numeric_values).issubset({-2, -1, 0, 1, 2}):
+                binary_data = self.notna() & self.ne(0)
+                return self._from_dataframe(
+                    binary_data.astype(bool),
+                    self.feature_metadata,
+                    self.sample_metadata,
+                )
+        return super().to_binary_table(threshold=threshold, comparison=comparison)
+
     @classmethod
     def from_pivot_table(cls, table: PivotTable) -> "CopyNumberVariationTable":
         """
