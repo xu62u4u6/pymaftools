@@ -1,21 +1,76 @@
-name: Publish
+name: Release
 
 on:
   push:
     tags: ["v*"]
-  release:
-    types: [published]
+
+permissions:
+  contents: read
 
 jobs:
-  build:
+  quality:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0   # full history + tags for setuptools-scm versioning
+          fetch-depth: 0
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Verify release tag and main ancestry
+        shell: bash
+        run: |
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release tags must match vX.Y.Z: $GITHUB_REF_NAME" >&2
+            exit 1
+          fi
+          git fetch origin main
+          release_commit="$(git rev-list -n 1 "$GITHUB_REF_NAME")"
+          if ! git merge-base --is-ancestor "$release_commit" origin/main; then
+            echo "Release commit must be reachable from origin/main." >&2
+            exit 1
+          fi
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libhdf5-dev pkg-config
+
+      - name: Install release quality dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[test,docs]" "ruff==0.15.21"
+
+      - name: Verify release metadata
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          test "$(python -m setuptools_scm)" = "$version"
+          grep -q "^version: $version$" CITATION.cff
+          grep -q "Version $version" CHANGELOG.md
+
+      - name: Lint and format
+        run: |
+          ruff check pymaftools/
+          ruff format --check pymaftools/
+
+      - name: Run release tests
+        run: python -m pytest tests/ -v --tb=short --cov=pymaftools --cov-fail-under=60
+
+      - name: Build documentation
+        run: sphinx-build -W --keep-going docs docs/_build/html
+
+  build:
+    needs: quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
@@ -36,11 +91,17 @@ jobs:
         with:
           name: dist
           path: dist/
+          if-no-files-found: error
+          retention-days: 14
 
   test-pypi:
     needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/pymaftools
+    permissions:
+      id-token: write
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -48,15 +109,52 @@ jobs:
           path: dist/
 
       - name: Publish to TestPyPI
-        run: pip install "twine>=6.0,<7.0" && twine upload --repository testpypi dist/*
-        env:
-          TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.TEST_PYPI_TOKEN }}
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+
+  test-install:
+    needs: test-pypi
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install package from TestPyPI
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          for attempt in {1..10}; do
+            if python -m pip install --no-cache-dir \
+              --index-url https://test.pypi.org/simple/ \
+              --extra-index-url https://pypi.org/simple/ \
+              "pymaftools==$version"; then
+              exit 0
+            fi
+            if [[ "$attempt" -eq 10 ]]; then
+              echo "TestPyPI package was not installable after 10 attempts." >&2
+              exit 1
+            fi
+            sleep 15
+          done
+
+      - name: Smoke-test installed HDF5 workflow
+        run: >-
+          python -c "import pymaftools;
+          table = pymaftools.load_example_table();
+          assert table.shape[0] > 0 and table.shape[1] > 0;
+          assert pymaftools.__version__ == '${GITHUB_REF_NAME#v}';
+          print(pymaftools.__version__, table.shape)"
 
   pypi:
-    needs: build
-    if: github.event_name == 'release'
+    needs: test-install
     runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/pymaftools
+    permissions:
+      id-token: write
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -64,7 +162,25 @@ jobs:
           path: dist/
 
       - name: Publish to PyPI
-        run: pip install "twine>=6.0,<7.0" && twine upload dist/*
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+  github-release:
+    needs: pypi
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Create GitHub Release
+        run: >-
+          gh release create "$GITHUB_REF_NAME" dist/*
+          --verify-tag
+          --title "pymaftools ${GITHUB_REF_NAME#v}"
+          --generate-notes
         env:
-          TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
