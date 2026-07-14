@@ -74,3 +74,19 @@ jobs:
         pip install -e .[test] "pandas==2.2.*"
     - name: Run tests
       run: python -m pytest tests/ -v --tb=short --cov=pymaftools --cov-fail-under=60
+
+  package:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+    - name: Install build tools
+      run: pip install build "twine>=6.0,<7.0" "setuptools-scm>=8"
+    - name: Build and check distributions
+      run: |
+        python -m build
+        twine check dist/*
