@@ -11,6 +11,11 @@ from .base import TCGATableBuilder
 _QC_ROWS = ["N_unmapped", "N_multimapping", "N_noFeature", "N_ambiguous"]
 
 
+def _zero_if_missing(value):
+    """Return zero for missing STAR QC counters without evaluating pd.NA."""
+    return 0 if pd.isna(value) else value
+
+
 class TCGAExpressionBuilder(TCGATableBuilder):
     """
     Build an ExpressionTable from TCGA STAR-Counts files.
@@ -66,10 +71,10 @@ class TCGAExpressionBuilder(TCGATableBuilder):
             qc_record["mapped_reads"] = gene_rows[self.count_column].sum()
             total = (
                 qc_record["mapped_reads"]
-                + (qc_record["N_unmapped"] or 0)
-                + (qc_record["N_multimapping"] or 0)
-                + (qc_record["N_noFeature"] or 0)
-                + (qc_record["N_ambiguous"] or 0)
+                + _zero_if_missing(qc_record["N_unmapped"])
+                + _zero_if_missing(qc_record["N_multimapping"])
+                + _zero_if_missing(qc_record["N_noFeature"])
+                + _zero_if_missing(qc_record["N_ambiguous"])
             )
             qc_record["mapping_rate"] = (
                 qc_record["mapped_reads"] / total if total > 0 else pd.NA

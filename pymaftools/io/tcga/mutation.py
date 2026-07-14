@@ -35,6 +35,12 @@ class TCGAMutationBuilder(TCGATableBuilder):
             df["sample_type"] = f["sample_type"]
             frames.append(df)
 
+        if not frames:
+            sample_filter = "Primary Tumor" if tumor_only else "any sample type"
+            raise ValueError(
+                f"No mutation files remained after selecting {sample_filter}."
+            )
+
         merged = pd.concat(frames, ignore_index=True)
         maf = MAF(merged)
         maf.index = maf.loc[:, MAF.index_col].apply(

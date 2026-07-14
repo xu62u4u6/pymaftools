@@ -7,6 +7,8 @@ import pytest
 
 from pymaftools.core.PivotTable import PivotTable
 from pymaftools.io.tcga.base import TCGATableBuilder
+from pymaftools.io.tcga.expression import TCGAExpressionBuilder
+from pymaftools.io.tcga.mutation import TCGAMutationBuilder
 
 
 class DummyBuilder(TCGATableBuilder):
@@ -78,3 +80,53 @@ def test_builder_requires_explicit_type_for_mixed_case_samples():
 
     with pytest.raises(ValueError, match="set sample_type explicitly"):
         DummyBuilder(files, sample_type=None).build()
+
+
+def test_expression_builder_handles_missing_qc_rows(tmp_path):
+    expression_path = tmp_path / "sample.tsv"
+    pd.DataFrame(
+        {
+            "gene_id": ["N_unmapped", "ENSG000001.1"],
+            "gene_name": [None, "TP53"],
+            "gene_type": [None, "protein_coding"],
+            "unstranded": [5, 95],
+        }
+    ).to_csv(expression_path, sep="\t", index=False)
+    builder = TCGAExpressionBuilder(
+        tmp_path,
+        pd.DataFrame(columns=["filename", "case_id"]),
+        enrich_coordinates=False,
+    )
+
+    table = builder.read_and_merge(
+        [{"filepath": expression_path, "case_id": "case-1"}]
+    )
+
+    assert table.sample_metadata.loc["case-1", "mapping_rate"] == pytest.approx(0.95)
+    assert pd.isna(table.sample_metadata.loc["case-1", "N_multimapping"])
+
+
+def test_mutation_builder_reports_empty_tumor_selection(tmp_path):
+    maf_path = tmp_path / "normal.maf.gz"
+    pd.DataFrame(
+        {
+            "Hugo_Symbol": ["TP53"],
+            "Chromosome": ["17"],
+            "Start_Position": [1],
+            "Tumor_Seq_Allele2": ["A"],
+        }
+    ).to_csv(maf_path, sep="\t", index=False, compression="gzip")
+    builder = TCGAMutationBuilder(
+        tmp_path, pd.DataFrame(columns=["filename", "case_id"])
+    )
+
+    with pytest.raises(ValueError, match="No mutation files remained"):
+        builder.read_and_merge(
+            [
+                {
+                    "filepath": maf_path,
+                    "case_id": "case-1",
+                    "sample_type": "Solid Tissue Normal",
+                }
+            ]
+        )
