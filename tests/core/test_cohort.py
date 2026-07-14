@@ -163,6 +163,21 @@ class TestCohortPersistence:
         expected_columns = ["sql_table_name", "cohort_name", "table_name", "type"]
         assert all(col in registry.columns for col in expected_columns)
 
+    def test_hdf5_save_and_load(self, sample_cohort, tmp_path):
+        h5_path = tmp_path / "cohort.h5"
+
+        sample_cohort.to_hdf5(h5_path)
+        loaded = Cohort.read_hdf5(h5_path)
+
+        assert loaded.name == sample_cohort.name
+        assert loaded.description == sample_cohort.description
+        assert set(loaded.tables) == set(sample_cohort.tables)
+        for table_name, original in sample_cohort.tables.items():
+            restored = loaded.tables[table_name]
+            assert restored.equals(original)
+            assert restored.sample_metadata.equals(original.sample_metadata)
+            assert restored.feature_metadata.equals(original.feature_metadata)
+
 
 class TestCohortValidation:
     """Test validation and error handling"""

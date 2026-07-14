@@ -73,6 +73,23 @@ class TestPivotTableBasics:
         assert loaded.equals(table)
         assert loaded.sample_metadata.equals(table.sample_metadata)
         assert loaded.feature_metadata.equals(table.feature_metadata)
+
+    def test_sqlite_write_failure_preserves_existing_file(
+        self, sample_pivot_table, tmp_path, monkeypatch
+    ):
+        db_path = tmp_path / "pivot.db"
+        db_path.write_bytes(b"existing database")
+
+        def fail_to_sql(*args, **kwargs):
+            raise RuntimeError("injected write failure")
+
+        monkeypatch.setattr(pd.DataFrame, "to_sql", fail_to_sql)
+
+        with pytest.raises(RuntimeError, match="injected write failure"):
+            sample_pivot_table.to_sqlite(db_path)
+
+        assert db_path.read_bytes() == b"existing database"
+        assert list(tmp_path.iterdir()) == [db_path]
     
     def test_subset_functionality(self, sample_pivot_table):
         """Test subset method"""

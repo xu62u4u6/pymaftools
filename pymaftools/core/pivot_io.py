@@ -8,20 +8,21 @@ from typing import Any
 
 import pandas as pd
 
+from ._atomic import atomic_output_path
+
 
 def to_sqlite(table, db_path: str) -> None:
     """Save a PivotTable-like object to SQLite."""
     db_path = Path(db_path)
-    if db_path.exists():
-        db_path.unlink()
-
-    conn = sqlite3.connect(str(db_path))
     table_to_save = table.copy().rename_index_and_columns()
     table_to_save = table_to_save.replace(False, "WT")
-    table_to_save.to_sql("data", conn, index=True)
-    table_to_save.sample_metadata.to_sql("sample_metadata", conn, index=True)
-    table_to_save.feature_metadata.to_sql("feature_metadata", conn, index=True)
-    conn.close()
+    with atomic_output_path(db_path) as temporary_path:
+        with sqlite3.connect(str(temporary_path)) as conn:
+            table_to_save.to_sql("data", conn, index=True)
+            table_to_save.sample_metadata.to_sql("sample_metadata", conn, index=True)
+            table_to_save.feature_metadata.to_sql(
+                "feature_metadata", conn, index=True
+            )
     print(f"[PivotTable] saved to {db_path}")
 
 
@@ -34,18 +35,16 @@ def to_h5(
 ) -> None:
     """Save a PivotTable-like object to HDF5."""
     h5_path = Path(h5_path)
-    if h5_path.exists():
-        h5_path.unlink()
-
     table_to_save = table.copy().rename_index_and_columns()
-    with pd.HDFStore(
-        str(h5_path), mode="w", complib=complib, complevel=complevel
-    ) as store:
-        table_metadata = pd.DataFrame({"class_name": [type(table).__name__]})
-        store.put("table_metadata", table_metadata)
-        store.put("data", pd.DataFrame(table_to_save))
-        store.put("sample_metadata", table_to_save.sample_metadata)
-        store.put("feature_metadata", table_to_save.feature_metadata)
+    with atomic_output_path(h5_path) as temporary_path:
+        with pd.HDFStore(
+            str(temporary_path), mode="w", complib=complib, complevel=complevel
+        ) as store:
+            table_metadata = pd.DataFrame({"class_name": [type(table).__name__]})
+            store.put("table_metadata", table_metadata)
+            store.put("data", pd.DataFrame(table_to_save))
+            store.put("sample_metadata", table_to_save.sample_metadata)
+            store.put("feature_metadata", table_to_save.feature_metadata)
 
     print(f"[PivotTable] saved to {h5_path}")
 

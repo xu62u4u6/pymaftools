@@ -5,6 +5,7 @@ import copy
 import warnings
 
 from .PivotTable import PivotTable
+from ._atomic import atomic_output_path
 import sqlite3
 from pathlib import Path
 
@@ -335,31 +336,29 @@ class Cohort:
         )
         db_path = Path(db_path)
 
-        if db_path.exists():
-            db_path.unlink()
-
-        conn = sqlite3.connect(str(db_path))
         registry = self.to_sql_registry()
+        with atomic_output_path(db_path) as temporary_path:
+            with sqlite3.connect(str(temporary_path)) as conn:
+                for _, row in registry.iterrows():
+                    table_name = row["table_name"]
+                    sql_table_name = row["sql_table_name"]
+                    kind = row["type"]
+                    table = self.tables[table_name].copy().rename_index_and_columns()
 
-        for _, row in registry.iterrows():
-            table_name = row["table_name"]
-            sql_table_name = row["sql_table_name"]
-            kind = row["type"]
-            table = self.tables[table_name].copy().rename_index_and_columns()
+                    if kind == "data":
+                        table.to_sql(
+                            sql_table_name, conn, if_exists="replace", index=True
+                        )
+                    elif kind == "sample_metadata":
+                        table.sample_metadata.to_sql(
+                            sql_table_name, conn, if_exists="replace", index=True
+                        )
+                    elif kind == "feature_metadata":
+                        table.feature_metadata.to_sql(
+                            sql_table_name, conn, if_exists="replace", index=True
+                        )
 
-            if kind == "data":
-                table.to_sql(sql_table_name, conn, if_exists="replace", index=True)
-            elif kind == "sample_metadata":
-                table.sample_metadata.to_sql(
-                    sql_table_name, conn, if_exists="replace", index=True
-                )
-            elif kind == "feature_metadata":
-                table.feature_metadata.to_sql(
-                    sql_table_name, conn, if_exists="replace", index=True
-                )
-
-        registry.to_sql("registry", conn, if_exists="replace", index=False)
-        conn.close()
+                registry.to_sql("registry", conn, if_exists="replace", index=False)
         print(f"[Cohort] saved to {db_path}")
 
     @classmethod
@@ -432,30 +431,32 @@ class Cohort:
         """
         h5_path = Path(h5_path)
 
-        if h5_path.exists():
-            h5_path.unlink()
+        with atomic_output_path(h5_path) as temporary_path:
+            with pd.HDFStore(str(temporary_path), mode="w") as store:
+                cohort_meta = pd.DataFrame(
+                    {"name": [self.name], "description": [self.description]}
+                )
+                store.put("cohort_metadata", cohort_meta)
 
-        with pd.HDFStore(str(h5_path), mode="w") as store:
-            cohort_meta = pd.DataFrame(
-                {"name": [self.name], "description": [self.description]}
-            )
-            store.put("cohort_metadata", cohort_meta)
+                table_names = pd.DataFrame(
+                    {
+                        "table_name": list(self.tables.keys()),
+                        "class_name": [
+                            type(table).__name__ for table in self.tables.values()
+                        ],
+                    }
+                )
+                store.put("table_registry", table_names)
 
-            table_names = pd.DataFrame(
-                {
-                    "table_name": list(self.tables.keys()),
-                    "class_name": [
-                        type(table).__name__ for table in self.tables.values()
-                    ],
-                }
-            )
-            store.put("table_registry", table_names)
-
-            for table_name, table in self.tables.items():
-                table_copy = table.copy().rename_index_and_columns()
-                store.put(f"{table_name}/data", table_copy.T)
-                store.put(f"{table_name}/sample_metadata", table_copy.sample_metadata)
-                store.put(f"{table_name}/feature_metadata", table_copy.feature_metadata)
+                for table_name, table in self.tables.items():
+                    table_copy = table.copy().rename_index_and_columns()
+                    store.put(f"{table_name}/data", table_copy.T)
+                    store.put(
+                        f"{table_name}/sample_metadata", table_copy.sample_metadata
+                    )
+                    store.put(
+                        f"{table_name}/feature_metadata", table_copy.feature_metadata
+                    )
 
         print(f"[Cohort] saved to {h5_path}")
 
