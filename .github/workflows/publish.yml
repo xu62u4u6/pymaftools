@@ -15,12 +15,15 @@ jobs:
           fetch-depth: 0   # full history + tags for setuptools-scm versioning
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
       - name: Install build tools
-        run: pip install build "twine>=5.0,<6.0"
+        run: pip install build "twine>=5.0,<6.0" "setuptools-scm>=8"
+
+      - name: Verify tag-derived version
+        run: test "$(python -m setuptools_scm)" = "${GITHUB_REF_NAME#v}"
 
       - name: Build package
         run: python -m build
