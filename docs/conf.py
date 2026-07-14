@@ -24,6 +24,7 @@ autodoc_default_options = {
     "undoc-members": False,
     "show-inheritance": True,
 }
+autodoc_mock_imports = ["anndata"]
 
 # Type hints settings
 typehints_defaults = "comma"
