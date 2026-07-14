@@ -51,8 +51,14 @@ class ExpressionTable(PivotTable):
             Extra keyword arguments forwarded to
             ``DeseqDataSet.deseq2()`` (e.g. ``n_cpus=1``).
         """
-        from pydeseq2.dds import DeseqDataSet
-        from pydeseq2.ds import DeseqStats
+        try:
+            from pydeseq2.dds import DeseqDataSet
+            from pydeseq2.ds import DeseqStats
+        except ImportError as exc:
+            raise ImportError(
+                "pydeseq2 is required for differential expression analysis. "
+                "Install it with: pip install 'pymaftools[expression]'"
+            ) from exc
 
         # Build clean metadata with a safe column name (no spaces)
         metadata = self.sample_metadata[[group_col]].copy()

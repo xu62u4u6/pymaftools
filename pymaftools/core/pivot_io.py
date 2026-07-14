@@ -113,7 +113,7 @@ def to_anndata(table, **kwargs: Any):
     except ImportError:
         raise ImportError(
             "anndata is required for AnnData conversion. "
-            "Install it with: pip install anndata"
+            "Install it with: pip install 'pymaftools[anndata]'"
         )
 
     X = table.values.T
@@ -138,7 +138,7 @@ def from_anndata(table_cls, adata):
     except ImportError:
         raise ImportError(
             "anndata is required for AnnData conversion. "
-            "Install it with: pip install anndata"
+            "Install it with: pip install 'pymaftools[anndata]'"
         )
 
     import scipy.sparse as sp
