@@ -18,13 +18,17 @@ import json
 import shutil
 import subprocess
 import time
-import tomllib
 from pathlib import Path
 from typing import Optional
 
 import pandas as pd
 import requests
 from tqdm import tqdm
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.10
+    import tomli as tomllib
 
 GDC_FILES_ENDPOINT = "https://api.gdc.cancer.gov/files"
 GDC_CASES_ENDPOINT = "https://api.gdc.cancer.gov/cases"
