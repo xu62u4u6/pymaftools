@@ -54,7 +54,7 @@ dev = [
   "pytest-cov>=4.0.0",
   "pytest-mock>=3.10.0",
   "build",
-  "twine>=5.0,<6.0"
+  "twine>=6.0,<7.0"
 ]
 
 [project.urls]
