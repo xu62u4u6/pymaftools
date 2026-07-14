@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gzip
 import os
 import warnings
 from typing import TYPE_CHECKING, Any
@@ -96,7 +97,9 @@ class MAF(pd.DataFrame):
             Number of leading comment lines to skip.
         """
         n = 0
-        with open(maf_path) as handle:
+        path = os.fspath(maf_path)
+        opener = gzip.open if path.endswith(".gz") else open
+        with opener(path, mode="rt", encoding="utf-8") as handle:
             for line in handle:
                 if line.startswith(comment):
                     n += 1

@@ -1,3 +1,5 @@
+import gzip
+
 import pandas as pd
 import pytest
 
@@ -245,6 +247,20 @@ def test_count_leading_comment_lines(tmp_path):
     for fmt_id, comment_lines in _HEADER_FORMATS:
         path = _write_maf(tmp_path / f"{fmt_id}.maf", comment_lines)
         assert MAF._count_leading_comment_lines(path) == len(comment_lines)
+
+
+def test_read_maf_supports_gzip_with_leading_comments(tmp_path):
+    path = tmp_path / "mutations.maf.gz"
+    lines = ["#version 2.4", "#filedate 20240101", _MAF_HEADER] + _MAF_ROWS
+    with gzip.open(path, mode="wt", encoding="utf-8") as handle:
+        handle.write("\n".join(lines) + "\n")
+
+    maf = MAF.read_maf(path, sample_ID="sample-gz")
+
+    assert MAF._count_leading_comment_lines(path) == 2
+    assert len(maf) == 4
+    assert (maf["sample_ID"] == "sample-gz").all()
+    assert "TP53|7577120|7577120|C|C|T" in maf.index
 
 
 def test_read_maf_to_pivot_table_and_tmb_end_to_end(tmp_path):
