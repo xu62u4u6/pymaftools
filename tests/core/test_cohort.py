@@ -180,6 +180,35 @@ class TestCohortPersistence:
             assert restored.sample_metadata.equals(original.sample_metadata)
             assert restored.feature_metadata.equals(original.feature_metadata)
 
+    def test_hdf5_round_trip_preserves_special_table_names(
+        self, sample_pivot_table, tmp_path
+    ):
+        cohort = Cohort("special", description="logical names stay untouched")
+        table_names = ["cohort_metadata", "tumor/normal", "quoted'name"]
+        for table_name in table_names:
+            cohort.add_table(sample_pivot_table.copy(), table_name)
+        h5_path = tmp_path / "special-names.h5"
+
+        cohort.to_hdf5(h5_path)
+        loaded = Cohort.read_hdf5(h5_path)
+
+        assert list(loaded.tables) == table_names
+        assert loaded.description == cohort.description
+        assert all(
+            loaded.tables[name].equals(cohort.tables[name]) for name in table_names
+        )
+
+    def test_hdf5_round_trip_supports_empty_cohort(self, tmp_path):
+        cohort = Cohort("empty", description="no tables yet")
+        h5_path = tmp_path / "empty.h5"
+
+        cohort.to_hdf5(h5_path)
+        loaded = Cohort.read_hdf5(h5_path)
+
+        assert loaded.name == "empty"
+        assert loaded.description == "no tables yet"
+        assert loaded.tables == {}
+
 
 class TestCohortValidation:
     """Test validation and error handling"""

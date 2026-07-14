@@ -442,24 +442,32 @@ class Cohort:
                 )
                 store.put("cohort_metadata", cohort_meta)
 
-                table_names = pd.DataFrame(
-                    {
-                        "table_name": list(self.tables.keys()),
-                        "class_name": [
-                            type(table).__name__ for table in self.tables.values()
-                        ],
-                    }
+                table_registry = pd.DataFrame(
+                    [
+                        {
+                            "table_name": table_name,
+                            "class_name": type(table).__name__,
+                            "storage_key": f"tables/table_{index:06d}",
+                        }
+                        for index, (table_name, table) in enumerate(
+                            self.tables.items()
+                        )
+                    ],
+                    columns=["table_name", "class_name", "storage_key"],
                 )
-                store.put("table_registry", table_names)
+                store.put("table_registry", table_registry)
 
-                for table_name, table in self.tables.items():
+                for row, table in zip(
+                    table_registry.to_dict("records"), self.tables.values()
+                ):
+                    storage_key = row["storage_key"]
                     table_copy = table.copy().rename_index_and_columns()
-                    store.put(f"{table_name}/data", table_copy.T)
+                    store.put(f"{storage_key}/data", table_copy.T)
                     store.put(
-                        f"{table_name}/sample_metadata", table_copy.sample_metadata
+                        f"{storage_key}/sample_metadata", table_copy.sample_metadata
                     )
                     store.put(
-                        f"{table_name}/feature_metadata", table_copy.feature_metadata
+                        f"{storage_key}/feature_metadata", table_copy.feature_metadata
                     )
 
         print(f"[Cohort] saved to {h5_path}")
@@ -499,9 +507,14 @@ class Cohort:
 
             for _, row in table_registry.iterrows():
                 table_name = row["table_name"]
-                data = store.get(f"{table_name}/data").T
-                sample_metadata = store.get(f"{table_name}/sample_metadata")
-                feature_metadata = store.get(f"{table_name}/feature_metadata")
+                storage_key = (
+                    row["storage_key"]
+                    if "storage_key" in table_registry.columns
+                    else table_name
+                )
+                data = store.get(f"{storage_key}/data").T
+                sample_metadata = store.get(f"{storage_key}/sample_metadata")
+                feature_metadata = store.get(f"{storage_key}/feature_metadata")
 
                 table_cls = PivotTable
                 if has_class_info:
