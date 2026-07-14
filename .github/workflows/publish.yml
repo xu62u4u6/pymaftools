@@ -122,23 +122,38 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install package from TestPyPI
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+
+      - name: Download package from TestPyPI
         shell: bash
         run: |
           version="${GITHUB_REF_NAME#v}"
+          mkdir -p testpypi
           for attempt in {1..10}; do
-            if python -m pip install --no-cache-dir \
+            if python -m pip download --no-cache-dir --no-deps --only-binary=:all: \
               --index-url https://test.pypi.org/simple/ \
-              --extra-index-url https://pypi.org/simple/ \
-              "pymaftools==$version"; then
+              --dest testpypi/ "pymaftools==$version"; then
               exit 0
             fi
             if [[ "$attempt" -eq 10 ]]; then
-              echo "TestPyPI package was not installable after 10 attempts." >&2
+              echo "TestPyPI wheel was not available after 10 attempts." >&2
               exit 1
             fi
             sleep 15
           done
+
+      - name: Verify and install TestPyPI artifact
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          built_wheel="dist/pymaftools-${version}-py3-none-any.whl"
+          testpypi_wheel="testpypi/pymaftools-${version}-py3-none-any.whl"
+          cmp "$built_wheel" "$testpypi_wheel"
+          python -m pip install --no-cache-dir \
+            --index-url https://pypi.org/simple/ "$testpypi_wheel"
 
       - name: Smoke-test installed HDF5 workflow
         run: >-
