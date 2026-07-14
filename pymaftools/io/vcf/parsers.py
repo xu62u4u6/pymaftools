@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import csv
 import gzip
+import os
 
 from .record import CHROM_PATTERN, VCFRecord
 
 
 def _open_text(path: str):
+    path = os.fspath(path)
     if path.endswith(".gz"):
         return gzip.open(path, "rt", encoding="utf-8", newline="")
     return open(path, encoding="utf-8", newline="")
@@ -68,7 +70,12 @@ def _safe_af(ad: int, dp: int) -> float:
     return ad / dp
 
 
-def parse_info(format_str: str, value_str: str) -> tuple[int, int, int, float]:
+def parse_info(
+    format_str: str,
+    value_str: str,
+    *,
+    alt_index: int = 0,
+) -> tuple[int, int, int, float]:
     """
     Parse caller-specific FORMAT data into depth metrics.
 
@@ -78,6 +85,8 @@ def parse_info(format_str: str, value_str: str) -> tuple[int, int, int, float]:
         FORMAT column value.
     value_str : str
         Sample-specific value string matching ``format_str``.
+    alt_index : int, default 0
+        Zero-based alternate allele index for multi-allelic records.
 
     Returns
     -------
@@ -92,12 +101,19 @@ def parse_info(format_str: str, value_str: str) -> tuple[int, int, int, float]:
     """
     keys = format_str.split(":")
     values = value_str.split(":")
+    if len(keys) != len(values):
+        raise ValueError(
+            f"Failed to parse FORMAT '{format_str}' with value '{value_str}': "
+            "field counts differ."
+        )
     parsed = dict(zip(keys, values))
 
     try:
         # varscan: GT:GQ:DP:RD:AD:FREQ:DP4
         # RD = ref depth, AD = alt depth (Number=1, alt only)
         if format_str == "GT:GQ:DP:RD:AD:FREQ:DP4":
+            if alt_index != 0:
+                raise ValueError("VarScan FORMAT does not encode per-ALT depths.")
             dp  = int(values[2])
             ref = int(values[3])  # RD
             ad  = int(values[4])  # alt only
@@ -108,9 +124,14 @@ def parse_info(format_str: str, value_str: str) -> tuple[int, int, int, float]:
         if "AD" in parsed and (("AF" in parsed) or ("DP" in parsed)):
             ad_values = [int(x) for x in parsed["AD"].split(",")]
             ref = ad_values[0]
-            ad  = ad_values[1]
+            ad  = ad_values[alt_index + 1]
             dp  = int(parsed["DP"]) if "DP" in parsed else sum(ad_values)
-            af  = float(parsed["AF"].split(",")[0]) if "AF" in parsed else _safe_af(ad, dp)
+            af_values = parsed.get("AF", "").split(",")
+            af = (
+                float(af_values[alt_index])
+                if "AF" in parsed
+                else _safe_af(ad, dp)
+            )
             return dp, ref, ad, af
 
         # muse: GT:DP:AD:BQ:SS (AD = ref,alt)
@@ -118,7 +139,7 @@ def parse_info(format_str: str, value_str: str) -> tuple[int, int, int, float]:
             dp  = int(parsed["DP"])
             ad_values = [int(x) for x in parsed["AD"].split(",")]
             ref = ad_values[0]
-            ad  = ad_values[1]
+            ad  = ad_values[alt_index + 1]
             af  = _safe_af(ad, dp)
             return dp, ref, ad, af
 
@@ -126,7 +147,7 @@ def parse_info(format_str: str, value_str: str) -> tuple[int, int, int, float]:
         if format_str == "GT:AD":
             ad_values = [int(x) for x in parsed["AD"].split(",")]
             ref = ad_values[0]
-            ad  = ad_values[1]
+            ad  = ad_values[alt_index + 1]
             dp  = sum(ad_values)
             af  = _safe_af(ad, dp)
             return dp, ref, ad, af
@@ -273,27 +294,32 @@ def parse_vcf_rows(vcf_path: str, caller: str) -> list[dict]:
             if not CHROM_PATTERN.match(row["chrom"]):
                 continue
 
-            tumor_dp, tumor_ref, tumor_ad, tumor_af = parse_info(row["FORMAT"], row[tumor_sample])
-            normal_dp = normal_ref = normal_ad = None
-            if normal_sample is not None:
-                normal_dp, normal_ref, normal_ad, _ = parse_info(row["FORMAT"], row[normal_sample])
+            for alt_index, alt in enumerate(row["alt"].split(",")):
+                tumor_dp, tumor_ref, tumor_ad, tumor_af = parse_info(
+                    row["FORMAT"], row[tumor_sample], alt_index=alt_index
+                )
+                normal_dp = normal_ref = normal_ad = None
+                if normal_sample is not None:
+                    normal_dp, normal_ref, normal_ad, _ = parse_info(
+                        row["FORMAT"], row[normal_sample], alt_index=alt_index
+                    )
 
-            parsed_row = {
-                "chrom": row["chrom"],
-                "pos": int(row["pos"]),
-                "ref": row["ref"],
-                "alt": row["alt"],
-                "filter": row["filter"],
-                "caller": caller,
-                "tumor_dp": tumor_dp,
-                "tumor_ref": tumor_ref,
-                "tumor_ad": tumor_ad,
-                "tumor_af": tumor_af,
-                "normal_dp": normal_dp,
-                "normal_ref": normal_ref,
-                "normal_ad": normal_ad,
-            }
-            VCFRecord(**parsed_row)
-            rows.append(parsed_row)
+                parsed_row = {
+                    "chrom": row["chrom"],
+                    "pos": int(row["pos"]),
+                    "ref": row["ref"],
+                    "alt": alt,
+                    "filter": row["filter"],
+                    "caller": caller,
+                    "tumor_dp": tumor_dp,
+                    "tumor_ref": tumor_ref,
+                    "tumor_ad": tumor_ad,
+                    "tumor_af": tumor_af,
+                    "normal_dp": normal_dp,
+                    "normal_ref": normal_ref,
+                    "normal_ad": normal_ad,
+                }
+                VCFRecord(**parsed_row)
+                rows.append(parsed_row)
 
     return rows

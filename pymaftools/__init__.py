@@ -42,6 +42,7 @@ _LAZY_EXPORTS = {
     "run_feature_clustering": ".core.Clustering",
     "plot_clustering_metrics_and_find_best_k": ".core.Clustering",
     "SimilarityMatrix": ".core.PairwiseMatrix",
+    "VCF": ".core.VCF",
     # plot
     "OncoPlot": ".plot.OncoPlot",
     "LollipopPlot": ".plot.LollipopPlot",
@@ -96,6 +97,7 @@ __all__ = [
     "ExpressionTable",
     "SignatureTable",
     "CancerCellFractionTable",
+    "VCF",
     "Cohort",
     "load_example_maf",
     "example_maf_path",

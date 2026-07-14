@@ -402,6 +402,19 @@ limit of roughly 2,000 columns, which is too low for expression and other
 high-dimensional omics matrices. Existing SQLite files remain readable during
 the deprecation period.
 
+### 4. How to read and combine VCF calls?
+
+```python
+from pymaftools import VCF
+
+mutect2 = VCF.read_vcf("mutect2.vcf.gz", caller="mutect2")
+muse = VCF.read_vcf("muse.vcf.gz", caller="muse")
+consensus = VCF.merge_callers([mutect2, muse], min_callers=2)
+```
+
+Multi-allelic records are expanded to one row per alternate allele, with the
+matching AD and AF values retained for each row.
+
 ## Development and Testing
 
 ```bash

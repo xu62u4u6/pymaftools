@@ -8,6 +8,13 @@ MAF
    :members:
    :show-inheritance:
 
+VCF
+---
+
+.. automodule:: pymaftools.core.VCF
+   :members:
+   :show-inheritance:
+
 PivotTable
 ----------
 

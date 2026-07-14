@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import gzip
+import os
 import re
 import warnings
 from typing import Any
@@ -12,6 +13,7 @@ from pymaftools.io.vcf.parsers import _resolve_samples
 
 
 def _open_text(path: str):
+    path = os.fspath(path)
     if path.endswith(".gz"):
         return gzip.open(path, "rt", encoding="utf-8")
     return open(path, encoding="utf-8")
