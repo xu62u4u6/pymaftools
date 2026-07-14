@@ -2,6 +2,8 @@
 
 Every release must use `.github/workflows/publish.yml`. Local commands build and
 validate artifacts only; they must never upload to TestPyPI or PyPI.
+Known risks, recovery procedures, and deferred improvements are documented in
+`RELEASE_AUDIT.md`.
 
 ## 0. One-Time Repository Configuration
 
@@ -21,6 +23,8 @@ Before opening the release pull request:
 
 - [ ] `CITATION.cff` has `version: X.Y.Z` and the correct release date.
 - [ ] `CHANGELOG.md` has a `Version X.Y.Z` section at the top.
+- [ ] Release-note links in that changelog section work outside the repository
+      file view; prefer absolute URLs.
 - [ ] `.claude/skills/pymaftools/SKILL.md` reflects public API changes.
 - [ ] `README.md` and `docs/` reflect public API changes.
 - [ ] `DATA_SOURCES.md` provenance and checksums cover bundled data changes.
@@ -46,6 +50,7 @@ pytest tests/ -v --tb=short --cov=pymaftools --cov-fail-under=60
 ruff check pymaftools/
 ruff format --check pymaftools/
 sphinx-build -W --keep-going docs docs/_build/html
+python scripts/extract_release_notes.py X.Y.Z --output /tmp/release-notes.md
 ```
 
 ## 3. Local Artifact Verification
@@ -74,28 +79,40 @@ After the release pull request is merged and `main` CI is green:
 ```bash
 git switch main
 git pull --ff-only origin main
+git status --short
 git tag -a vX.Y.Z -m "Release vX.Y.Z"
 git push origin vX.Y.Z
 ```
+
+Before pushing, confirm `git status` is empty, `git rev-parse HEAD` is the commit
+intended for release, and the exact version does not already exist on TestPyPI or
+PyPI. Do not push another release tag while a release workflow is active.
 
 The tag starts one protected pipeline that:
 
 1. Verifies the exact `vX.Y.Z` tag, release metadata, and `main` ancestry.
 2. Re-runs Ruff, tests, coverage, and warning-free Sphinx documentation.
-3. Builds wheel and sdist once and runs `twine check`.
+3. Builds wheel and sdist once, runs `twine check`, and records SHA256 checksums.
 4. Publishes that artifact to TestPyPI with OIDC Trusted Publishing.
-5. Installs the exact TestPyPI version and smoke-tests the bundled HDF5 table.
+5. Downloads the TestPyPI wheel without dependencies, compares it byte-for-byte
+   with the build artifact, installs dependencies only from PyPI, and smoke-tests
+   the bundled HDF5 table.
 6. Waits for approval on the protected `pypi` environment.
-7. Publishes the same artifact to PyPI with OIDC Trusted Publishing.
-8. Creates the GitHub Release and attaches wheel and sdist.
+7. Verifies checksums and publishes the same artifacts to PyPI with OIDC Trusted
+   Publishing.
+8. Creates the GitHub Release from the matching changelog section and attaches
+   wheel, sdist, and `SHA256SUMS`.
 
-Never run `twine upload` manually. A failed release should be diagnosed and
-re-tagged with a new version; published package files are immutable.
+Never run `twine upload` manually. Published package files are immutable. Follow
+the failure recovery matrix in `RELEASE_AUDIT.md`; whether a tag can be recreated
+depends on whether TestPyPI or PyPI accepted any file.
 
 ## 5. Post-Release
 
 - [ ] `pip install pymaftools==X.Y.Z` succeeds from PyPI.
 - [ ] The bundled HDF5 example loads from the installed wheel.
-- [ ] The GitHub Release contains wheel and sdist.
+- [ ] PyPI contains both wheel and sdist, and their hashes match `SHA256SUMS`.
+- [ ] The GitHub Release contains wheel, sdist, `SHA256SUMS`, and the complete
+      changelog section for this version.
 - [ ] Documentation is deployed at `https://dionic.xyz/pymaftools/`.
 - [ ] Commits after the tag receive the next setuptools-scm development version.
