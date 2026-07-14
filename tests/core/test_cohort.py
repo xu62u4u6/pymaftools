@@ -134,12 +134,14 @@ class TestCohortPersistence:
         
         # Save to SQLite
         db_path = temp_output_dir / "test_cohort.db"
-        cohort.to_sqlite(str(db_path))
+        with pytest.warns(DeprecationWarning, match="to_hdf5"):
+            cohort.to_sqlite(str(db_path))
         
         assert db_path.exists()
         
         # Load from SQLite
-        loaded_cohort = Cohort.read_sqlite(str(db_path))
+        with pytest.warns(DeprecationWarning, match="read_hdf5"):
+            loaded_cohort = Cohort.read_sqlite(str(db_path))
         
         assert loaded_cohort.name == cohort.name
         assert set(loaded_cohort.tables.keys()) == set(cohort.tables.keys())
@@ -163,6 +165,50 @@ class TestCohortPersistence:
         expected_columns = ["sql_table_name", "cohort_name", "table_name", "type"]
         assert all(col in registry.columns for col in expected_columns)
 
+    def test_hdf5_save_and_load(self, sample_cohort, tmp_path):
+        h5_path = tmp_path / "cohort.h5"
+
+        sample_cohort.to_hdf5(h5_path)
+        loaded = Cohort.read_hdf5(h5_path)
+
+        assert loaded.name == sample_cohort.name
+        assert loaded.description == sample_cohort.description
+        assert set(loaded.tables) == set(sample_cohort.tables)
+        for table_name, original in sample_cohort.tables.items():
+            restored = loaded.tables[table_name]
+            assert restored.equals(original)
+            assert restored.sample_metadata.equals(original.sample_metadata)
+            assert restored.feature_metadata.equals(original.feature_metadata)
+
+    def test_hdf5_round_trip_preserves_special_table_names(
+        self, sample_pivot_table, tmp_path
+    ):
+        cohort = Cohort("special", description="logical names stay untouched")
+        table_names = ["cohort_metadata", "tumor/normal", "quoted'name"]
+        for table_name in table_names:
+            cohort.add_table(sample_pivot_table.copy(), table_name)
+        h5_path = tmp_path / "special-names.h5"
+
+        cohort.to_hdf5(h5_path)
+        loaded = Cohort.read_hdf5(h5_path)
+
+        assert list(loaded.tables) == table_names
+        assert loaded.description == cohort.description
+        assert all(
+            loaded.tables[name].equals(cohort.tables[name]) for name in table_names
+        )
+
+    def test_hdf5_round_trip_supports_empty_cohort(self, tmp_path):
+        cohort = Cohort("empty", description="no tables yet")
+        h5_path = tmp_path / "empty.h5"
+
+        cohort.to_hdf5(h5_path)
+        loaded = Cohort.read_hdf5(h5_path)
+
+        assert loaded.name == "empty"
+        assert loaded.description == "no tables yet"
+        assert loaded.tables == {}
+
 
 class TestCohortValidation:
     """Test validation and error handling"""
@@ -170,28 +216,49 @@ class TestCohortValidation:
     def test_add_invalid_table(self):
         """Test adding non-PivotTable object"""
         cohort = Cohort("test")
-        
-        with pytest.raises(TypeError, match="must be an instance of PivotTable"):
+
+        with pytest.raises(TypeError, match="'table' must be a PivotTable"):
             cohort.add_table("not_a_pivot_table", "invalid")
+
+    def test_add_table_swapped_args(self, sample_pivot_table):
+        """Swapped (name, table) args get a dedicated, self-explaining error."""
+        cohort = Cohort("test")
+
+        with pytest.raises(TypeError, match="arguments appear swapped"):
+            cohort.add_table("mutations", sample_pivot_table)
     
     def test_conflicting_metadata(self, sample_pivot_table):
-        """Test handling of conflicting metadata"""
+        """Conflicting metadata columns are kept (prefixed), not silently dropped.
+
+        add_table warns and renames the incoming column to ``<table_name>_<col>``
+        so both versions survive — this guards against the lossy behaviour of
+        either overwriting or raising on every shared column.
+        """
         cohort = Cohort("test")
         cohort.add_table(sample_pivot_table, "table1")
-        
+        original_subtype = cohort.sample_metadata["subtype"].copy()
+
         # Create conflicting metadata
         conflicting_metadata = pd.DataFrame({
             'subtype': ['DIFFERENT', 'VALUES', 'HERE', 'CONFLICT']  # Different from original
         }, index=sample_pivot_table.columns)
-        
-        conflicting_table = PivotTable(sample_pivot_table.values, 
+
+        conflicting_table = PivotTable(sample_pivot_table.values,
                                      index=sample_pivot_table.index,
                                      columns=sample_pivot_table.columns)
         conflicting_table.sample_metadata = conflicting_metadata
         conflicting_table.feature_metadata = sample_pivot_table.feature_metadata.copy()
-        
-        with pytest.raises(ValueError, match="conflicting values"):
+
+        with pytest.warns(UserWarning, match="Conflicting sample metadata"):
             cohort.add_table(conflicting_table, "table2")
+
+        # Original column untouched; conflicting values preserved under a prefix.
+        pd.testing.assert_series_equal(
+            cohort.sample_metadata["subtype"], original_subtype
+        )
+        assert list(cohort.sample_metadata["table2_subtype"]) == [
+            'DIFFERENT', 'VALUES', 'HERE', 'CONFLICT'
+        ]
     
     def test_mismatched_samples(self, sample_pivot_table):
         """Test handling of mismatched samples"""

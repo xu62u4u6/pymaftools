@@ -1,3 +1,5 @@
+import gzip
+
 import pandas as pd
 import pytest
 
@@ -89,6 +91,37 @@ def test_to_pivot_table_returns_expected_axes_and_metadata():
     assert table.loc["TP53", "s1"] == "Multi_Hit"
 
 
+def test_to_gene_table_matches_to_pivot_table_alias():
+    """to_gene_table is canonical; to_pivot_table is a backward-compatible alias."""
+    maf = MAF(_build_maf_df())
+
+    gene_table = maf.to_gene_table()
+    aliased = maf.to_pivot_table()
+
+    assert isinstance(gene_table, PivotTable)
+    assert set(gene_table.index) == set(aliased.index)
+    assert set(gene_table.columns) == set(aliased.columns)
+
+
+def test_to_maf_canonical_and_deprecated_aliases(tmp_path):
+    """to_maf is canonical; to_MAF/write_maf warn but produce identical output."""
+    maf = MAF(_build_maf_df())
+
+    canonical = tmp_path / "canonical.maf"
+    maf.to_maf(canonical)
+    expected = canonical.read_text()
+
+    legacy_camel = tmp_path / "camel.maf"
+    with pytest.warns(DeprecationWarning, match="to_maf"):
+        maf.to_MAF(legacy_camel)
+    assert legacy_camel.read_text() == expected
+
+    legacy_write = tmp_path / "write.maf"
+    with pytest.warns(DeprecationWarning, match="to_maf"):
+        maf.write_maf(legacy_write)
+    assert legacy_write.read_text() == expected
+
+
 def test_merge_mutations_covers_false_single_and_multi_hit():
     assert MAF.merge_mutations(pd.Series([False, False])) is False
     assert MAF.merge_mutations(pd.Series(["Splice_Site", False], index=[0, 10])) == "Splice_Site"
@@ -147,7 +180,7 @@ def test_read_csv_reindex_and_sigprofiler_export(tmp_path):
 
     maf = MAF.read_csv(csv_path, reindex=True)
     out_path = tmp_path / "sigprofiler.tsv"
-    maf.write_SigProfilerMatrixGenerator_format(out_path)
+    maf.to_sigprofiler(out_path)
     written = pd.read_csv(out_path, sep="\t")
 
     assert "sample_ID" in written.columns
@@ -216,6 +249,20 @@ def test_count_leading_comment_lines(tmp_path):
         assert MAF._count_leading_comment_lines(path) == len(comment_lines)
 
 
+def test_read_maf_supports_gzip_with_leading_comments(tmp_path):
+    path = tmp_path / "mutations.maf.gz"
+    lines = ["#version 2.4", "#filedate 20240101", _MAF_HEADER] + _MAF_ROWS
+    with gzip.open(path, mode="wt", encoding="utf-8") as handle:
+        handle.write("\n".join(lines) + "\n")
+
+    maf = MAF.read_maf(path, sample_ID="sample-gz")
+
+    assert MAF._count_leading_comment_lines(path) == 2
+    assert len(maf) == 4
+    assert (maf["sample_ID"] == "sample-gz").all()
+    assert "TP53|7577120|7577120|C|C|T" in maf.index
+
+
 def test_read_maf_to_pivot_table_and_tmb_end_to_end(tmp_path):
     """Full flow: read two single-sample MAFs -> merge -> pivot -> TMB."""
     path_a = _write_maf(tmp_path / "a.maf", ["#version 2.4"])
@@ -236,8 +283,8 @@ def test_read_maf_to_pivot_table_and_tmb_end_to_end(tmp_path):
     assert "mutations_count" in pivot.sample_metadata.columns
     assert "TMB" not in pivot.sample_metadata.columns
 
-    # calculate_TMB returns a NEW table; the original is left untouched.
-    with_tmb = pivot.calculate_TMB(default_capture_size=40)
+    # calculate_tmb returns a NEW table; the original is left untouched.
+    with_tmb = pivot.calculate_tmb(default_capture_size=40)
     assert "TMB" not in pivot.sample_metadata.columns
     assert "TMB" in with_tmb.sample_metadata.columns
 
@@ -318,3 +365,24 @@ def test_read_maf_raises_when_no_sample_id_and_no_barcode(tmp_path):
 
     with pytest.raises(ValueError, match="Tumor_Sample_Barcode"):
         MAF.read_maf(maf_path)
+
+
+def test_read_maf_reports_missing_index_columns(tmp_path):
+    path = tmp_path / "missing-column.maf"
+    pd.DataFrame(
+        {
+            "Hugo_Symbol": ["TP53"],
+            "Start_Position": [1],
+            "Reference_Allele": ["A"],
+            "Tumor_Seq_Allele1": ["A"],
+            "Tumor_Seq_Allele2": ["T"],
+            "Tumor_Sample_Barcode": ["sample-1"],
+        }
+    ).to_csv(path, sep="\t", index=False)
+
+    with pytest.raises(ValueError, match="End_Position"):
+        MAF.read_maf(path)
+
+
+def test_correct_variant_classification_name_keeps_legacy_alias():
+    assert MAF.valid_variant_classification is MAF.vaild_variant_classfication

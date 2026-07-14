@@ -61,6 +61,7 @@ class BasePlot:
         title_fontsize: int = 10,
         legend_spacing: float = 0.08,
         item_spacing: float = 0.02,
+        **kwargs: Any,
     ) -> BasePlot:
         """
         Plot all legends on the specified axis.
@@ -96,6 +97,7 @@ class BasePlot:
             title_fontsize=title_fontsize,
             legend_spacing=legend_spacing,
             item_spacing=item_spacing,
+            **kwargs,
         )
         return self
 
@@ -182,6 +184,7 @@ class BasePlot:
         filename: str,
         dpi: int = 300,
         bbox_inches: str = "tight",
+        pad_inches: float = 0.08,
         transparent: bool = False,
         **kwargs: Any,
     ) -> None:
@@ -196,6 +199,8 @@ class BasePlot:
             Resolution.
         bbox_inches : str, optional
             Bounding box setting.
+        pad_inches : float, optional
+            Padding around the tight bounding box.
         transparent : bool, optional
             Whether to use transparent background.
         **kwargs : Any
@@ -212,6 +217,7 @@ class BasePlot:
             save_kwargs: dict[str, Any] = {
                 "dpi": dpi,
                 "bbox_inches": bbox_inches,
+                "pad_inches": pad_inches,
                 "transparent": transparent,
                 "format": format,
             }

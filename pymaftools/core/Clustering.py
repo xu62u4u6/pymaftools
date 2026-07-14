@@ -34,7 +34,7 @@ def table_to_distance(table: PivotTable) -> np.ndarray:
     numpy.ndarray
         Distance matrix computed as 1 minus cosine similarity.
     """
-    similarity = table.T.compute_similarity(method="cosine")
+    similarity = table.compute_similarity(method="cosine")
     distance = 1 - similarity.values
     return distance
 
@@ -45,8 +45,9 @@ def k_fold_clustering_evaluation(
     max_clusters: int = 50,
     metric: Literal["cosine", "hamming", "jaccard"] = "cosine",
     random_state: int = 42,
-    group_col: str = "subtype",
-) -> tuple[pd.DataFrame, dict[int, dict[int, np.ndarray]]]:
+    group_col: str | None = None,
+    n_splits: int = 5,
+) -> tuple[pd.DataFrame, dict[int, dict[int, pd.Series]]]:
     """
     Evaluate the optimal number of clusters using K-fold cross-validation.
 
@@ -63,48 +64,83 @@ def k_fold_clustering_evaluation(
     random_state : int, optional
         Random seed for reproducibility, by default 42.
     group_col : str, optional
-        Column name in sample metadata used for grouping, by default 'subtype'.
+        Column in sample metadata used to stratify folds. If omitted, ordinary
+        shuffled K-fold splitting is used.
+    n_splits : int, optional
+        Number of cross-validation folds, by default 5.
 
     Returns
     -------
     pd.DataFrame
         DataFrame containing silhouette scores for each fold and cluster count.
-    dict[int, dict[int, numpy.ndarray]]
-        Mapping of cluster count k to fold-wise cluster labels.
+    dict[int, dict[int, pandas.Series]]
+        Mapping of cluster count k to fold-wise cluster labels indexed by
+        sample identifier.
     """
-    group = table.sample_metadata[group_col].values
-    kf = KFold(n_splits=5, shuffle=True, random_state=random_state)
     if not isinstance(table, PivotTable):
         raise ValueError("Input table must be a PivotTable instance.")
     if min_clusters < 2 or max_clusters < min_clusters:
         raise ValueError(
             "min_clusters must be at least 2 and max_clusters must be greater than or equal to min_clusters."
         )
+    if not 2 <= n_splits <= table.shape[1]:
+        raise ValueError("n_splits must be between 2 and the number of samples")
+    if group_col is None:
+        splitter = KFold(n_splits=n_splits, shuffle=True, random_state=random_state)
+        splits = splitter.split(table.T.values)
+    else:
+        if group_col not in table.sample_metadata.columns:
+            raise ValueError(f"Column '{group_col}' not found in sample_metadata.")
+        groups = table.sample_metadata[group_col]
+        if groups.isna().any():
+            raise ValueError(f"Column '{group_col}' contains missing group labels.")
+        too_small = groups.value_counts()[lambda counts: counts < n_splits]
+        if not too_small.empty:
+            raise ValueError(
+                f"Every '{group_col}' group needs at least {n_splits} samples; "
+                f"too small: {too_small.to_dict()}."
+            )
+        splitter = StratifiedKFold(
+            n_splits=n_splits, shuffle=True, random_state=random_state
+        )
+        splits = splitter.split(table.T.values, groups.to_numpy())
+
     all_results = []
     cluster_label_dict = {}
     # only use (k-1)/k train part for clustering
-    for fold, (train_idx, _) in enumerate(kf.split(table.T.values, np.array(group))):
-        print(f"Processing fold {fold + 1}/5")
+    for fold, (train_idx, _) in enumerate(splits):
+        print(f"Processing fold {fold + 1}/{n_splits}")
 
         sample_train = table.sample_metadata.iloc[train_idx].index
         table_train = table.subset(samples=sample_train)
-        similarity_matrix = table_train.T.compute_similarity(method=metric)
-        distance_matrix_train = 1 - similarity_matrix  # dist = 1 - similarity
+        similarity_matrix = table_train.compute_similarity(method=metric)
+        distance_matrix_train = (1 - similarity_matrix).clip(lower=0)
         # fill diagonal to 0
         for i in range(len(distance_matrix_train)):
             distance_matrix_train.iloc[i, i] = 0.0
 
         # test different number of clusters
         for k in tqdm(range(min_clusters, max_clusters + 1), desc=f"Fold {fold + 1}"):
+            if k >= len(sample_train):
+                continue
             model = AgglomerativeClustering(
                 n_clusters=k, metric="precomputed", linkage="average"
             )
             labels = model.fit_predict(distance_matrix_train)
             if k not in cluster_label_dict:
                 cluster_label_dict[k] = {}
-            cluster_label_dict[k][fold + 1] = labels
+            cluster_label_dict[k][fold + 1] = pd.Series(
+                labels,
+                index=sample_train,
+                name=fold + 1,
+                dtype=int,
+            )
 
-            score = silhouette_score(table_train, labels, metric=metric)
+            score = silhouette_score(
+                distance_matrix_train,
+                labels,
+                metric="precomputed",
+            )
 
             all_results.append(
                 {"fold": fold + 1, "n_clusters": k, "silhouette_score": score}
@@ -142,15 +178,17 @@ def align_clusters(
 
 
 def align_cluster_label_dict(
-    cluster_label_dict: dict[int, dict[int, np.ndarray]],
+    cluster_label_dict: dict[int, dict[int, pd.Series | np.ndarray]],
 ) -> dict[int, pd.DataFrame]:
     """
     Align cluster labels across folds using fold 1 as the reference.
 
     Parameters
     ----------
-    cluster_label_dict : dict[int, dict[int, numpy.ndarray]]
-        Mapping of cluster count k to a dict of fold number to label array.
+    cluster_label_dict : dict[int, dict[int, pandas.Series or numpy.ndarray]]
+        Mapping of cluster count k to a dict of fold number to labels. Series
+        indexes identify samples; arrays are supported for backwards
+        compatibility and use a positional RangeIndex.
         Structure: ``{k: {fold: labels}}``.
 
     Returns
@@ -161,17 +199,35 @@ def align_cluster_label_dict(
     aligned_fold_df_dict = {}
 
     for k, fold_dict in cluster_label_dict.items():
-        fold_df = pd.DataFrame(fold_dict)
-        ref_labels = fold_df.iloc[:, 0].values
-        aligned_df = pd.DataFrame(index=fold_df.index)
+        if not fold_dict:
+            aligned_fold_df_dict[k] = pd.DataFrame()
+            continue
 
-        for col in fold_df.columns:
-            if col == fold_df.columns[0]:
-                aligned_df[col] = fold_df[col]
-            else:
-                aligned_df[col] = align_clusters(
-                    ref_labels, fold_df[col].values, n_clusters=int(k)
+        labels_by_fold = {
+            fold: labels if isinstance(labels, pd.Series) else pd.Series(labels)
+            for fold, labels in fold_dict.items()
+        }
+        reference_fold = next(iter(labels_by_fold))
+        reference = labels_by_fold[reference_fold]
+        aligned = {reference_fold: reference}
+
+        for fold, target in labels_by_fold.items():
+            if fold == reference_fold:
+                continue
+            common_samples = reference.index.intersection(target.index)
+            if common_samples.empty:
+                raise ValueError(
+                    f"Folds {reference_fold!r} and {fold!r} have no samples in common"
                 )
+            common_aligned = align_clusters(
+                reference.loc[common_samples].to_numpy(),
+                target.loc[common_samples].to_numpy(),
+                n_clusters=int(k),
+            )
+            mapping = dict(zip(target.loc[common_samples].to_numpy(), common_aligned))
+            aligned[fold] = target.map(lambda label: mapping.get(label, label))
+
+        aligned_df = pd.concat(aligned, axis=1)
 
         aligned_fold_df_dict[k] = aligned_df
 
@@ -227,7 +283,13 @@ def calculate_ari_matrix(
 
     for i in range(n):
         for j in range(n):
-            ari_matrix.iloc[i, j] = adjusted_rand_score(df.iloc[:, i], df.iloc[:, j])
+            common = df.iloc[:, [i, j]].dropna()
+            if common.empty:
+                ari_matrix.iloc[i, j] = np.nan
+            else:
+                ari_matrix.iloc[i, j] = adjusted_rand_score(
+                    common.iloc[:, 0], common.iloc[:, 1]
+                )
 
     return ari_matrix
 
@@ -640,56 +702,3 @@ def plot_clustering_metrics_and_find_best_k(
     plt.close(fig)
 
     return best_k
-
-
-def gpt_known_genes_summary(
-    client: object,
-    genes: list[str],
-    arm: str,
-    cancer_type: str = "lung cancer",
-) -> tuple[str, str]:
-    """
-    Query GPT-4 for well-known genes in a given chromosomal arm and cancer type.
-
-    Parameters
-    ----------
-    client : object
-        OpenAI client instance with a ``chat.completions.create`` method.
-    genes : list[str]
-        List of gene names to evaluate.
-    arm : str
-        Chromosomal arm where the genes are located (e.g., ``'3p'``).
-    cancer_type : str, optional
-        Cancer type context for the query, by default ``'lung cancer'``.
-
-    Returns
-    -------
-    str
-        GPT-4 response text listing notable genes and reasons.
-    str
-        The prompt that was sent to the model.
-    """
-    prompt = "\n".join(
-        [
-            f"The following is a list of human CNV genes located on {arm}:",
-            ", ".join(genes),
-            "",
-            f"Based on cancer literature, known functions, and biomedical research value, identify the well-known and frequently studied genes among these in {cancer_type}, and briefly explain why.",
-            "Use the following format:",
-            "```",
-            "Gene: gene_name, Reason: brief explanation",
-            "```",
-            "Do not add numbers or dashes. Do not use multiple lines or paragraphs for explanation. Output one gene per line.",
-        ]
-    )
-
-    result = ""
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4", messages=[{"role": "user", "content": prompt}], temperature=0
-        )
-        result = response.choices[0].message.content
-    except Exception as e:
-        print("Error:", e)
-
-    return result, prompt

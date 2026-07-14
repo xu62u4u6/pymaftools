@@ -11,8 +11,8 @@ from pymaftools.core.Clustering import (
     run_random_forest_cv,
     run_random_forest_multiple_seeds,
     plot_clustering_metrics_and_find_best_k,
-    gpt_known_genes_summary,
 )
+from pymaftools.llm import gpt_known_genes_summary
 
 
 def test_table_to_distance_returns_square_matrix(sample_pivot_table):

@@ -5,7 +5,6 @@ Test runner script for pymaftools
 
 import sys
 import subprocess
-import os
 from pathlib import Path
 
 def run_tests(test_type="all", verbose=True, coverage=False):
@@ -25,11 +24,8 @@ def run_tests(test_type="all", verbose=True, coverage=False):
     # Get the project root directory
     project_root = Path(__file__).parent
     
-    # Change to project directory
-    os.chdir(project_root)
-    
     # Build pytest command
-    cmd = ["/home/data/data_dingyangliu/miniconda3/envs/bioinfo/bin/python", "-m", "pytest"]
+    cmd = [sys.executable, "-m", "pytest"]
     
     if verbose:
         cmd.append("-v")
@@ -57,7 +53,7 @@ def run_tests(test_type="all", verbose=True, coverage=False):
     print(f"Running command: {' '.join(cmd)}")
     
     try:
-        result = subprocess.run(cmd, check=False)
+        result = subprocess.run(cmd, check=False, cwd=project_root)
         return result.returncode
     except FileNotFoundError:
         print("pytest not found. Please install pytest:")

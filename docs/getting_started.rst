@@ -11,26 +11,56 @@ Installation
 Quick Start
 -----------
 
-Read a MAF file and create an OncoPlot:
+Read a MAF file and create an OncoPlot. A small multi-sample MAF is bundled with
+the package, so this runs as-is after ``pip install``:
 
 .. code-block:: python
 
-   from pymaftools import MAF, OncoPlot
+   from pymaftools import load_example_maf
 
-   # Read MAF file (sample_ID is required — see "Reading MAF Files" below)
-   maf = MAF.read_maf("data/tcga_paad.maf", sample_ID="TCGA-PAAD-01")
+   # Bundled example (use MAF.read_maf("your.maf") for your own data)
+   maf = load_example_maf("multisample")
 
-   # Create mutation table
-   table = maf.to_pivot_table()
-
-   # Plot top 20 mutated genes
-   (
-       OncoPlot(table)
-       .set_config(figsize=(12, 8))
-       .oncoplot()
-       .add_barplot()
-       .add_legend()
+   # Build + prepare the mutation table
+   table = (
+       maf.to_gene_table()
+       .add_freq()
+       .calculate_tmb(default_capture_size=40)
+       .sort_features(by="freq")
+       .sort_samples_by_mutations()
    )
+
+   # Compose the oncoplot from tracks, then render once
+   op = (
+       table.plot.oncoplot(figsize=(12, 8))
+       .main()                        # mutation matrix
+       .add_bar("TMB", side="top")
+       .add_freq(side="right")
+       .render()
+   )
+   op.save("oncoplot.png", dpi=300)
+
+Saving Results
+--------------
+
+Use HDF5 for both individual tables and multi-omics cohorts. It preserves data
+and metadata without SQLite's practical limit of roughly 2,000 columns.
+
+.. code-block:: python
+
+   from pymaftools import Cohort, PivotTable
+
+   table.to_h5("mutation_table.h5")
+   table = PivotTable.read_h5("mutation_table.h5")
+
+   cohort.to_hdf5("cohort.h5")
+   cohort = Cohort.read_hdf5("cohort.h5")
+
+.. note::
+
+   ``to_sqlite`` and ``read_sqlite`` are deprecated as of 0.5.0. They remain
+   available for existing files during the deprecation period, but should not
+   be used for new high-dimensional datasets.
 
 Reading MAF Files
 -----------------
@@ -51,7 +81,7 @@ work.
 - ``Variant_Classification``
 
 The first six build the per-mutation index; ``Variant_Classification`` is the
-value used by ``to_pivot_table``. (``Variant_Type`` and ``Protein_position``
+value used by ``to_gene_table``. (``Variant_Type`` and ``Protein_position``
 are only needed for base-change / lollipop analyses.)
 
 **Sample identity.** By default each row's sample comes from the
@@ -79,15 +109,15 @@ Computing TMB
 
 .. code-block:: python
 
-   table = maf.to_pivot_table()          # provides `mutations_count`, not TMB
-   table = table.calculate_TMB(default_capture_size=40)  # TMB = count / size (Mb)
+   table = maf.to_gene_table()           # provides `mutations_count`, not TMB
+   table = table.calculate_tmb(default_capture_size=40)  # TMB = count / size (Mb)
    table.sample_metadata["TMB"]
 
 .. note::
 
-   ``to_pivot_table`` does not compute TMB. ``calculate_TMB`` returns a **new**
+   ``to_gene_table`` does not compute TMB. ``calculate_tmb`` returns a **new**
    table rather than modifying in place, so capture the return value
-   (``table = table.calculate_TMB(...)``) or the TMB column will not appear.
+   (``table = table.calculate_tmb(...)``) or the TMB column will not appear.
 
 Subsetting Data
 ---------------
@@ -95,9 +125,17 @@ Subsetting Data
 ``PivotTable.subset()`` lets you filter by features (rows) and samples (columns),
 with metadata automatically kept in sync.
 
+.. note::
+
+   These snippets are illustrative — the bundled ``multisample`` MAF has no
+   ``subtype`` column and its genes are not ``TP53``/``KRAS``/``EGFR``. Use
+   names/columns from your own data, or load the bundled HDF5 fixture
+   (``load_example_table()``), which
+   has ``subtype``. See :doc:`pivottable` for details.
+
 .. code-block:: python
 
-   # By feature names
+   # By feature names (use names present in your table)
    subset = table.subset(features=["TP53", "KRAS", "EGFR"])
 
    # By boolean mask — select samples of a specific subtype
@@ -109,7 +147,11 @@ with metadata automatically kept in sync.
        samples=table.sample_metadata["subtype"] == "LUSC",
    )
 
-   # Use with add_freq to compute group-wise mutation frequencies
+   # Compute group-wise mutation frequencies straight from a sample_metadata
+   # column (adds LUAD_freq, LUSC_freq, ... plus the overall freq):
+   table = table.add_freq(group_col="subtype")
+
+   # Equivalent explicit form (still supported) — pass per-group subsets yourself:
    table = table.add_freq(
        groups={
            "LUAD": table.subset(samples=table.sample_metadata.subtype == "LUAD"),
@@ -125,10 +167,11 @@ Multi-omics Integration
    from pymaftools import PivotTable, Cohort
 
    # Build a cohort from multiple omics layers
-   cohort = Cohort()
-   cohort.add_table("mutation", mutation_table)
-   cohort.add_table("expression", expression_table)
-   cohort.add_table("cnv", cnv_table)
+   # add_table(table, table_name) — the PivotTable comes first
+   cohort = Cohort("my_cohort")
+   cohort.add_table(mutation_table, "mutation")
+   cohort.add_table(expression_table, "expression")
+   cohort.add_table(cnv_table, "cnv")
 
    # Subset to shared samples
    cohort = cohort.subset(samples=shared_samples)

@@ -1,5 +1,13 @@
 include README.md
+include DATA_SOURCES.md
 include LICENSE
 
-recursive-include img *
 recursive-include pymaftools/data *
+
+# setuptools-scm adds all VCS-tracked files to the sdist; prune the heavy
+# image/example dirs so they don't bloat the release (img/ is ~5MB of PNGs).
+prune img
+prune docs
+prune scripts
+prune .claude
+prune .github

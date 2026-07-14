@@ -8,6 +8,13 @@ OncoPlot
    :members:
    :show-inheritance:
 
+Track
+-----
+
+.. automodule:: pymaftools.plot.Track
+   :members:
+   :show-inheritance:
+
 LollipopPlot
 ------------
 
@@ -15,10 +22,44 @@ LollipopPlot
    :members:
    :show-inheritance:
 
-PivotTablePlot
+PivotStatsPlot
 --------------
 
-.. automodule:: pymaftools.plot.PivotTablePlot
+.. note::
+
+   ``PivotTablePlot`` was renamed to ``PivotStatsPlot``. The old name remains
+   importable as a deprecated alias via
+   ``from pymaftools.plot.PivotTablePlot import PivotTablePlot``.
+
+.. automodule:: pymaftools.plot.PivotStatsPlot
+   :members:
+   :show-inheritance:
+
+ExpressionTablePlot
+-------------------
+
+.. automodule:: pymaftools.plot.ExpressionTablePlot
+   :members:
+   :show-inheritance:
+
+CopyNumberVariationTablePlot
+----------------------------
+
+.. automodule:: pymaftools.plot.CopyNumberVariationTablePlot
+   :members:
+   :show-inheritance:
+
+SignatureTablePlot
+------------------
+
+.. automodule:: pymaftools.plot.SignatureTablePlot
+   :members:
+   :show-inheritance:
+
+SmallVariationTablePlot
+-----------------------
+
+.. automodule:: pymaftools.plot.SmallVariationTablePlot
    :members:
    :show-inheritance:
 
@@ -33,6 +74,13 @@ MethodsPlot
 -----------
 
 .. automodule:: pymaftools.plot.MethodsPlot
+   :members:
+   :show-inheritance:
+
+BasePlot
+--------
+
+.. automodule:: pymaftools.plot.BasePlot
    :members:
    :show-inheritance:
 

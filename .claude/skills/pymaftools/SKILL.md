@@ -21,9 +21,9 @@ from pymaftools import MAF
 maf = MAF.read_maf("path/to/file.maf")                  # samples from Tumor_Sample_Barcode
 maf = MAF.read_maf("path/to/file.maf", sample_ID="SampleA")  # or force one sample_ID
 # Filter to nonsynonymous mutations
-filtered = maf.filter_maf(filter_type="nonsynonymous")
-# Convert to PivotTable (gene x sample matrix)
-pt = maf.to_pivot_table()
+filtered = maf.filter_maf(MAF.nonsynonymous_types)
+# Convert to a gene-level table (gene x sample matrix; alias: to_pivot_table)
+pt = maf.to_gene_table()
 # Merge multiple MAFs
 merged = MAF.merge_mafs([maf1, maf2])
 # Protein info for lollipop plots
@@ -41,7 +41,7 @@ from pymaftools import PivotTable
 pt = maf.to_pivot_table()
 pt = pt.add_freq()                          # Add mutation frequency to feature_metadata
 pt = pt.filter_by_freq(min_freq=0.05)       # Keep genes mutated in >=5% samples
-pt = pt.calculate_TMB()                     # Add TMB to sample_metadata
+pt = pt.calculate_tmb()                     # Add TMB to sample_metadata
 similarity = pt.compute_similarity(method="jaccard")
 
 # Sorting
@@ -53,8 +53,8 @@ pt = pt.sort_samples_by_group(group_col="subtype", group_order=["A", "B"], top=1
 pt_sub = pt.subset(features=["TP53", "KRAS"], samples=sample_list)
 
 # Persistence
-pt.to_sqlite("data.db")
-pt = PivotTable.read_sqlite("data.db")
+pt.to_h5("data.h5")
+pt = PivotTable.read_h5("data.h5")
 
 # Visualization (lazy-loaded accessor)
 pt.plot.plot_pca_samples(group_col="subtype")
@@ -93,20 +93,29 @@ pt = pt.add_freq(
 ```python
 from pymaftools import Cohort
 
-cohort = Cohort(sample_IDs=sample_list)
-cohort.add_table("mutations", mutation_pt)
-cohort.add_table("cnv", cnv_table)
-cohort.add_table("expression", expr_table)
+cohort = Cohort(name="TCGA-Lung", description="...")
+# Clinical sets sample_IDs; subsequent add_table auto-subsets to these IDs
 cohort.add_sample_metadata(clinical_df)
+cohort.add_table(mutation_pt, "mutations")   # auto calls table.subset(samples=cohort.sample_IDs)
+cohort.add_table(cnv_table, "cnv")
+cohort.add_table(expr_table, "expression")
 
-# Access tables as attributes
-cohort.mutations
-cohort.cnv
+# Access tables
+cohort.tables["mutations"]
 
-# Persistence
-cohort.to_sqlite("cohort.db")
-cohort = Cohort.read_sqlite("cohort.db")
+# Subset entire cohort
+sub = cohort.subset(samples=["TCGA-05-4244", "TCGA-05-4249"])
+
+# Persistence — HDF5 recommended (no column limit, preserves all metadata)
+cohort.to_hdf5("cohort.h5")
+cohort = Cohort.read_hdf5("cohort.h5")
+# HDF5 stores per table: data (matrix), feature_metadata, sample_metadata
+
+# SQLite persistence is deprecated because its ~2000-column limit is too low
+# for high-dimensional omics matrices. Use HDF5 for new files.
 ```
+
+**Key behavior:** `add_table()` automatically subsets the table to `cohort.sample_IDs`. Set sample_IDs first via `add_sample_metadata()`, then add tables without pre-filtering.
 
 ### Specialized Table Types
 
@@ -250,6 +259,45 @@ selected = run_rfecv_feature_selection(model, X, y)
 # Importance visualization
 plot_top_feature_importance_heatmap(importance_table, top_n=20)
 ```
+
+## TCGA Data Readers (`pymaftools.io`)
+
+Read GDC-downloaded raw files into PivotTable objects. Each reader scans
+gdc-client UUID directory structure and resolves file_uuid → case_id via GDC API.
+
+```python
+from pymaftools.io import (
+    read_star_counts,         # → ExpressionTable (gene × sample)
+    read_maf_files,           # → MAF (flat DataFrame, use .to_pivot_table() for matrix)
+    read_seg_files,           # → CopyNumberVariationTable (segment-level)
+    read_gene_level_cnv,      # → CopyNumberVariationTable (gene × sample, ASCAT3)
+    read_methylation_betas,   # → PivotTable (probe × sample)
+    GDCClient,                # API client for queries
+)
+from pymaftools.io.tcga_readers import read_clinical  # → DataFrame (bcr_patient_barcode index)
+
+# All readers take (data_dir, manifest_path)
+# data_dir: gdc-client download dir with uuid subdirs
+# manifest_path: GDC manifest TSV (id, filename, md5, size, state)
+expr = read_star_counts("data/raw/expression", "data/manifests/manifest_expression.tsv")
+cnv = read_gene_level_cnv("data/raw/cnv_gene", "data/manifests/manifest_cnv_gene.tsv",
+                           value_column="copy_number")  # or min_copy_number, max_copy_number
+
+# Clinical from local BCR TXT files
+clin = read_clinical("data/raw/clinical", file_type="patient")  # patient, drug, radiation, follow_up, nte
+
+# Clinical from GDC API (alternative)
+client = GDCClient()
+clin = client.fetch_clinical_table(case_ids)
+```
+
+**GDC data types available:**
+- `expression`: Gene Expression Quantification (STAR - Counts)
+- `mutation`: Masked Somatic Mutation (MAF)
+- `cnv`: Masked Copy Number Segment
+- `cnv_gene`: Gene Level Copy Number (ASCAT3)
+- `methylation`: Methylation Beta Value
+- `clinical`: Clinical Supplement (BCR XML/TXT)
 
 ## Utilities
 

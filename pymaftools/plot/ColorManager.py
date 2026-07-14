@@ -3,11 +3,13 @@ from __future__ import annotations
 import pandas as pd
 import seaborn as sns
 import matplotlib.colors as mcolors
+from matplotlib import colormaps
 from matplotlib.colors import ListedColormap
-from matplotlib.cm import get_cmap
 from typing import Any
 from matplotlib.colors import to_rgb, to_hex
 import colorsys
+
+from ..core.variant_groups import FUNCTIONAL_GROUP, FUNCTIONAL_ORDER
 
 
 class ColorManager:
@@ -43,10 +45,38 @@ class ColorManager:
 
     CNV_CMAP = {"AMP": "salmon", "DEL": "steelblue", "AMP&DEL": "gray"}
 
+    # Canonical six-class substitution colours (COSMIC SBS-6 convention), so
+    # Ti/Tv plots use the same C>A/C>T/... colours everywhere.
+    TITV_CMAP = {
+        "C>A": "#02BCED",  # sky blue
+        "C>G": "#1A1A1A",  # near-black
+        "C>T": "#E32926",  # red
+        "T>A": "#999999",  # grey
+        "T>C": "#A1CE63",  # green
+        "T>G": "#EDBFC2",  # pink
+    }
+
+    # Coarse functional grouping of Variant_Classification (domain fact; defined
+    # in core.variant_groups). Aliased here so existing
+    # ``ColorManager.FUNCTIONAL_GROUP`` / ``.FUNCTIONAL_ORDER`` callers keep working.
+    FUNCTIONAL_GROUP = FUNCTIONAL_GROUP
+    FUNCTIONAL_ORDER = FUNCTIONAL_ORDER
+
+    FUNCTIONAL_CMAP = {
+        "Missense": "#7F7F7F",  # grey (matches Missense_Mutation)
+        "Truncating": "#C0392B",  # deep red (LoF)
+        "Splice": "#D0875D",  # brown (matches Splice_Site)
+        "In-frame": "#ADDBEA",  # light blue (matches In_Frame_Del)
+        "Silent": "#D9D9D9",  # light grey
+        "Other": "#BBBBCC",  # muted non-coding
+    }
+
     predefined_cmaps = {
         "all_mutation": ALL_MUTATION_CMAP,
         "nonsynonymous": NONSYNONYMOUS_CMAP,
         "cnv": CNV_CMAP,
+        "titv": TITV_CMAP,
+        "functional": FUNCTIONAL_CMAP,
     }
 
     def __init__(self):
@@ -307,7 +337,7 @@ class ColorManager:
         """
 
         # Get the colormap
-        cmap = get_cmap(cmap_name)
+        cmap = colormaps.get_cmap(cmap_name)
 
         # Generate evenly spaced values for the colormap
         num_categories = len(categories)

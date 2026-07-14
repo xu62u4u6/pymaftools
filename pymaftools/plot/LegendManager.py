@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
-from matplotlib.cm import ScalarMappable, get_cmap
+from matplotlib import colormaps
+from matplotlib.cm import ScalarMappable
 from matplotlib.colors import Normalize
 from typing import Any
 import matplotlib.axes as Axes
@@ -96,6 +97,8 @@ class LegendManager:
             Support method chaining.
         """
         self.legend_dict.clear()
+        self.numeric_legends.clear()
+        self.shape_dict.clear()
         return self
 
     def get_legend_dict(self) -> dict[str, dict[str, str]]:
@@ -117,12 +120,14 @@ class LegendManager:
         legend_spacing: float = 0.08,
         item_spacing: float = 0.02,
         start_y: float = 0.95,
-        rect_width: float = 0.04,
-        rect_height: float = 0.03,
-        text_offset_x: float = 0.12,
+        rect_width: float = 0.06,
+        rect_height: float = 0.02,
+        text_offset_x: float = 0.14,
         title_offset_y: float = 0.05,
         item_offset_y: float = 0.035,
         legend_gap: float = 0.03,
+        colorbar_width: float = 0.55,
+        colorbar_height: float = 0.022,
     ) -> LegendManager:
         """
         Plot all legends.
@@ -166,8 +171,8 @@ class LegendManager:
                 "No axis provided. Please set axis using set_axis() or provide ax parameter."
             )
 
-        # Return if no legends
-        if not self.legend_dict:
+        # Return if there is nothing to draw
+        if not self.legend_dict and not self.numeric_legends:
             return self
 
         # Clear axis and set basic properties
@@ -219,6 +224,33 @@ class LegendManager:
 
             # Add spacing between legends
             y_position -= legend_gap
+
+        # Continuous colorbars (numeric legends) stacked below the swatch legends.
+        for legend_name, info in self.numeric_legends.items():
+            target_ax.text(
+                0.05,
+                y_position,
+                info["label"],
+                fontsize=title_fontsize,
+                fontweight="bold",
+                va="top",
+                ha="left",
+            )
+            y_position -= title_offset_y
+            cax = target_ax.inset_axes(
+                [0.05, y_position - colorbar_height, colorbar_width, colorbar_height]
+            )
+            sm = ScalarMappable(
+                norm=Normalize(vmin=info["vmin"], vmax=info["vmax"]),
+                cmap=info["colormap"],
+            )
+            cbar = target_ax.figure.colorbar(sm, cax=cax, orientation="horizontal")
+            cbar.set_ticks([info["vmin"], info["vmax"]])
+            cbar.set_ticklabels([f"{info['vmin']:.3g}", f"{info['vmax']:.3g}"])
+            cbar.ax.tick_params(labelsize=fontsize, length=2, width=0.5, pad=1)
+            cbar.outline.set_linewidth(0)
+            # leave room for the colorbar and its tick labels below
+            y_position -= colorbar_height + item_offset_y + legend_gap
 
         return self
 
@@ -586,7 +618,7 @@ class LegendManager:
             info = self.numeric_legends[numeric_legend]
 
             # Create colorbar
-            cmap = get_cmap(info["colormap"])
+            cmap = colormaps.get_cmap(info["colormap"])
             norm = Normalize(vmin=info["vmin"], vmax=info["vmax"])
             sm = ScalarMappable(norm=norm, cmap=cmap)
             sm.set_array([])

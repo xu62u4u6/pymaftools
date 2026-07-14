@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from contextlib import closing
 import pandas as pd
 import copy
 import warnings
 
 from .PivotTable import PivotTable
+from ._atomic import atomic_output_path
 import sqlite3
 from pathlib import Path
 
@@ -111,8 +113,15 @@ class Cohort:
             If ``table`` is not an instance of PivotTable.
         """
         if not isinstance(table, PivotTable):
+            if isinstance(table, str) and isinstance(table_name, PivotTable):
+                raise TypeError(
+                    "add_table arguments appear swapped. The signature is "
+                    "add_table(table, table_name), e.g. "
+                    "add_table(mutation_pt, 'mutations')."
+                )
             raise TypeError(
-                f"Assay data for '{table_name}' must be an instance of PivotTable."
+                "add_table(table, table_name): 'table' must be a PivotTable, "
+                f"got {type(table).__name__}."
             )
 
         if self.sample_IDs is None:
@@ -122,7 +131,36 @@ class Cohort:
             table = table.subset(samples=self.sample_IDs)
             self.tables[table_name] = table
 
-        self.add_sample_metadata(table.sample_metadata, source=table_name)
+        # Reindex sample_metadata to cohort's sample_IDs before merging
+        # (table may have fewer samples after subset)
+        meta = table.sample_metadata.reindex(self.sample_IDs)
+
+        # Rename columns that would conflict with existing metadata by prefixing table_name
+        if self.sample_metadata is not None:
+            shared = set(meta.columns) & set(self.sample_metadata.columns)
+            conflict = {
+                col
+                for col in shared
+                if not meta[col]
+                .reindex(self.sample_metadata.index)
+                .equals(self.sample_metadata[col])
+            }
+            if conflict:
+                renamed = ", ".join(
+                    f"{col} -> {table_name}_{col}" for col in sorted(conflict)
+                )
+                warnings.warn(
+                    f"Conflicting sample metadata columns detected while adding "
+                    f"'{table_name}': {renamed}. Renaming incoming columns with "
+                    f"'{table_name}_' prefix to preserve both versions.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+                meta = meta.rename(
+                    columns={col: f"{table_name}_{col}" for col in conflict}
+                )
+
+        self.add_sample_metadata(meta, source=table_name)
 
     def _is_index_matched(self, table: PivotTable) -> bool:
         """
@@ -153,7 +191,7 @@ class Cohort:
         if table_name in self.tables:
             del self.tables[table_name]
 
-    def subset(self, samples: list[str] = []) -> Cohort:
+    def subset(self, samples: list[str] | None = None) -> Cohort:
         """
         Create a new Cohort containing only the specified samples.
 
@@ -167,6 +205,8 @@ class Cohort:
         Cohort
             A new Cohort containing only the specified samples.
         """
+        if samples is None:
+            samples = []
         cohort = self.copy()
         for table_name, table in cohort.tables.items():
             cohort.tables[table_name] = table.subset(samples=samples)
@@ -302,31 +342,32 @@ class Cohort:
         )
         db_path = Path(db_path)
 
-        if db_path.exists():
-            db_path.unlink()
-
-        conn = sqlite3.connect(str(db_path))
         registry = self.to_sql_registry()
+        with atomic_output_path(db_path) as temporary_path:
+            with closing(sqlite3.connect(str(temporary_path))) as conn:
+                with conn:
+                    for _, row in registry.iterrows():
+                        table_name = row["table_name"]
+                        sql_table_name = row["sql_table_name"]
+                        kind = row["type"]
+                        table = (
+                            self.tables[table_name].copy().rename_index_and_columns()
+                        )
 
-        for _, row in registry.iterrows():
-            table_name = row["table_name"]
-            sql_table_name = row["sql_table_name"]
-            kind = row["type"]
-            table = self.tables[table_name].copy().rename_index_and_columns()
+                        if kind == "data":
+                            table.to_sql(
+                                sql_table_name, conn, if_exists="replace", index=True
+                            )
+                        elif kind == "sample_metadata":
+                            table.sample_metadata.to_sql(
+                                sql_table_name, conn, if_exists="replace", index=True
+                            )
+                        elif kind == "feature_metadata":
+                            table.feature_metadata.to_sql(
+                                sql_table_name, conn, if_exists="replace", index=True
+                            )
 
-            if kind == "data":
-                table.to_sql(sql_table_name, conn, if_exists="replace", index=True)
-            elif kind == "sample_metadata":
-                table.sample_metadata.to_sql(
-                    sql_table_name, conn, if_exists="replace", index=True
-                )
-            elif kind == "feature_metadata":
-                table.feature_metadata.to_sql(
-                    sql_table_name, conn, if_exists="replace", index=True
-                )
-
-        registry.to_sql("registry", conn, if_exists="replace", index=False)
-        conn.close()
+                    registry.to_sql("registry", conn, if_exists="replace", index=False)
         print(f"[Cohort] saved to {db_path}")
 
     @classmethod
@@ -354,34 +395,32 @@ class Cohort:
             DeprecationWarning,
             stacklevel=2,
         )
-        conn = sqlite3.connect(db_path)
-        registry_df = pd.read_sql("SELECT * FROM registry", conn)
+        with closing(sqlite3.connect(db_path)) as conn:
+            registry_df = pd.read_sql("SELECT * FROM registry", conn)
 
-        cohort_name = registry_df["cohort_name"].iloc[0]
-        cohort = cls(cohort_name)
+            cohort_name = registry_df["cohort_name"].iloc[0]
+            cohort = cls(cohort_name)
 
-        for table_name in registry_df["table_name"].unique():
-            data = pd.read_sql(
-                f"SELECT * FROM '{table_name}'", conn, index_col="feature"
-            )
-            sample_metadata = pd.read_sql(
-                f"SELECT * FROM '{table_name}__sample_metadata'",
-                conn,
-                index_col="sample",
-            )
-            feature_metadata = pd.read_sql(
-                f"SELECT * FROM '{table_name}__feature_metadata'",
-                conn,
-                index_col="feature",
-            )
+            for table_name in registry_df["table_name"].unique():
+                data = pd.read_sql(
+                    f"SELECT * FROM '{table_name}'", conn, index_col="feature"
+                )
+                sample_metadata = pd.read_sql(
+                    f"SELECT * FROM '{table_name}__sample_metadata'",
+                    conn,
+                    index_col="sample",
+                )
+                feature_metadata = pd.read_sql(
+                    f"SELECT * FROM '{table_name}__feature_metadata'",
+                    conn,
+                    index_col="feature",
+                )
 
-            pivot = PivotTable(data)
-            pivot.sample_metadata = sample_metadata
-            pivot.feature_metadata = feature_metadata
+                pivot = PivotTable(data)
+                pivot.sample_metadata = sample_metadata
+                pivot.feature_metadata = feature_metadata
 
-            cohort.add_table(pivot, table_name)
-
-        conn.close()
+                cohort.add_table(pivot, table_name)
         print(f"[Cohort] loaded from {db_path}")
         return cohort
 
@@ -399,23 +438,38 @@ class Cohort:
         """
         h5_path = Path(h5_path)
 
-        if h5_path.exists():
-            h5_path.unlink()
+        with atomic_output_path(h5_path) as temporary_path:
+            with pd.HDFStore(str(temporary_path), mode="w") as store:
+                cohort_meta = pd.DataFrame(
+                    {"name": [self.name], "description": [self.description]}
+                )
+                store.put("cohort_metadata", cohort_meta)
 
-        with pd.HDFStore(str(h5_path), mode="w") as store:
-            cohort_meta = pd.DataFrame(
-                {"name": [self.name], "description": [self.description]}
-            )
-            store.put("cohort_metadata", cohort_meta)
+                table_registry = pd.DataFrame(
+                    [
+                        {
+                            "table_name": table_name,
+                            "class_name": type(table).__name__,
+                            "storage_key": f"tables/table_{index:06d}",
+                        }
+                        for index, (table_name, table) in enumerate(self.tables.items())
+                    ],
+                    columns=["table_name", "class_name", "storage_key"],
+                )
+                store.put("table_registry", table_registry)
 
-            table_names = pd.DataFrame({"table_name": list(self.tables.keys())})
-            store.put("table_registry", table_names)
-
-            for table_name, table in self.tables.items():
-                table_copy = table.copy().rename_index_and_columns()
-                store.put(f"{table_name}/data", table_copy.T)
-                store.put(f"{table_name}/sample_metadata", table_copy.sample_metadata)
-                store.put(f"{table_name}/feature_metadata", table_copy.feature_metadata)
+                for row, table in zip(
+                    table_registry.to_dict("records"), self.tables.values()
+                ):
+                    storage_key = row["storage_key"]
+                    table_copy = table.copy().rename_index_and_columns()
+                    store.put(f"{storage_key}/data", table_copy.T)
+                    store.put(
+                        f"{storage_key}/sample_metadata", table_copy.sample_metadata
+                    )
+                    store.put(
+                        f"{storage_key}/feature_metadata", table_copy.feature_metadata
+                    )
 
         print(f"[Cohort] saved to {h5_path}")
 
@@ -442,13 +496,42 @@ class Cohort:
             )
 
             table_registry = store.get("table_registry")
+            has_class_info = "class_name" in table_registry.columns
+            if not has_class_info:
+                warnings.warn(
+                    f"HDF5 file '{h5_path}' was written without class info; "
+                    "all tables will be loaded as PivotTable. Re-save with "
+                    "to_hdf5() to preserve subclass type.",
+                    UserWarning,
+                    stacklevel=2,
+                )
 
-            for table_name in table_registry["table_name"]:
-                data = store.get(f"{table_name}/data").T
-                sample_metadata = store.get(f"{table_name}/sample_metadata")
-                feature_metadata = store.get(f"{table_name}/feature_metadata")
+            for _, row in table_registry.iterrows():
+                table_name = row["table_name"]
+                storage_key = (
+                    row["storage_key"]
+                    if "storage_key" in table_registry.columns
+                    else table_name
+                )
+                data = store.get(f"{storage_key}/data").T
+                sample_metadata = store.get(f"{storage_key}/sample_metadata")
+                feature_metadata = store.get(f"{storage_key}/feature_metadata")
 
-                pivot = PivotTable(data)
+                table_cls = PivotTable
+                if has_class_info:
+                    class_name = row["class_name"]
+                    table_cls = PivotTable._subclass_registry.get(class_name)
+                    if table_cls is None:
+                        warnings.warn(
+                            f"Unknown PivotTable subclass '{class_name}' for table "
+                            f"'{table_name}'; falling back to PivotTable. Ensure the "
+                            "module defining the subclass is imported.",
+                            UserWarning,
+                            stacklevel=2,
+                        )
+                        table_cls = PivotTable
+
+                pivot = table_cls(data)
                 pivot.sample_metadata = sample_metadata
                 pivot.feature_metadata = feature_metadata
 

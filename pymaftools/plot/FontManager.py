@@ -14,11 +14,6 @@ class FontManager:
     Provides utilities for registering local font files, scanning
     directories for fonts, and applying font settings globally to
     matplotlib's rcParams.
-
-    Attributes
-    ----------
-    WEIGHT_MAP : dict
-        Mapping from weight name strings to numeric weight values.
     """
 
     WEIGHT_MAP = {
@@ -35,6 +30,7 @@ class FontManager:
         "extra bold": 800,
         "black": 900,
     }
+    """dict: Mapping from weight name strings to numeric weight values."""
 
     def __init__(self) -> None:
         """Initialize FontManager."""

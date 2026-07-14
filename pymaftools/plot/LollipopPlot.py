@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import matplotlib.pyplot as plt
-import matplotlib.cm as cm
+from matplotlib import colormaps
 import numpy as np
 import matplotlib.patches as patches
 from .BasePlot import BasePlot
+from . import style
 
 
 class LollipopPlot(BasePlot):
@@ -72,6 +73,8 @@ class LollipopPlot(BasePlot):
             "legend_domain_bbox": (1.02, 1.0),
             "legend_mutation_bbox": (1.02, 0.7),
             "tight_layout_rect": [0, 0, 0.88, 1],
+            "legend": True,
+            "legend_width": 0.18,
         }
         # Merge user config with defaults
         self.config = self._default_config.copy()
@@ -122,17 +125,24 @@ class LollipopPlot(BasePlot):
                 )
             if num_labels == 0:
                 return {}
-            domain_cmap = cm.get_cmap(cmap_name, num_labels if num_labels > 0 else 1)
+            domain_cmap = colormaps.get_cmap(cmap_name).resampled(num_labels)
         except ValueError:
             print(f"Warning: Colormap '{cmap_name}' failed. Using 'viridis'.")
-            domain_cmap = cm.get_cmap("viridis", num_labels if num_labels > 0 else 1)
+            domain_cmap = colormaps.get_cmap("viridis").resampled(num_labels)
 
         return {label: domain_cmap(i) for i, label in enumerate(unique_domain_labels)}
 
     def _setup_plot(self, ax=None, fig=None):
         """Initialize plot with proper figure handling."""
         if ax is None or fig is None:
-            self.fig, self.ax_main = plt.subplots(figsize=self.config["figsize"])
+            if self.config.get("legend", True):
+                self.fig, self.ax_main, self.ax_legend = style.fig_with_legend(
+                    self.config["figsize"],
+                    legend_width=self.config.get("legend_width", 0.18),
+                )
+            else:
+                self.fig, self.ax_main = plt.subplots(figsize=self.config["figsize"])
+                self.ax_legend = None
         else:
             self.fig = fig
             self.ax_main = ax
@@ -309,7 +319,16 @@ class LollipopPlot(BasePlot):
         # Use inherited legend plotting functionality
         if hasattr(self, "ax_legend") and self.ax_legend is not None:
             # If we have a dedicated legend axis, use it
-            self.plot_all_legends(ax=self.ax_legend)
+            self.plot_all_legends(
+                ax=self.ax_legend,
+                fontsize=10,
+                title_fontsize=12,
+                start_y=0.98,
+                rect_height=0.04,
+                item_offset_y=0.07,
+                title_offset_y=0.09,
+                legend_gap=0.06,
+            )
         else:
             # Otherwise, create a simple layout adjustment
             try:
@@ -349,7 +368,7 @@ class LollipopPlot(BasePlot):
         gene,
         cohorts_data,
         figsize=(20, 15),
-        width_ratios=[9, 1],
+        width_ratios=None,
         config=None,
         domain_label_map=None,
         mutation_label_map=None,
@@ -400,6 +419,7 @@ class LollipopPlot(BasePlot):
         """
         from matplotlib.gridspec import GridSpec
 
+        width_ratios = [9, 1] if width_ratios is None else list(width_ratios)
         n_cohorts = len(cohorts_data)
         if n_cohorts == 0:
             raise ValueError("No cohort data provided")

@@ -1,21 +1,22 @@
 [build-system]
-requires = ["setuptools>=70.0,<75.0", "wheel"]
+requires = ["setuptools>=77.0,<83.0", "wheel>=0.43,<1.0", "setuptools-scm>=8,<11"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "pymaftools"
-version = "0.4.1"
+dynamic = ["version"]   # derived from the git tag by setuptools-scm
 description = "Python package for handling and analyzing Mutation Annotation Format (MAF) files."
 readme = "README.md"
 requires-python = ">=3.10"
-license = {text = "MIT"}
+license = "MIT"
+license-files = ["LICENSE"]
 
 authors = [
   { name = "Ding-Yang Liu", email = "199928ltyos@gmail.com" }
 ]
 
 dependencies = [
-  "pandas>=2.0,<3.0",
+  "pandas>=2.2,<3.0",
   "numpy>=1.24,<3.0",
   "networkx>=3.0,<4.0",
   "matplotlib>=3.7,<4.0",
@@ -25,28 +26,38 @@ dependencies = [
   "statsmodels>=0.14,<1.0",
   "scipy>=1.10,<2.0",
   "requests>=2.28,<3.0",
+  "pybiomart>=0.2,<1.0",
   "beautifulsoup4>=4.12,<5.0",
   "tqdm>=4.64,<5.0",
-  "tables>=3.8,<4.0"
+  "tables>=3.8,<4.0",
+  "typing-extensions>=4.4,<5.0",
+  "tomli>=2.0,<3.0; python_version < '3.11'"
 ]
 
 [project.optional-dependencies]
 test = [
-  "pytest>=7.0.0",
-  "pytest-cov>=4.0.0",
-  "pytest-mock>=3.10.0"
+  "pytest>=7.0.0,<10.0",
+  "pytest-cov>=4.0.0,<8.0",
+  "pytest-mock>=3.10.0,<4.0"
 ]
 docs = [
-  "sphinx>=7.0",
-  "sphinx-rtd-theme>=2.0",
-  "sphinx-autodoc-typehints>=2.0",
+  "sphinx>=7.0,<10.0",
+  "sphinx-rtd-theme>=2.0,<4.0",
+  "sphinx-autodoc-typehints>=2.0,<4.0",
+]
+anndata = [
+  "anndata>=0.10,<1.0",
+]
+expression = [
+  "pydeseq2>=0.4,<1.0",
 ]
 dev = [
-  "pytest>=7.0.0",
-  "pytest-cov>=4.0.0",
-  "pytest-mock>=3.10.0",
-  "build",
-  "twine>=5.0,<6.0"
+  "pytest>=7.0.0,<10.0",
+  "pytest-cov>=4.0.0,<8.0",
+  "pytest-mock>=3.10.0,<4.0",
+  "ruff==0.15.21",
+  "build>=1.2,<2.0",
+  "twine>=6.0,<7.0"
 ]
 
 [project.urls]
@@ -64,6 +75,16 @@ ignore = ["E501"]  # line length handled by formatter
 "__init__.py" = ["F401"]  # re-exports
 
 [tool.setuptools.packages.find]
-where = ["."] 
+where = ["."]
 include = ["pymaftools*"]
 exclude = ["tests*"]
+
+[tool.setuptools_scm]
+# Single source of truth: the package version comes from the git tag
+# (e.g. tag v0.5.0 -> version 0.5.0). Writes a runtime _version.py (gitignored).
+version_file = "pymaftools/_version.py"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2,<10.0",
+]

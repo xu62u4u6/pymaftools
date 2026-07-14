@@ -1,56 +1,134 @@
-# pyMAF/__init__.py
+"""Top-level public API for pymaftools."""
+
+from __future__ import annotations
+
+from importlib import import_module
 from importlib.metadata import version
+from typing import Any
+
+# Core table classes stay eager because they are the common package entry point
+# and do not import plotting backends.
+from .core.CancerCellFractionTable import CancerCellFractionTable
+from .core.Cohort import Cohort
+from .core.CopyNumberVariationTable import CopyNumberVariationTable
+from .core.ExpressionTable import ExpressionTable
+from .core.MAF import MAF
+from .core.PivotTable import PivotTable, capture_size
+from .core.SignatureTable import SignatureTable
+from .core.SmallVariationTable import SmallVariationTable
+from .datasets import (
+    example_maf_path,
+    example_table_path,
+    load_example_maf,
+    load_example_table,
+)
 
 __version__ = version("pymaftools")
 
-# core
-from .core.PivotTable import PivotTable
-from .core.MAF import MAF
-from .core.CopyNumberVariationTable import CopyNumberVariationTable
-from .core.SmallVariationTable import SmallVariationTable
-from .core.PairwiseMatrix import SimilarityMatrix
-from .core.ExpressionTable import ExpressionTable
-from .core.SignatureTable import SignatureTable
-from .core.CancerCellFractionTable import CancerCellFractionTable
-from .core.Cohort import Cohort
-from .core.Clustering import (
-    table_to_distance,
-    k_fold_clustering_evaluation,
-    align_clusters,
-    align_cluster_label_dict,
-    convert_ndarray_to_list,
-    calculate_ari_matrix,
-    plot_ari_matrix,
-    run_random_forest_cv,
-    run_random_forest_multiple_seeds,
-    plot_cluster_feature_importance_boxplot,
-    plot_cluster_feature_importance,
-    run_feature_clustering,
-    plot_clustering_metrics_and_find_best_k,
-    gpt_known_genes_summary,
-)
 
-# plot
-from .plot.OncoPlot import OncoPlot
-from .plot.LollipopPlot import LollipopPlot
-from .plot.MethodsPlot import MethodsPlot
-from .plot.ColorManager import ColorManager
-from .plot.FontManager import FontManager
-from .plot.ModelPlot import ModelPlot
+_LAZY_EXPORTS = {
+    # core clustering
+    "table_to_distance": ".core.Clustering",
+    "k_fold_clustering_evaluation": ".core.Clustering",
+    "align_clusters": ".core.Clustering",
+    "align_cluster_label_dict": ".core.Clustering",
+    "convert_ndarray_to_list": ".core.Clustering",
+    "calculate_ari_matrix": ".core.Clustering",
+    "plot_ari_matrix": ".core.Clustering",
+    "run_random_forest_cv": ".core.Clustering",
+    "run_random_forest_multiple_seeds": ".core.Clustering",
+    "plot_cluster_feature_importance_boxplot": ".core.Clustering",
+    "plot_cluster_feature_importance": ".core.Clustering",
+    "run_feature_clustering": ".core.Clustering",
+    "plot_clustering_metrics_and_find_best_k": ".core.Clustering",
+    "SimilarityMatrix": ".core.PairwiseMatrix",
+    "VCF": ".core.VCF",
+    # plot
+    "OncoPlot": ".plot.OncoPlot",
+    "LollipopPlot": ".plot.LollipopPlot",
+    "MafPlot": ".plot.MafPlot",
+    "MethodsPlot": ".plot.MethodsPlot",
+    "ColorManager": ".plot.ColorManager",
+    "FontManager": ".plot.FontManager",
+    "ModelPlot": ".plot.ModelPlot",
+    "compare_cohorts": ".plot.wes",
+    "infer_vaf": ".plot.wes",
+    "mutation_burden_by_class": ".plot.wes",
+    "plot_cohort_comparison_forest": ".plot.wes",
+    "plot_forest": ".plot.wes",
+    "plot_rainfall": ".plot.wes",
+    "plot_somatic_interactions": ".plot.wes",
+    "plot_titv": ".plot.wes",
+    "plot_vaf": ".plot.wes",
+    "somatic_interactions": ".plot.wes",
+    "summarize_titv": ".plot.wes",
+    "top_mutated_genes": ".plot.wes",
+    # model
+    "OmicsStackingModel": ".model.StackingModel",
+    "ASCStackingModel": ".model.StackingModel",
+    "evaluate_model": ".model.modelUtils",
+    "get_importance": ".model.modelUtils",
+    "cross_validate_importance": ".model.modelUtils",
+    "plot_metric_comparison_with_annotation": ".model.modelUtils",
+    "to_importance_table": ".model.modelUtils",
+    "plot_top_feature_importance_heatmap": ".model.modelUtils",
+    "run_rfecv_feature_selection": ".model.modelUtils",
+    "run_model_evaluation": ".model.modelUtils",
+    # io
+    "GDCClient": ".io.tcga",
+    "parse_tcga_barcode": ".io.tcga",
+    "TCGAExpressionBuilder": ".io.tcga",
+    "TCGAMutationBuilder": ".io.tcga",
+    "TCGACNVSegmentBuilder": ".io.tcga",
+    "TCGACNVGeneBuilder": ".io.tcga",
+    "TCGAMethylationBuilder": ".io.tcga",
+    "TCGAClinicalBuilder": ".io.tcga",
+    # utils
+    "read_GMT": ".utils.geneset",
+    "fetch_msigdb_geneset": ".utils.geneset",
+    "get_exon_size": ".utils.geneinfo",
+    "load_gene_sizes": ".utils.geneinfo",
+    "PCA_CCA": ".utils.reduction",
+}
 
-# model
-from .model.StackingModel import OmicsStackingModel, ASCStackingModel
-from .model.modelUtils import (
-    evaluate_model,
-    get_importance,
-    cross_validate_importance,
-    plot_metric_comparison_with_annotation,
-    to_importance_table,
-    plot_top_feature_importance_heatmap,
-    run_rfecv_feature_selection,
-    run_model_evaluation,
-)
 
-# utils
-from .utils.geneset import read_GMT, fetch_msigdb_geneset
-from .utils.reduction import PCA_CCA
+__all__ = [
+    "__version__",
+    "PivotTable",
+    "capture_size",
+    "MAF",
+    "CopyNumberVariationTable",
+    "SmallVariationTable",
+    "SimilarityMatrix",
+    "ExpressionTable",
+    "SignatureTable",
+    "CancerCellFractionTable",
+    "VCF",
+    "Cohort",
+    "load_example_maf",
+    "example_maf_path",
+    "load_example_table",
+    "example_table_path",
+    "read_h5",
+    *_LAZY_EXPORTS,
+]
+
+
+def __getattr__(name: str) -> Any:
+    """Lazily load heavy top-level exports on first access."""
+    module_name = _LAZY_EXPORTS.get(name)
+    if module_name is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    module = import_module(module_name, __name__)
+    value = getattr(module, name)
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> list[str]:
+    return sorted(__all__)
+
+
+def read_h5(h5_path, table_cls=None):
+    """Read a single-table HDF5 file via ``PivotTable.read_h5``."""
+    return (table_cls or PivotTable).read_h5(h5_path)

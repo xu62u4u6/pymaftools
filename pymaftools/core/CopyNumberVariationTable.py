@@ -4,11 +4,14 @@ import numpy as np
 import pandas as pd
 import os
 import re
+import warnings
 from typing import TYPE_CHECKING
 from .PivotTable import PivotTable
 
 if TYPE_CHECKING:
     import matplotlib.pyplot as plt
+
+    from ..plot.CopyNumberVariationTablePlot import CopyNumberVariationTablePlot
 
 
 class CopyNumberVariationTable(PivotTable):
@@ -28,6 +31,43 @@ class CopyNumberVariationTable(PivotTable):
     --------
     PivotTable : Base class providing generic pivot-table operations.
     """
+
+    @property
+    def plot(self) -> "CopyNumberVariationTablePlot":
+        """Access CNV-specific plotting (e.g. ``band_ratio``) plus shared plots."""
+        from ..plot.CopyNumberVariationTablePlot import CopyNumberVariationTablePlot
+
+        return CopyNumberVariationTablePlot(self)
+
+    def to_binary_table(
+        self,
+        threshold: float | None = None,
+        comparison: str = "abs_gt",
+    ) -> PivotTable:
+        """Convert discrete GISTIC calls or thresholded numeric CNV values.
+
+        Standard GISTIC calls (-2 through 2) are events whenever non-zero.
+        Continuous copy-number values require an explicit threshold.
+        """
+        if threshold is None:
+            numeric_columns = [
+                column
+                for column, dtype in self.dtypes.items()
+                if pd.api.types.is_numeric_dtype(dtype)
+                and not pd.api.types.is_bool_dtype(dtype)
+            ]
+            numeric_values = pd.unique(
+                pd.DataFrame(self.loc[:, numeric_columns]).to_numpy().ravel()
+            )
+            numeric_values = numeric_values[pd.notna(numeric_values)]
+            if len(numeric_values) and set(numeric_values).issubset({-2, -1, 0, 1, 2}):
+                binary_data = self.notna() & self.ne(0)
+                return self._from_dataframe(
+                    binary_data.astype(bool),
+                    self.feature_metadata,
+                    self.sample_metadata,
+                )
+        return super().to_binary_table(threshold=threshold, comparison=comparison)
 
     @classmethod
     def from_pivot_table(cls, table: PivotTable) -> "CopyNumberVariationTable":
@@ -90,7 +130,7 @@ class CopyNumberVariationTable(PivotTable):
     def read_gistic_gene_level(
         cls,
         file_path: str,
-        feature_columns: list[str] = ["Gene Symbol", "Gene ID", "Cytoband"],
+        feature_columns: list[str] | None = None,
         samples: list[str] | None = None,
     ):
         """
@@ -144,6 +184,9 @@ class CopyNumberVariationTable(PivotTable):
         >>> cnv = CopyNumberVariationTable.read_gistic_gene_level('data/all_data_by_genes.txt',
         ...                       samples=['LUAD_001_T', 'LUAD_002_T'])
         """
+
+        if feature_columns is None:
+            feature_columns = ["Gene Symbol", "Gene ID", "Cytoband"]
 
         df = pd.read_csv(file_path, sep="\t")
         if "Gene Symbol" not in df.columns:
@@ -455,7 +498,16 @@ class CopyNumberVariationTable(PivotTable):
         )
         return cluster_table.rename_index_and_columns()
 
-    def plot_cnv_band_ratio(
+    def plot_cnv_band_ratio(self, *args, **kwargs) -> pd.DataFrame:
+        """Deprecated alias for ``.plot.band_ratio()``."""
+        warnings.warn(
+            "plot_cnv_band_ratio is deprecated; use .plot.band_ratio() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self._cnv_band_ratio(*args, **kwargs)
+
+    def _cnv_band_ratio(
         self,
         cluster_id: str,
         mode: str = "gain",

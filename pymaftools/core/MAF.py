@@ -1,12 +1,18 @@
 from __future__ import annotations
 
+import gzip
 import os
 import warnings
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
 from .PivotTable import PivotTable
+from .SmallVariationTable import SmallVariationTable
+from .variant_groups import FUNCTIONAL_GROUP, FUNCTIONAL_ORDER
+
+if TYPE_CHECKING:
+    from ..plot.MafPlot import MafPlot
 
 
 class MAF(pd.DataFrame):
@@ -15,15 +21,6 @@ class MAF(pd.DataFrame):
 
     Provides methods to read, filter, merge, and convert MAF data commonly
     used in cancer genomics pipelines.
-
-    Attributes
-    ----------
-    index_col : list[str]
-        Default columns used to build the row index.
-    vaild_variant_classfication : list[str]
-        All recognised variant classification labels.
-    nonsynonymous_types : list[str]
-        Variant classifications considered nonsynonymous.
     """
 
     index_col = [
@@ -34,11 +31,12 @@ class MAF(pd.DataFrame):
         "Tumor_Seq_Allele1",
         "Tumor_Seq_Allele2",
     ]
+    """list[str]: Default columns used to build the row index."""
 
     # GDC MAF file fields:
     # https://docs.gdc.cancer.gov/Encyclopedia/pages/Mutation_Annotation_Format_TCGAv2/
 
-    vaild_variant_classfication = [
+    valid_variant_classification = [
         "Frame_Shift_Del",
         "Frame_Shift_Ins",
         "In_Frame_Del",
@@ -58,6 +56,10 @@ class MAF(pd.DataFrame):
         "RNA",
         "Targeted_Region",
     ]
+    """list[str]: All recognised variant classification labels."""
+
+    # Deprecated misspelling retained for callers written against <=0.4.
+    vaild_variant_classfication = valid_variant_classification
 
     nonsynonymous_types = [
         "Frame_Shift_Del",
@@ -70,6 +72,7 @@ class MAF(pd.DataFrame):
         "Translation_Start_Site",
         "Nonstop_Mutation",
     ]
+    """list[str]: Variant classifications considered nonsynonymous."""
 
     @staticmethod
     def _count_leading_comment_lines(
@@ -97,7 +100,9 @@ class MAF(pd.DataFrame):
             Number of leading comment lines to skip.
         """
         n = 0
-        with open(maf_path) as handle:
+        path = os.fspath(maf_path)
+        opener = gzip.open if path.endswith(".gz") else open
+        with opener(path, mode="rt", encoding="utf-8") as handle:
             for line in handle:
                 if line.startswith(comment):
                     n += 1
@@ -156,6 +161,14 @@ class MAF(pd.DataFrame):
         """
         skiprows = cls._count_leading_comment_lines(maf_path)
         maf = cls(pd.read_csv(maf_path, skiprows=skiprows, sep="\t"))
+        missing_index_columns = [
+            column for column in cls.index_col if column not in maf.columns
+        ]
+        if missing_index_columns:
+            raise ValueError(
+                f"MAF file '{maf_path}' is missing required column(s): "
+                f"{missing_index_columns}."
+            )
         if sample_ID is not None:
             maf["sample_ID"] = f"{preffix}{sample_ID}{suffix}"
         elif sample_col in maf.columns:
@@ -168,7 +181,7 @@ class MAF(pd.DataFrame):
         maf.index = maf.loc[:, cls.index_col].apply(
             lambda row: "|".join(row.astype(str)), axis=1
         )  # concat column
-        # maf = maf.filter_maf(cls.vaild_variant_classfication)
+        # maf = maf.filter_maf(cls.valid_variant_classification)
         return cls(maf)
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -196,6 +209,21 @@ class MAF(pd.DataFrame):
         """
         # make sure returned object is MAF type
         return MAF
+
+    @property
+    def plot(self) -> "MafPlot":
+        """
+        Access MAF-level plotting functionality.
+
+        Returns
+        -------
+        MafPlot
+            Plotting interface for raw MAF summaries, Ti/Tv, rainfall, VAF,
+            and cohort comparison plots.
+        """
+        from ..plot.MafPlot import MafPlot
+
+        return MafPlot(self)
 
     def filter_maf(self, mutation_types: list[str]) -> MAF:
         """
@@ -242,39 +270,96 @@ class MAF(pd.DataFrame):
         if len(non_false_mutations) > 1:
             return "Multi_Hit"
         elif len(non_false_mutations) == 1:
-            return non_false_mutations[0]
+            return non_false_mutations.iloc[0]
 
-    def to_pivot_table(self) -> PivotTable:
+    def to_gene_table(self) -> "SmallVariationTable":
         """
-        Create a gene-by-sample pivot table of variant classifications.
+        Create a gene-level (gene × sample) pivot table of variant classifications.
+
+        This is the gene-level counterpart to :meth:`to_mutation_table` (one row
+        per mutation); the name makes the granularity explicit. ``to_pivot_table``
+        is a backward-compatible alias.
+
+        Delegates to :meth:`to_mutation_table` followed by
+        :meth:`SmallVariationTable.to_gene_level`, so both the mutation-level
+        and gene-level tables share the same construction logic.
 
         Returns
         -------
-        PivotTable
-            Pivot table with genes as rows, samples as columns, and variant
-            classifications (or ``"Multi_Hit"`` / ``False``) as values.
+        SmallVariationTable
+            Gene × sample matrix with gene-level feature_metadata.
         """
-        pivot_table = self.pivot_table(
-            values="Variant_Classification",
-            index="Hugo_Symbol",
-            columns="sample_ID",
-            aggfunc=MAF.merge_mutations,
-        ).fillna(False)
-        pivot_table = PivotTable(pivot_table)
-        pivot_table.sample_metadata["mutations_count"] = self.mutations_count
-        # pivot_table.sample_metadata["TMB"] = self.mutations_count / 40
-        return pivot_table
+        return self.to_mutation_table().to_gene_level()
 
-    def to_mutation_table(self) -> PivotTable:
+    def to_pivot_table(self) -> "SmallVariationTable":
+        """Alias for :meth:`to_gene_table` (gene-level pivot table).
+
+        Kept for backward compatibility; ``to_gene_table`` is preferred in new
+        code as its name states the granularity.
+        """
+        return self.to_gene_table()
+
+    # Columns to carry into mutation-level feature_metadata
+    _FEATURE_META_COLS = [
+        # position / structure
+        "Hugo_Symbol",
+        "Chromosome",
+        "Start_Position",
+        "End_Position",
+        "Strand",
+        "EXON",
+        "INTRON",
+        "cDNA_position",
+        "CDS_position",
+        "Protein_position",
+        # variant identity
+        "Variant_Type",
+        "Variant_Classification",
+        "VARIANT_CLASS",
+        "Reference_Allele",
+        "Tumor_Seq_Allele2",
+        "Consequence",
+        "One_Consequence",
+        "CONTEXT",
+        # functional impact
+        "IMPACT",
+        "HGVSc",
+        "HGVSp_Short",
+        "Amino_acids",
+        "Codons",
+        "SIFT",
+        "PolyPhen",
+        "DOMAINS",
+        # gene-level annotation
+        "Entrez_Gene_Id",
+        "Gene",
+        "BIOTYPE",
+        "TRANSCRIPT_STRAND",
+        "HGNC_ID",
+        "RefSeq",
+        "MANE",
+        "APPRIS",
+        # clinical / databases
+        "hotspot",
+        "COSMIC",
+        "Existing_variation",
+        "CLIN_SIG",
+        "GENE_PHENO",
+        "dbSNP_RS",
+        "callers",
+    ]
+
+    def to_mutation_table(self) -> "SmallVariationTable":
         """
         Create a mutation-level pivot table.
 
         Each row corresponds to a unique mutation (composite index) rather
         than a gene, providing finer resolution than :meth:`to_pivot_table`.
+        feature_metadata is populated with per-mutation annotation columns.
 
         Returns
         -------
-        PivotTable
+        SmallVariationTable
             Pivot table indexed by individual mutations.
         """
         mutation_table = self.pivot_table(
@@ -283,8 +368,19 @@ class MAF(pd.DataFrame):
             values="Variant_Classification",
             aggfunc="first",
         ).fillna(False)
-        mutation_table = PivotTable(mutation_table)
+        mutation_table = SmallVariationTable(mutation_table)
         mutation_table.sample_metadata["mutations_count"] = self.mutations_count
+        # Cache the per-functional-group TMB breakdown (the stacked-TMB source a
+        # single pivot cell can't reconstruct). Aligns by sample label.
+        for col, values in self.tmb_by_functional_group.items():
+            mutation_table.sample_metadata[col] = values
+
+        # Build feature_metadata from MAF rows (one row per unique mutation index)
+        present_cols = [c for c in self._FEATURE_META_COLS if c in self.columns]
+        deduped = self.reset_index().drop_duplicates(subset=["index"])
+        deduped = deduped.set_index("index")[present_cols]
+        mutation_table.feature_metadata = deduped.reindex(mutation_table.index)
+
         return mutation_table
 
     def change_index_level(self, index_col: list[str] | None = None) -> MAF:
@@ -322,6 +418,36 @@ class MAF(pd.DataFrame):
             Series indexed by sample ID with mutation counts as values.
         """
         return self.groupby(self.sample_ID).size()
+
+    # Prefix for the per-functional-group TMB columns stored in sample_metadata.
+    TMB_PREFIX = "tmb_"
+
+    @property
+    def tmb_by_functional_group(self) -> pd.DataFrame:
+        """Per-sample mutation counts split by functional group.
+
+        Buckets ``Variant_Classification`` into the six coarse functional groups
+        (``core.variant_groups.FUNCTIONAL_GROUP``) and counts mutations per
+        sample per group. This is the stacked-TMB source that a single ``pivot``
+        cell cannot reconstruct (``to_mutation_table`` keeps only the *first*
+        class per gene x sample), so it is computed here while the raw events
+        are still in hand and cached into ``sample_metadata``.
+
+        Note: counts reflect *this MAF's* events. If the MAF was filtered (e.g.
+        nonsynonymous-only) before conversion, the breakdown is of that subset.
+
+        Returns
+        -------
+        pd.DataFrame
+            Indexed by sample ID; columns ``tmb_<group>`` in FUNCTIONAL_ORDER
+            (``tmb_Truncating``, ``tmb_Splice``, ...), integer counts.
+        """
+        groups = self.Variant_Classification.map(FUNCTIONAL_GROUP).fillna("Other")
+        counts = pd.crosstab(self.sample_ID, groups).reindex(
+            columns=FUNCTIONAL_ORDER, fill_value=0
+        )
+        counts.columns = [f"{self.TMB_PREFIX}{g}" for g in counts.columns]
+        return counts
 
     def sort_by_chrom(self) -> MAF:
         """
@@ -404,9 +530,12 @@ class MAF(pd.DataFrame):
         # Call the parent class's to_csv method
         super().to_csv(csv_path, **kwargs)
 
-    def to_MAF(self, maf_path: str | os.PathLike, **kwargs: Any) -> None:
+    def to_maf(self, maf_path: str | os.PathLike, **kwargs: Any) -> None:
         """
-        Write the data as a standard MAF file (no index column).
+        Write the data as a standard MAF file (tab-separated, no index column).
+
+        This is the canonical MAF writer; ``to_MAF`` and ``write_maf`` are
+        deprecated aliases kept for backward compatibility.
 
         Parameters
         ----------
@@ -417,11 +546,20 @@ class MAF(pd.DataFrame):
             ``pd.DataFrame.to_csv``.
         """
         # Set default arguments
-        kwargs.setdefault("index", False)  # Ensure index is saved by default
+        kwargs.setdefault("index", False)  # MAF files have no index column
         kwargs.setdefault("sep", "\t")  # Default to tab-separated values
 
         # Call the parent class's to_csv method
         super().to_csv(maf_path, **kwargs)
+
+    def to_MAF(self, maf_path: str | os.PathLike, **kwargs: Any) -> None:
+        """Deprecated alias for :meth:`to_maf`."""
+        warnings.warn(
+            "MAF.to_MAF is deprecated; use to_maf() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        self.to_maf(maf_path, **kwargs)
 
     def to_base_change_pivot_table(self) -> PivotTable:
         """
@@ -586,19 +724,27 @@ class MAF(pd.DataFrame):
         ]
 
     def write_maf(self, file_path: str | os.PathLike) -> None:
-        """
-        Write the MAF to a tab-separated file without the index.
-
-        Parameters
-        ----------
-        file_path : str or os.PathLike
-            Destination file path.
-        """
-        self.to_csv(file_path, sep="\t", index=False)
+        """Deprecated alias for :meth:`to_maf`."""
+        warnings.warn(
+            "MAF.write_maf is deprecated; use to_maf() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        self.to_maf(file_path)
 
     def write_SigProfilerMatrixGenerator_format(
         self, output_path: str | os.PathLike
     ) -> None:
+        """Deprecated alias for :meth:`to_sigprofiler`."""
+        warnings.warn(
+            "write_SigProfilerMatrixGenerator_format is deprecated; "
+            "use to_sigprofiler() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        self.to_sigprofiler(output_path)
+
+    def to_sigprofiler(self, output_path: str | os.PathLike) -> None:
         """
         Convert and write the MAF in SigProfilerMatrixGenerator format.
 

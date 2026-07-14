@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pandas as pd
 
 from .PivotTable import PivotTable
+
+if TYPE_CHECKING:
+    from ..plot.SignatureTablePlot import SignatureTablePlot
 
 
 class SignatureTable(PivotTable):
@@ -12,6 +17,13 @@ class SignatureTable(PivotTable):
     Inherits from PivotTable and provides a convenience class method
     for reading signature weight files.
     """
+
+    @property
+    def plot(self) -> "SignatureTablePlot":
+        """Access signature-specific plotting plus the shared plotters."""
+        from ..plot.SignatureTablePlot import SignatureTablePlot
+
+        return SignatureTablePlot(self)
 
     @classmethod
     def read_signature(cls, file_path: str) -> SignatureTable:

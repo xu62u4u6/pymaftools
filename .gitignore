@@ -10,3 +10,22 @@ __pycache__/
 .coverage
 uv.lock
 .venv/
+
+data/*
+pymaftools/data/*.tsv
+# but track the small fixture-scoped gene-size cache so a fresh clone runs the
+# exon-size demo/docs offline (the large genome-wide ensembl_gene_map.tsv stays
+# ignored). NOTE: a full-genome rebuild writes the same filename — don't commit
+# that bloat.
+!pymaftools/data/ensembl_gene_sizes.tsv
+tmp/
+todo.md
+
+# pybiomart query cache
+.pybiomart.sqlite
+
+# setuptools-scm generated
+pymaftools/_version.py
+
+# scratch render outputs (previews)
+outputs/

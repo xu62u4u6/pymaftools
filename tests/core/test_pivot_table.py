@@ -2,14 +2,24 @@
 Tests for PivotTable core functionality
 """
 
+from typing import get_type_hints
+
 import pytest
 import pandas as pd
 import numpy as np
+import sqlite3
+import pymaftools
+from typing_extensions import Self
 from pymaftools.core.PivotTable import PivotTable
+from pymaftools.core.CopyNumberVariationTable import CopyNumberVariationTable
+from pymaftools.core.SmallVariationTable import SmallVariationTable
 
 
 class TestPivotTableBasics:
     """Test basic PivotTable functionality"""
+
+    def test_subset_preserves_self_return_annotation(self):
+        assert get_type_hints(PivotTable.subset)["return"] is Self
     
     def test_pivot_table_creation(self, sample_mutation_data):
         """Test PivotTable creation from DataFrame"""
@@ -44,6 +54,83 @@ class TestPivotTableBasics:
         assert copied.sample_metadata.equals(original.sample_metadata)
         assert copied.feature_metadata.equals(original.feature_metadata)
         assert copied.equals(original)
+
+    def test_to_h5_read_h5_roundtrip(self, sample_pivot_table, tmp_path):
+        """Single-table HDF5 IO preserves data and both metadata tables."""
+        h5_path = tmp_path / "pivot_table.h5"
+
+        sample_pivot_table.to_h5(h5_path)
+        loaded = PivotTable.read_h5(h5_path)
+        loaded_via_package = pymaftools.read_h5(h5_path)
+
+        assert isinstance(loaded, PivotTable)
+        assert loaded.equals(sample_pivot_table)
+        assert loaded.sample_metadata.equals(sample_pivot_table.sample_metadata)
+        assert loaded.feature_metadata.equals(sample_pivot_table.feature_metadata)
+        assert loaded_via_package.equals(sample_pivot_table)
+
+    def test_read_h5_infers_registered_subclass(self, sample_pivot_table, tmp_path):
+        """Single-table HDF5 IO restores registered PivotTable subclasses."""
+        h5_path = tmp_path / "small_variation_table.h5"
+        table = SmallVariationTable(sample_pivot_table)
+
+        table.to_h5(h5_path)
+        loaded = pymaftools.read_h5(h5_path)
+
+        assert isinstance(loaded, SmallVariationTable)
+        assert loaded.equals(table)
+        assert loaded.sample_metadata.equals(table.sample_metadata)
+        assert loaded.feature_metadata.equals(table.feature_metadata)
+
+    def test_sqlite_write_failure_preserves_existing_file(
+        self, sample_pivot_table, tmp_path, monkeypatch
+    ):
+        db_path = tmp_path / "pivot.db"
+        db_path.write_bytes(b"existing database")
+
+        def fail_to_sql(*args, **kwargs):
+            raise RuntimeError("injected write failure")
+
+        monkeypatch.setattr(pd.DataFrame, "to_sql", fail_to_sql)
+
+        with pytest.warns(DeprecationWarning, match="to_h5"):
+            with pytest.raises(RuntimeError, match="injected write failure"):
+                sample_pivot_table.to_sqlite(db_path)
+
+        assert db_path.read_bytes() == b"existing database"
+        assert list(tmp_path.iterdir()) == [db_path]
+
+    def test_sqlite_connections_are_closed(
+        self, sample_pivot_table, tmp_path, monkeypatch
+    ):
+        from pymaftools.core import pivot_io
+
+        connections = []
+        original_connect = sqlite3.connect
+
+        class TrackingConnection(sqlite3.Connection):
+            was_closed = False
+
+            def close(self):
+                self.was_closed = True
+                super().close()
+
+        def tracked_connect(*args, **kwargs):
+            kwargs["factory"] = TrackingConnection
+            connection = original_connect(*args, **kwargs)
+            connections.append(connection)
+            return connection
+
+        monkeypatch.setattr(pivot_io.sqlite3, "connect", tracked_connect)
+        db_path = tmp_path / "pivot.db"
+
+        with pytest.warns(DeprecationWarning, match="to_h5"):
+            sample_pivot_table.to_sqlite(db_path)
+        with pytest.warns(DeprecationWarning, match="read_h5"):
+            PivotTable.read_sqlite(db_path)
+
+        assert len(connections) == 2
+        assert all(connection.was_closed for connection in connections)
     
     def test_subset_functionality(self, sample_pivot_table):
         """Test subset method"""
@@ -180,6 +267,37 @@ class TestPivotTableSorting:
         if asc_indices and lusc_indices:
             assert max(asc_indices) < min(lusc_indices)
 
+    def test_sort_samples_by_group_preserves_unlisted_and_missing_groups(
+        self, sample_pivot_table
+    ):
+        table = sample_pivot_table.copy()
+        table.sample_metadata.loc[table.columns[-2], "subtype"] = "OTHER"
+        table.sample_metadata.loc[table.columns[-1], "subtype"] = np.nan
+
+        sorted_table = table.sort_samples_by_group(
+            group_col="subtype",
+            group_order=["LUAD"],
+        )
+
+        assert set(sorted_table.columns) == set(table.columns)
+        assert sorted_table.shape == table.shape
+        assert list(sorted_table.columns[-2:]) == list(table.columns[-2:])
+
+    def test_order_preserves_unlisted_groups_and_validates_inputs(
+        self, sample_pivot_table
+    ):
+        table = sample_pivot_table.copy()
+        table.sample_metadata.loc[table.columns[-1], "subtype"] = "OTHER"
+
+        ordered = table.order("subtype", ["LUSC", "LUAD"])
+
+        assert ordered.columns[-1] == table.columns[-1]
+        assert type(ordered) is type(table)
+        with pytest.raises(ValueError, match="not found"):
+            table.order("missing", ["LUAD"])
+        with pytest.raises(ValueError, match="duplicate"):
+            table.order("subtype", ["LUAD", "LUAD"])
+
 
 class TestPivotTableStatistics:
     """Test statistical methods"""
@@ -192,7 +310,50 @@ class TestPivotTableStatistics:
         # Check that all columns are boolean type
         assert all(dtype == bool for dtype in binary_table.dtypes)
         assert binary_table.shape == table.shape
-        assert (binary_table == (table != False)).all().all()
+        expected = table.notna() & table.ne(False)
+        assert binary_table.equals(expected)
+
+    def test_to_binary_table_treats_missing_values_as_absent(self, sample_pivot_table):
+        """Missing observations must not be counted as mutations."""
+        table = sample_pivot_table.astype(object)
+        table.iloc[0, 0] = np.nan
+
+        binary_table = table.to_binary_table()
+
+        assert binary_table.iloc[0, 0] == False  # noqa: E712
+        assert binary_table.to_numpy().dtype == bool
+        assert binary_table.sample_metadata.equals(table.sample_metadata)
+        assert binary_table.feature_metadata.equals(table.feature_metadata)
+
+    def test_to_binary_table_requires_threshold_for_continuous_data(self):
+        table = PivotTable([[0.2, -1.5], [2.0, np.nan]])
+
+        with pytest.raises(ValueError, match="explicit threshold"):
+            table.to_binary_table()
+
+        binary = table.to_binary_table(threshold=1.0, comparison="abs_gt")
+
+        expected = pd.DataFrame([[False, True], [True, False]])
+        assert binary.equals(expected)
+
+    def test_to_binary_table_rejects_threshold_for_categorical_data(self):
+        table = PivotTable([["AMP", False]])
+
+        with pytest.raises(ValueError, match="fully numeric"):
+            table.to_binary_table(threshold=1.0)
+
+    def test_cnv_binary_conversion_handles_discrete_and_continuous_values(self):
+        discrete = CopyNumberVariationTable([[-2, 0, 1]])
+        assert discrete.to_binary_table().equals(
+            pd.DataFrame([[True, False, True]])
+        )
+
+        continuous = CopyNumberVariationTable([[-0.4, 0.1, 0.8]])
+        with pytest.raises(ValueError, match="explicit threshold"):
+            continuous.to_binary_table()
+        assert continuous.to_binary_table(threshold=0.3).equals(
+            pd.DataFrame([[True, False, True]])
+        )
     
     def test_PCA_calculation(self, sample_pivot_table):
         """Test PCA calculation"""
@@ -293,3 +454,176 @@ class TestPivotTablePerformance:
         
         assert len(frequencies) == 2000
         assert all(0 <= freq <= 1 for freq in frequencies)
+
+
+class TestAnnDataInterop:
+    """Test AnnData interoperability methods"""
+
+    def test_to_anndata_basic(self, sample_pivot_table):
+        """Test basic PivotTable to AnnData conversion"""
+        anndata = pytest.importorskip("anndata")
+        adata = sample_pivot_table.to_anndata()
+
+        assert isinstance(adata, anndata.AnnData)
+        # AnnData is (samples, features), PivotTable is (features, samples)
+        assert adata.shape == (sample_pivot_table.shape[1], sample_pivot_table.shape[0])
+        assert list(adata.obs_names) == list(sample_pivot_table.columns)
+        assert list(adata.var_names) == list(sample_pivot_table.index)
+
+    def test_to_anndata_preserves_metadata(self, sample_pivot_table):
+        """Test that metadata is preserved in AnnData conversion"""
+        pytest.importorskip("anndata")
+        adata = sample_pivot_table.to_anndata()
+
+        # obs should contain sample_metadata
+        assert "subtype" in adata.obs.columns
+        assert "age" in adata.obs.columns
+        assert list(adata.obs["subtype"]) == list(sample_pivot_table.sample_metadata["subtype"])
+
+        # var should contain feature_metadata
+        assert "chromosome" in adata.var.columns
+        assert "gene_type" in adata.var.columns
+
+    def test_from_anndata_basic(self, sample_pivot_table):
+        """Test AnnData to PivotTable conversion"""
+        pytest.importorskip("anndata")
+        adata = sample_pivot_table.to_anndata()
+        table = PivotTable.from_anndata(adata)
+
+        assert isinstance(table, PivotTable)
+        assert table.shape == sample_pivot_table.shape
+
+    def test_roundtrip_numeric(self):
+        """Test numeric data roundtrip preserves values"""
+        pytest.importorskip("anndata")
+        data = pd.DataFrame(
+            {"s1": [1.5, 2.3, 0.0], "s2": [3.1, 0.0, 1.7]},
+            index=["geneA", "geneB", "geneC"],
+        )
+        table = PivotTable(data)
+        table.sample_metadata["group"] = ["A", "B"]
+        table.feature_metadata["chr"] = ["1", "2", "3"]
+
+        table2 = PivotTable.from_anndata(table.to_anndata())
+
+        assert np.allclose(table.values, table2.values)
+        assert table.sample_metadata.equals(table2.sample_metadata)
+        assert table.feature_metadata.equals(table2.feature_metadata)
+
+    def test_roundtrip_boolean(self, sample_pivot_table):
+        """Test boolean mutation data roundtrip"""
+        pytest.importorskip("anndata")
+        adata = sample_pivot_table.to_anndata()
+        table2 = PivotTable.from_anndata(adata)
+
+        # Values should match (bool may become float in AnnData)
+        original = sample_pivot_table.values.astype(float)
+        recovered = table2.values.astype(float)
+        assert np.allclose(original, recovered)
+
+    def test_from_anndata_sparse(self):
+        """Test conversion from sparse AnnData"""
+        anndata = pytest.importorskip("anndata")
+        import scipy.sparse as sp
+
+        X_sparse = sp.csr_matrix(np.array([[1, 0, 3], [0, 2, 0]]))
+        adata = anndata.AnnData(
+            X=X_sparse,
+            obs=pd.DataFrame({"group": ["A", "B"]}, index=["s1", "s2"]),
+            var=pd.DataFrame({"chr": ["1", "2", "3"]}, index=["g1", "g2", "g3"]),
+        )
+        table = PivotTable.from_anndata(adata)
+
+        assert table.shape == (3, 2)  # (features, samples)
+        assert table.loc["g1", "s1"] == 1
+        assert table.loc["g2", "s1"] == 0
+        assert "group" in table.sample_metadata.columns
+
+    def test_to_anndata_missing_anndata(self, sample_pivot_table, monkeypatch):
+        """Test ImportError when anndata is not installed"""
+        import builtins
+        real_import = builtins.__import__
+
+        def mock_import(name, *args, **kwargs):
+            if name == "anndata":
+                raise ImportError("No module named 'anndata'")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", mock_import)
+        with pytest.raises(ImportError, match="anndata is required"):
+            sample_pivot_table.to_anndata()
+
+
+def test_add_exon_size_writes_feature_metadata(monkeypatch):
+    """add_exon_size looks up each feature (gene) and writes sizes into
+    feature_metadata, leaving NaN for genes Ensembl doesn't know."""
+    from pymaftools.utils import geneinfo
+
+    def fake_get_exon_size(genes, metric="transcript_length", force_download=False):
+        sizes = {"TP53": 2591, "KRAS": 5300}  # TTN intentionally absent
+        genes = list(genes)
+        return pd.Series([sizes.get(g) for g in genes], index=genes, name=metric)
+
+    monkeypatch.setattr(geneinfo, "get_exon_size", fake_get_exon_size)
+
+    pt = PivotTable(
+        pd.DataFrame(
+            {"s1": [True, False, True]},
+            index=["TP53", "KRAS", "TTN"],
+        )
+    )
+    out = pt.add_exon_size()
+
+    assert "exon_size" in out.feature_metadata.columns
+    assert out.feature_metadata.loc["TP53", "exon_size"] == 2591
+    assert out.feature_metadata.loc["KRAS", "exon_size"] == 5300
+    assert pd.isna(out.feature_metadata.loc["TTN", "exon_size"])
+    # original table untouched (add_exon_size returns a copy)
+    assert "exon_size" not in pt.feature_metadata.columns
+
+
+def test_add_freq_group_col_matches_manual_groups():
+    """add_freq(group_col=) auto-splits samples and matches the manual groups dict."""
+    df = pd.DataFrame(
+        {"s1": [True, False], "s2": [True, True], "s3": [False, True], "s4": [False, False]},
+        index=["TP53", "KRAS"],
+    )
+    pt = PivotTable(df)
+    pt.sample_metadata["subtype"] = ["A", "A", "B", "B"]
+
+    auto = pt.add_freq(group_col="subtype")
+    manual = pt.add_freq(
+        groups={g: pt.subset(samples=pt.sample_metadata.subtype == g) for g in ["A", "B"]}
+    )
+
+    for col in ["A_freq", "B_freq", "freq"]:
+        assert col in auto.feature_metadata.columns
+        pd.testing.assert_series_equal(
+            auto.feature_metadata[col], manual.feature_metadata[col]
+        )
+
+
+def test_add_freq_rejects_groups_and_group_col_together():
+    pt = PivotTable(pd.DataFrame({"s1": [True]}, index=["TP53"]))
+    pt.sample_metadata["subtype"] = ["A"]
+    with pytest.raises(ValueError, match="not both"):
+        pt.add_freq(groups={"A": pt}, group_col="subtype")
+
+
+def test_sort_features_multikey_keeps_groups_contiguous():
+    """A list `by` sorts hierarchically: groups contiguous, then by freq within."""
+    pt = PivotTable(
+        pd.DataFrame({"s1": [True, True, True, True]}, index=["g1", "g2", "g3", "g4"])
+    )
+    pt.feature_metadata["band"] = ["Large", "Small", "Large", "Small"]
+    pt.feature_metadata["freq"] = [0.1, 0.9, 0.8, 0.2]
+
+    out = pt.sort_features(by=["band", "freq"], ascending=[True, False])
+    # bands contiguous (Large, Large, Small, Small); within band freq descending
+    assert list(out.index) == ["g3", "g1", "g2", "g4"]
+
+
+def test_sort_features_unknown_column_raises():
+    pt = PivotTable(pd.DataFrame({"s1": [True]}, index=["g1"]))
+    with pytest.raises(ValueError, match="bogus"):
+        pt.sort_features(by=["bogus"])
