@@ -41,6 +41,7 @@ by a single `render()` call. See `PLOTTING_REVIEW.md` for the full design.
 * **Comparable frequency colour scale**: `FreqTrack` now defaults `vmin=0` / `vmax=1`, so every frequency strip (overall and per-group sections) shares one comparable 0–1 scale. Pass `vmin`/`vmax` to override.
 
 ### 🐛 Fixes
+* Python 3.10 now imports ``Self`` from ``typing_extensions`` so subclass-aware return types are preserved, and uses ``tomli`` as the configuration parser fallback when ``tomllib`` is unavailable.
 * HDF5 cohort registries now separate logical table names from physical keys, so empty cohorts and names containing slashes, quotes, or reserved metadata names round-trip safely.
 * SQLite compatibility readers and writers close connections deterministically and write atomically; failed writes no longer replace an existing database.
 * Missing mutation values are treated as absent, unlisted sample groups are preserved during sorting, and TCGA case-level builders select one deterministic tumor file before matrix construction.
