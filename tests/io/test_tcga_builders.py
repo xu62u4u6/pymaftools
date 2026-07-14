@@ -4,11 +4,21 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+import pymaftools
 
 from pymaftools.core.PivotTable import PivotTable
 from pymaftools.io.tcga.base import TCGATableBuilder
 from pymaftools.io.tcga.expression import TCGAExpressionBuilder
 from pymaftools.io.tcga.mutation import TCGAMutationBuilder
+
+
+def test_tcga_builders_are_available_from_public_namespaces():
+    from pymaftools import io
+
+    assert pymaftools.TCGAExpressionBuilder is TCGAExpressionBuilder
+    assert pymaftools.TCGAMutationBuilder is TCGAMutationBuilder
+    assert io.TCGAExpressionBuilder is TCGAExpressionBuilder
+    assert io.TCGAMutationBuilder is TCGAMutationBuilder
 
 
 class DummyBuilder(TCGATableBuilder):

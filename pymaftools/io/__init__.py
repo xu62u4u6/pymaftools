@@ -1,4 +1,13 @@
-from .tcga import GDCClient, parse_tcga_barcode
+from .tcga import (
+    GDCClient,
+    TCGAClinicalBuilder,
+    TCGACNVGeneBuilder,
+    TCGACNVSegmentBuilder,
+    TCGAExpressionBuilder,
+    TCGAMethylationBuilder,
+    TCGAMutationBuilder,
+    parse_tcga_barcode,
+)
 from .tcga_readers import (
     build_uuid_to_case_mapping,
     read_clinical,
@@ -17,6 +26,12 @@ from .vcf import parse_info, parse_vcf_rows, sample_type
 __all__ = [
     "GDCClient",
     "parse_tcga_barcode",
+    "TCGAExpressionBuilder",
+    "TCGAMutationBuilder",
+    "TCGACNVSegmentBuilder",
+    "TCGACNVGeneBuilder",
+    "TCGAMethylationBuilder",
+    "TCGAClinicalBuilder",
     "parse_vcf_rows",
     "parse_info",
     "sample_type",

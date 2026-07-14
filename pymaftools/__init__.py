@@ -77,6 +77,12 @@ _LAZY_EXPORTS = {
     # io
     "GDCClient": ".io.tcga",
     "parse_tcga_barcode": ".io.tcga",
+    "TCGAExpressionBuilder": ".io.tcga",
+    "TCGAMutationBuilder": ".io.tcga",
+    "TCGACNVSegmentBuilder": ".io.tcga",
+    "TCGACNVGeneBuilder": ".io.tcga",
+    "TCGAMethylationBuilder": ".io.tcga",
+    "TCGAClinicalBuilder": ".io.tcga",
     # utils
     "read_GMT": ".utils.geneset",
     "fetch_msigdb_geneset": ".utils.geneset",
