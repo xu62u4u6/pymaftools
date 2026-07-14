@@ -87,11 +87,25 @@ jobs:
       - name: Check package
         run: twine check dist/*
 
+      - name: Generate checksums
+        run: |
+          mkdir checksums
+          cd dist
+          sha256sum * > ../checksums/SHA256SUMS
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload checksums
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-checksums
+          path: checksums/SHA256SUMS
           if-no-files-found: error
           retention-days: 14
 
@@ -108,6 +122,14 @@ jobs:
         with:
           name: dist
           path: dist/
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-checksums
+          path: checksums/
+
+      - name: Verify build artifacts
+        run: cd dist && sha256sum --check ../checksums/SHA256SUMS
 
       - name: Publish to TestPyPI
         uses: pypa/gh-action-pypi-publish@release/v1
@@ -177,6 +199,14 @@ jobs:
           name: dist
           path: dist/
 
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-checksums
+          path: checksums/
+
+      - name: Verify build artifacts
+        run: cd dist && sha256sum --check ../checksums/SHA256SUMS
+
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
 
@@ -193,6 +223,11 @@ jobs:
           name: dist
           path: dist/
 
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-checksums
+          path: checksums/
+
       - name: Extract release notes
         run: >-
           python scripts/extract_release_notes.py "${GITHUB_REF_NAME#v}"
@@ -200,7 +235,7 @@ jobs:
 
       - name: Create GitHub Release
         run: >-
-          gh release create "$GITHUB_REF_NAME" dist/*
+          gh release create "$GITHUB_REF_NAME" dist/* checksums/SHA256SUMS
           --verify-tag
           --title "pymaftools ${GITHUB_REF_NAME#v}"
           --notes-file release-notes.md
