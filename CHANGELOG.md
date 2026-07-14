@@ -58,6 +58,11 @@ by a single `render()` call. See `PLOTTING_REVIEW.md` for the full design.
 ### ✅ Tests
 * Added regression coverage for HDF5/SQLite persistence, TCGA builders, VCF parsing, expression aggregation, pairwise permutation tests, clustering stability, stacking models, and the OncoPlot track API.
 
+### 🚀 Release Process
+* Release tags must match `vX.Y.Z` and point to a commit reachable from `main`; the tag workflow re-runs lint, tests, coverage, documentation, build, and metadata checks.
+* Wheel and sdist are built once, published to TestPyPI, installed for an HDF5 smoke test, and then promoted unchanged to PyPI through protected environments.
+* TestPyPI and PyPI use OIDC Trusted Publishing. Local `deploy.sh` is build-only, and the workflow creates the GitHub Release after PyPI succeeds.
+
 ---
 
 ## 🔖 Version 0.4.1 (May 2026)
@@ -262,4 +267,3 @@ pip install --upgrade pymaftools
   Introduced new methods like `save_figure` for exporting visualizations.
 
 ---
-
