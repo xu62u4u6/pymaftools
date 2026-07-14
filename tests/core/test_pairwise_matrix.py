@@ -100,3 +100,33 @@ def test_analysis_accepts_array_groups_and_disabled_pair_test(monkeypatch):
     assert result["pairwise_utest_p"] is None
     assert result["pair1"] is None
     assert result["pair2"] is None
+
+
+def test_analysis_infers_colors_for_arbitrary_groups(monkeypatch):
+    table = PivotTable(
+        pd.DataFrame(
+            [[1.0, 0.8, 0.2], [0.1, 0.2, 0.9]],
+            columns=["s1", "s2", "s3"],
+        )
+    )
+    captured = {}
+
+    def capture_plot(*args, **kwargs):
+        captured.update(kwargs["group_cmap"])
+
+    monkeypatch.setattr(SimilarityMatrix, "plot_similarity", capture_plot)
+    monkeypatch.setattr(SimilarityMatrix, "plot_heatmap", lambda *args, **kwargs: None)
+
+    SimilarityMatrix.analyze_similarity(
+        table,
+        groups=np.array(["X", "Y", "Z"]),
+        group_order=["X", "Y", "Z"],
+        method="cosine",
+        group_cmap={"X": "black"},
+        save_dir=None,
+        n_permutations=2,
+        random_state=1,
+    )
+
+    assert set(captured) == {"X", "Y", "Z"}
+    assert captured["X"] == "black"

@@ -12,6 +12,19 @@ import os
 import warnings
 
 
+def _resolve_group_cmap(
+    groups: pd.Series | np.ndarray,
+    group_cmap: dict[str, str] | None,
+) -> dict[Any, str]:
+    """Return colors for every observed non-missing group."""
+    labels = pd.Series(np.asarray(groups)).dropna().drop_duplicates().tolist()
+    colors = sns.color_palette("tab10", n_colors=max(len(labels), 1)).as_hex()
+    resolved = dict(zip(labels, colors))
+    if group_cmap is not None:
+        resolved.update(group_cmap)
+    return resolved
+
+
 class PairwiseMatrix(pd.DataFrame):
     """
     Base class for pairwise matrices.
@@ -292,7 +305,7 @@ class SimilarityMatrix(PairwiseMatrix):
         self,
         groups: pd.Series,
         figsize: tuple[int, int] = (20, 20),
-        group_cmap: dict[str, str] = {"LUAD": "orange", "ASC": "green", "LUSC": "blue"},
+        group_cmap: dict[str, str] | None = None,
         title: str = "Cosine Similarity",
         cmap: str = "coolwarm",
         ax: Any | None = None,
@@ -308,8 +321,9 @@ class SimilarityMatrix(PairwiseMatrix):
             Group labels for each sample.
         figsize : tuple of int, default=(20, 20)
             Figure size as (width, height).
-        group_cmap : dict, default={'LUAD': 'orange', 'ASC': 'green', 'LUSC': 'blue'}
-            Color mapping for groups.
+        group_cmap : dict, optional
+            Color overrides for groups. Unspecified groups receive colors from
+            a categorical palette.
         title : str, default='Cosine Similarity'
             Title for the plot.
         cmap : str, default='coolwarm'
@@ -326,6 +340,7 @@ class SimilarityMatrix(PairwiseMatrix):
         >>> groups = pd.Series(['A', 'A', 'B', 'B'])
         >>> affinity_matrix.plot_similarity_matrix(groups, title="Sample Similarities")
         """
+        group_cmap = _resolve_group_cmap(groups, group_cmap)
         if ax is None:
             fig = plt.figure(figsize=figsize)
             gs = fig.add_gridspec(
@@ -581,7 +596,7 @@ class SimilarityMatrix(PairwiseMatrix):
         self,
         groups: pd.Series,
         figsize: tuple[int, int] = (20, 20),
-        group_cmap: dict[str, str] = {"LUAD": "orange", "ASC": "green", "LUSC": "blue"},
+        group_cmap: dict[str, str] | None = None,
         title: str | None = None,
         cmap: str = "coolwarm",
         ax: tuple[Any, Any, Any] | None = None,
@@ -598,8 +613,9 @@ class SimilarityMatrix(PairwiseMatrix):
             Group label for each sample.
         figsize : tuple of int, default=(20, 20)
             Figure size as ``(width, height)``.
-        group_cmap : dict of str to str
-            Mapping from group name to color.
+        group_cmap : dict of str to str, optional
+            Color overrides for groups. Unspecified groups receive colors from
+            a categorical palette.
         title : str, optional
             Title displayed above the heatmap.
         cmap : str, default='coolwarm'
@@ -613,6 +629,7 @@ class SimilarityMatrix(PairwiseMatrix):
         title_fontsize : int, default=20
             Font size for the title.
         """
+        group_cmap = _resolve_group_cmap(groups, group_cmap)
         if ax is None:
             fig = plt.figure(figsize=figsize)
             gs = fig.add_gridspec(
@@ -790,7 +807,7 @@ class SimilarityMatrix(PairwiseMatrix):
         title: str | None = None,
         layout: str = "grid",
         similarity_cmap: str = "coolwarm",
-        group_cmap: dict[str, str] = {"LUAD": "orange", "ASC": "green", "LUSC": "blue"},
+        group_cmap: dict[str, str] | None = None,
         group_avg_cmap: str = "Blues",
         group_pvalues_cmap: str = "Reds_r",
         save_dir: str | None = "./figures/Similarity",
@@ -798,10 +815,7 @@ class SimilarityMatrix(PairwiseMatrix):
         file_format: str = "tiff",
         heatmap_show_only_x_ticks: bool = False,
         heatmap_annot: bool = True,
-        utest_group_pairs: list[tuple[str, str]] | None = [
-            ("LUAD", "ASC"),
-            ("ASC", "LUSC"),
-        ],
+        utest_group_pairs: list[tuple[str, str]] | None = None,
         annot_size: int = 14,
         n_permutations: int = 1000,
         random_state: int | None = None,
@@ -810,8 +824,9 @@ class SimilarityMatrix(PairwiseMatrix):
         Run a full similarity analysis pipeline and produce a composite figure.
 
         Computes the similarity matrix from *table*, calculates group-level
-        means and permutation p-values, performs optional Mann-Whitney U tests
-        between specified group pairs, and saves a multi-panel figure.
+        means and permutation p-values, optionally compares two specified
+        group-pair means with a label-permutation test, and saves a multi-panel
+        figure.
 
         Parameters
         ----------
@@ -830,8 +845,9 @@ class SimilarityMatrix(PairwiseMatrix):
             Panel arrangement of the composite figure.
         similarity_cmap : str, default='coolwarm'
             Colormap for the full similarity matrix.
-        group_cmap : dict of str to str
-            Mapping from group name to color for the annotation bar.
+        group_cmap : dict of str to str, optional
+            Color overrides for the annotation bar. Remaining groups receive
+            colors from a categorical palette.
         group_avg_cmap : str, default='Blues'
             Colormap for the group-mean similarity heatmap.
         group_pvalues_cmap : str, default='Reds_r'
@@ -847,7 +863,8 @@ class SimilarityMatrix(PairwiseMatrix):
         heatmap_annot : bool, default=True
             Whether to annotate group heatmap cells.
         utest_group_pairs : list of tuple of str, optional
-            Two group pairs for a Mann-Whitney U test comparison.
+            Exactly two group pairs for a label-permutation comparison. No
+            pairwise comparison is run by default.
         annot_size : int, default=14
             Font size for heatmap annotations.
         n_permutations : int, default=1000
@@ -871,6 +888,7 @@ class SimilarityMatrix(PairwiseMatrix):
 
         similarity_matrix = table.compute_similarity(method=method)
         groups = pd.Series(np.asarray(groups), index=similarity_matrix.index)
+        group_cmap = _resolve_group_cmap(groups, group_cmap)
         true_group_similarity = similarity_matrix.get_mean_group_similarity(
             groups, group_order=group_order
         )
@@ -973,6 +991,8 @@ class SimilarityMatrix(PairwiseMatrix):
         stat = p = None
         pair1_subset = pair2_subset = None
         if utest_group_pairs is not None:
+            if len(utest_group_pairs) != 2:
+                raise ValueError("utest_group_pairs must contain exactly two pairs")
             stat, p = similarity_matrix.paired_similarity_permutation_test(
                 groups=groups,
                 pair1=utest_group_pairs[0],
