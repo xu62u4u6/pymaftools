@@ -68,6 +68,22 @@ def teardown_function(_):
     plt.close("all")
 
 
+def test_set_config_copies_mutable_inputs(mutation_table):
+    width_ratios = [4, 1]
+    categorical_columns = ["subtype"]
+    plot = OncoPlot(
+        mutation_table,
+        width_ratios=width_ratios,
+        categorical_columns=categorical_columns,
+    )
+
+    width_ratios.append(99)
+    categorical_columns.append("sex")
+
+    assert plot.width_ratios == [4, 1]
+    assert plot.categorical_columns == ["subtype"]
+
+
 def test_default_oncoplot_does_not_crash(mutation_table):
     """P0#1 regression: the convenience entry point must build and render
     without error. It derives a layout with a spacer before the legend."""

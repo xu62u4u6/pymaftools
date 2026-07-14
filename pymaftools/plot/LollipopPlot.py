@@ -368,7 +368,7 @@ class LollipopPlot(BasePlot):
         gene,
         cohorts_data,
         figsize=(20, 15),
-        width_ratios=[9, 1],
+        width_ratios=None,
         config=None,
         domain_label_map=None,
         mutation_label_map=None,
@@ -419,6 +419,7 @@ class LollipopPlot(BasePlot):
         """
         from matplotlib.gridspec import GridSpec
 
+        width_ratios = [9, 1] if width_ratios is None else list(width_ratios)
         n_cohorts = len(cohorts_data)
         if n_cohorts == 0:
             raise ValueError("No cohort data provided")

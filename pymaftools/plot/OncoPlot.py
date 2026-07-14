@@ -72,12 +72,12 @@ class OncoPlot(BasePlot):
         line_color: str = "white",
         cmap: str | dict = "nonsynonymous",
         figsize: tuple = (20, 15),
-        width_ratios: list[int] = [25, 1, 1, 2],
-        height_ratios: list[int] = [1, 20],
+        width_ratios: list[int] | None = None,
+        height_ratios: list[int] | None = None,
         wspace: float = 0.015,
         hspace: float = 0.02,
-        categorical_columns: list[str] = [],
-        numeric_columns: list[str] = [],
+        categorical_columns: list[str] | None = None,
+        numeric_columns: list[str] | None = None,
         ytick_fontsize: int = 10,
     ) -> OncoPlot:
         """
@@ -117,12 +117,14 @@ class OncoPlot(BasePlot):
         self.line_color = line_color
         self.cmap = self.color_manager.get_cmap(cmap) if isinstance(cmap, str) else cmap
         self.figsize = figsize
-        self.width_ratios = width_ratios
-        self.height_ratios = height_ratios
+        self.width_ratios = [25, 1, 1, 2] if width_ratios is None else list(width_ratios)
+        self.height_ratios = [1, 20] if height_ratios is None else list(height_ratios)
         self.wspace = wspace
         self.hspace = hspace
-        self.categorical_columns = categorical_columns
-        self.numeric_columns = numeric_columns
+        self.categorical_columns = (
+            [] if categorical_columns is None else list(categorical_columns)
+        )
+        self.numeric_columns = [] if numeric_columns is None else list(numeric_columns)
         self.ytick_fontsize = ytick_fontsize
         return self
 
@@ -343,7 +345,7 @@ class OncoPlot(BasePlot):
         return self
 
     def add_freq(
-        self, freq_columns: list[str] = ["freq"], side: str = "right", **kwargs
+        self, freq_columns: list[str] | None = None, side: str = "right", **kwargs
     ) -> OncoPlot:
         """Register a per-feature frequency track for ``render()``.
 
@@ -365,6 +367,7 @@ class OncoPlot(BasePlot):
         :meth:`add_feature_annotation` with a diverging cmap instead; ``add_freq``
         is for 0–1 proportions on a shared scale.
         """
+        freq_columns = ["freq"] if freq_columns is None else list(freq_columns)
         track = FreqTrack(
             self.feature_metadata[freq_columns], line_color=self.line_color, **kwargs
         )
@@ -1167,7 +1170,7 @@ class OncoPlot(BasePlot):
 
     def plot_freq(
         self,
-        freq_columns: list[str] = ["freq"],
+        freq_columns: list[str] | None = None,
         annot_fontsize: int = 8,
         linewidths: float = 1,
         xtick_fontsize: int = 9,
@@ -1194,6 +1197,7 @@ class OncoPlot(BasePlot):
         self : OncoPlot
             Returns self for method chaining
         """
+        freq_columns = ["freq"] if freq_columns is None else list(freq_columns)
         self.tracks.append(
             FreqTrack(
                 self.feature_metadata[freq_columns],

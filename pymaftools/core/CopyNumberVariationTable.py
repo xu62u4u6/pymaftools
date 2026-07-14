@@ -130,7 +130,7 @@ class CopyNumberVariationTable(PivotTable):
     def read_gistic_gene_level(
         cls,
         file_path: str,
-        feature_columns: list[str] = ["Gene Symbol", "Gene ID", "Cytoband"],
+        feature_columns: list[str] | None = None,
         samples: list[str] | None = None,
     ):
         """
@@ -184,6 +184,9 @@ class CopyNumberVariationTable(PivotTable):
         >>> cnv = CopyNumberVariationTable.read_gistic_gene_level('data/all_data_by_genes.txt',
         ...                       samples=['LUAD_001_T', 'LUAD_002_T'])
         """
+
+        if feature_columns is None:
+            feature_columns = ["Gene Symbol", "Gene ID", "Cytoband"]
 
         df = pd.read_csv(file_path, sep="\t")
         if "Gene Symbol" not in df.columns:
