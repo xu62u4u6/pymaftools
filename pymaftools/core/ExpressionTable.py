@@ -51,6 +51,27 @@ class ExpressionTable(PivotTable):
             Extra keyword arguments forwarded to
             ``DeseqDataSet.deseq2()`` (e.g. ``n_cpus=1``).
         """
+        if group_col not in self.sample_metadata.columns:
+            raise ValueError(f"Column '{group_col}' not found in sample_metadata.")
+        if target == control:
+            raise ValueError("target and control must be different group values.")
+
+        group_values = self.sample_metadata[group_col]
+        missing_groups = [
+            group for group in (target, control) if group not in set(group_values.dropna())
+        ]
+        if missing_groups:
+            raise ValueError(f"Group value(s) not found in '{group_col}': {missing_groups}")
+
+        counts_frame = pd.DataFrame(self)
+        numeric_counts = counts_frame.apply(pd.to_numeric, errors="coerce")
+        if (
+            numeric_counts.isna().any().any()
+            or (numeric_counts < 0).any().any()
+            or not np.equal(numeric_counts, np.floor(numeric_counts)).all().all()
+        ):
+            raise ValueError("DESeq2 requires non-negative integer counts without missing values.")
+
         try:
             from pydeseq2.dds import DeseqDataSet
             from pydeseq2.ds import DeseqStats
@@ -66,7 +87,7 @@ class ExpressionTable(PivotTable):
         metadata["_deseq_group"] = metadata[group_col].map(label_map)
         metadata = metadata.dropna(subset=["_deseq_group"])
 
-        counts = self.T.loc[metadata.index].astype(int)
+        counts = numeric_counts.T.loc[metadata.index].astype(int)
 
         dds = DeseqDataSet(
             counts=counts,
@@ -109,7 +130,9 @@ class ExpressionTable(PivotTable):
             Filtered subset of ``feature_metadata`` sorted by padj.
         """
         fm = self.feature_metadata
-        if "padj" not in fm.columns:
+        required = {"padj", "log2FoldChange"}
+        missing = sorted(required - set(fm.columns))
+        if missing:
             raise ValueError("Run .deseq2() first.")
         mask = (fm["padj"] < padj) & (fm["log2FoldChange"].abs() > log2fc)
         return fm.loc[mask].sort_values("padj")
@@ -165,16 +188,16 @@ class ExpressionTable(PivotTable):
         """
         if cluster_col not in self.feature_metadata.columns:
             raise ValueError(f"Column '{cluster_col}' not found in feature_metadata.")
-        # save clustering results
-        table = self.copy()
-        table[cluster_col] = table.feature_metadata[cluster_col]
+        labels = self.feature_metadata[cluster_col]
+        included = labels.notna()
+        data = pd.DataFrame(self).loc[included]
+        cluster_table = ExpressionTable(data.groupby(labels.loc[included]).mean())
+        cluster_table.sample_metadata = self.sample_metadata.copy()
 
-        # to cluster table
-        cluster_table = ExpressionTable(pd.DataFrame(table).groupby(cluster_col).mean())
-        cluster_table.sample_metadata = table.sample_metadata
-
-        gb = table.feature_metadata.groupby(cluster_col)
-        cluster_table.feature_metadata["features"] = gb.apply(lambda df: list(df.index))
+        gb = self.feature_metadata.loc[included].groupby(cluster_col)
+        cluster_table.feature_metadata["features"] = gb.apply(
+            lambda df: list(df.index), include_groups=False
+        )
         cluster_table.feature_metadata["features_count"] = (
             cluster_table.feature_metadata["features"].apply(len)
         )
