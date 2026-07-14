@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import matplotlib.pyplot as plt
-import matplotlib.cm as cm
+from matplotlib import colormaps
 import numpy as np
 import matplotlib.patches as patches
 from .BasePlot import BasePlot
@@ -125,10 +125,10 @@ class LollipopPlot(BasePlot):
                 )
             if num_labels == 0:
                 return {}
-            domain_cmap = cm.get_cmap(cmap_name, num_labels if num_labels > 0 else 1)
+            domain_cmap = colormaps.get_cmap(cmap_name).resampled(num_labels)
         except ValueError:
             print(f"Warning: Colormap '{cmap_name}' failed. Using 'viridis'.")
-            domain_cmap = cm.get_cmap("viridis", num_labels if num_labels > 0 else 1)
+            domain_cmap = colormaps.get_cmap("viridis").resampled(num_labels)
 
         return {label: domain_cmap(i) for i, label in enumerate(unique_domain_labels)}
 

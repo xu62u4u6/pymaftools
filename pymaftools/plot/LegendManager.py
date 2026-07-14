@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
-from matplotlib.cm import ScalarMappable, get_cmap
+from matplotlib import colormaps
+from matplotlib.cm import ScalarMappable
 from matplotlib.colors import Normalize
 from typing import Any
 import matplotlib.axes as Axes
@@ -619,7 +620,7 @@ class LegendManager:
             info = self.numeric_legends[numeric_legend]
 
             # Create colorbar
-            cmap = get_cmap(info["colormap"])
+            cmap = colormaps.get_cmap(info["colormap"])
             norm = Normalize(vmin=info["vmin"], vmax=info["vmax"])
             sm = ScalarMappable(norm=norm, cmap=cmap)
             sm.set_array([])

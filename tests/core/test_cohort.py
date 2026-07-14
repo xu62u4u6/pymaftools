@@ -134,12 +134,14 @@ class TestCohortPersistence:
         
         # Save to SQLite
         db_path = temp_output_dir / "test_cohort.db"
-        cohort.to_sqlite(str(db_path))
+        with pytest.warns(DeprecationWarning, match="to_hdf5"):
+            cohort.to_sqlite(str(db_path))
         
         assert db_path.exists()
         
         # Load from SQLite
-        loaded_cohort = Cohort.read_sqlite(str(db_path))
+        with pytest.warns(DeprecationWarning, match="read_hdf5"):
+            loaded_cohort = Cohort.read_sqlite(str(db_path))
         
         assert loaded_cohort.name == cohort.name
         assert set(loaded_cohort.tables.keys()) == set(cohort.tables.keys())

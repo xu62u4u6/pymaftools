@@ -3,8 +3,8 @@ from __future__ import annotations
 import pandas as pd
 import seaborn as sns
 import matplotlib.colors as mcolors
+from matplotlib import colormaps
 from matplotlib.colors import ListedColormap
-from matplotlib.cm import get_cmap
 from typing import Any
 from matplotlib.colors import to_rgb, to_hex
 import colorsys
@@ -337,7 +337,7 @@ class ColorManager:
         """
 
         # Get the colormap
-        cmap = get_cmap(cmap_name)
+        cmap = colormaps.get_cmap(cmap_name)
 
         # Generate evenly spaced values for the colormap
         num_categories = len(categories)

@@ -86,8 +86,9 @@ class TestPivotTableBasics:
 
         monkeypatch.setattr(pd.DataFrame, "to_sql", fail_to_sql)
 
-        with pytest.raises(RuntimeError, match="injected write failure"):
-            sample_pivot_table.to_sqlite(db_path)
+        with pytest.warns(DeprecationWarning, match="to_h5"):
+            with pytest.raises(RuntimeError, match="injected write failure"):
+                sample_pivot_table.to_sqlite(db_path)
 
         assert db_path.read_bytes() == b"existing database"
         assert list(tmp_path.iterdir()) == [db_path]
@@ -116,8 +117,10 @@ class TestPivotTableBasics:
         monkeypatch.setattr(pivot_io.sqlite3, "connect", tracked_connect)
         db_path = tmp_path / "pivot.db"
 
-        sample_pivot_table.to_sqlite(db_path)
-        PivotTable.read_sqlite(db_path)
+        with pytest.warns(DeprecationWarning, match="to_h5"):
+            sample_pivot_table.to_sqlite(db_path)
+        with pytest.warns(DeprecationWarning, match="read_h5"):
+            PivotTable.read_sqlite(db_path)
 
         assert len(connections) == 2
         assert all(connection.was_closed for connection in connections)
@@ -290,7 +293,7 @@ class TestPivotTableStatistics:
 
     def test_to_binary_table_treats_missing_values_as_absent(self, sample_pivot_table):
         """Missing observations must not be counted as mutations."""
-        table = sample_pivot_table.copy()
+        table = sample_pivot_table.astype(object)
         table.iloc[0, 0] = np.nan
 
         binary_table = table.to_binary_table()

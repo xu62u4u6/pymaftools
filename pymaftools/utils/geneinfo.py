@@ -410,7 +410,11 @@ def _reduce_to_canonical_transcript(df: pd.DataFrame) -> pd.DataFrame:
     df = df.dropna(subset=["hugo_symbol", "transcript_length"]).copy()
     df["transcript_length"] = df["transcript_length"].astype(int)
 
-    canonical = df[df.get("is_canonical").fillna(0) != 0] if "is_canonical" in df else df.iloc[0:0]
+    if "is_canonical" in df:
+        canonical_mask = df["is_canonical"].notna() & df["is_canonical"].ne(0)
+        canonical = df.loc[canonical_mask]
+    else:
+        canonical = df.iloc[0:0]
     # genes without a canonical row fall back to their longest transcript
     longest = df.sort_values("transcript_length").drop_duplicates(
         subset=["hugo_symbol"], keep="last"
