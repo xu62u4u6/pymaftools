@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections import Counter
+
 import numpy as np
 import pandas as pd
 import seaborn as sns
@@ -59,10 +61,52 @@ class OmicsStackingModel:
         self.class_order = class_order
         self.random_state = random_state
 
+        duplicate_features = {
+            feature
+            for feature, count in Counter(
+                feature
+                for table in omics_dict.values()
+                for feature in table.index
+            ).items()
+            if count > 1
+        }
+        self.feature_columns: dict[str, list[str]] = {}
+        for name, table in omics_dict.items():
+            if not table.index.is_unique:
+                raise ValueError(f"Omics table '{name}' has duplicate feature names.")
+            self.feature_columns[name] = [
+                f"{name}::{feature}" if feature in duplicate_features else feature
+                for feature in table.index
+            ]
+
         self.le = LabelEncoder()
         self.le.classes_ = np.array(class_order)
 
         self.build_model()
+
+    def prepare_features(self) -> pd.DataFrame:
+        """Build an aligned samples-by-features matrix from the omics tables.
+
+        Samples are restricted to the intersection across layers, preserving
+        the first table's order. Feature names shared by multiple layers are
+        prefixed with ``<omics>::`` so sklearn selectors remain unambiguous.
+        """
+        if not self.omics_dict:
+            raise ValueError("omics_dict must contain at least one table.")
+
+        tables = list(self.omics_dict.values())
+        sample_index = tables[0].columns
+        for table in tables[1:]:
+            sample_index = sample_index[sample_index.isin(table.columns)]
+        if sample_index.empty:
+            raise ValueError("Omics tables do not share any sample identifiers.")
+
+        frames = []
+        for name, table in self.omics_dict.items():
+            frame = pd.DataFrame(table).T.reindex(sample_index)
+            frame.columns = self.feature_columns[name]
+            frames.append(frame)
+        return pd.concat(frames, axis=1)
 
     def build_model(self) -> None:
         """Build the stacking classifier from ``omics_dict``."""
@@ -71,7 +115,9 @@ class OmicsStackingModel:
             model = self.base_model_class(
                 n_estimators=100, random_state=self.random_state
             )
-            selector = ColumnTransformer([(name, "passthrough", table.index)])
+            selector = ColumnTransformer(
+                [(name, "passthrough", self.feature_columns[name])]
+            )
             pipe = Pipeline([("select", selector), ("model", model)])
             estimators.append((name, pipe))
 

@@ -44,7 +44,7 @@
 ### Visualization
 - **OncoPlot** — Mutation landscape heatmaps with frequency bars, sample metadata, and legends
 - **LollipopPlot** — Protein mutation positions with domain annotation
-- **PivotTablePlot** — PCA, boxplots with statistical annotations, heatmaps (via `pt.plot`)
+- **PivotStatsPlot** — PCA, boxplots with statistical annotations, heatmaps (via `pt.plot`)
 - **ModelPlot** — Model performance visualizations
 - **MethodsPlot** — 3D methodology demonstration plots
 - **ColorManager / FontManager** — Customizable color and font management
@@ -339,15 +339,20 @@ cohort = Cohort.read_hdf5("cohort.h5")
 
 ```python
 from pymaftools import OmicsStackingModel
-from pymaftools.model.modelUtils import evaluate_model, cross_validate_importance
 
-model = OmicsStackingModel()
-model.fit(cohort, labels)
-preds = model.predict(cohort)
-importance = model.get_omics_feature_importance()
-
-metrics = evaluate_model(model, X_test, y_test)
-results = cross_validate_importance(model, X, y, n_seeds=10)
+omics = {
+    "mutations": mutation_pt,
+    "cnv": cnv_table,
+    "expression": expr_table,
+}
+class_order = sorted(cohort.sample_metadata["subtype"].dropna().unique())
+model = OmicsStackingModel(omics, class_order=class_order)
+X = model.prepare_features()  # aligns samples and namespaces shared gene names
+y = cohort.sample_metadata.loc[X.index, "subtype"]
+model.fit(X, y)
+preds = model.predict(X)
+importance = model.get_omics_feature_importance("mutations")
+weights = model.get_omics_weights()
 ```
 
 ## FAQ

@@ -102,3 +102,23 @@ def test_get_omics_feature_importance_returns_series_per_omics():
     assert isinstance(cnv_imp, pd.Series)
     assert len(snv_imp) == len(omics_dict["SNV"].index)
     assert len(cnv_imp) == len(omics_dict["CNV"].index)
+
+
+def test_prepare_features_namespaces_overlapping_genes():
+    sample_ids = [f"s{i}" for i in range(20)]
+    mutation = PivotTable(
+        pd.DataFrame([range(20), range(20)], index=["TP53", "KRAS"], columns=sample_ids)
+    )
+    expression = PivotTable(
+        pd.DataFrame([range(20), range(20)], index=["TP53", "EGFR"], columns=sample_ids)
+    )
+    model = OmicsStackingModel(
+        {"mutation": mutation, "expression": expression},
+        class_order=["A", "B"],
+    )
+
+    X = model.prepare_features()
+
+    assert list(X.columns) == ["mutation::TP53", "KRAS", "expression::TP53", "EGFR"]
+    model.fit(X, np.array(["A"] * 10 + ["B"] * 10))
+    assert len(model.predict(X)) == 20
