@@ -209,6 +209,22 @@ class TestPivotTableSorting:
         if asc_indices and lusc_indices:
             assert max(asc_indices) < min(lusc_indices)
 
+    def test_sort_samples_by_group_preserves_unlisted_and_missing_groups(
+        self, sample_pivot_table
+    ):
+        table = sample_pivot_table.copy()
+        table.sample_metadata.loc[table.columns[-2], "subtype"] = "OTHER"
+        table.sample_metadata.loc[table.columns[-1], "subtype"] = np.nan
+
+        sorted_table = table.sort_samples_by_group(
+            group_col="subtype",
+            group_order=["LUAD"],
+        )
+
+        assert set(sorted_table.columns) == set(table.columns)
+        assert sorted_table.shape == table.shape
+        assert list(sorted_table.columns[-2:]) == list(table.columns[-2:])
+
 
 class TestPivotTableStatistics:
     """Test statistical methods"""

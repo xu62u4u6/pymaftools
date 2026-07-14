@@ -33,11 +33,13 @@ def sort_samples_by_mutations(table, top: int = 10):
 
 
 def sort_samples_by_group(table, group_col: str, group_order: List[str], top: int = 10):
-    """Sort samples by group order, then by mutation pattern inside each group."""
+    """Sort listed groups first without dropping samples from other groups."""
     pivot_table = table.copy()
 
     if group_col not in pivot_table.sample_metadata.columns:
         raise ValueError(f"Column '{group_col}' not found in sample_metadata.")
+    if len(group_order) != len(set(group_order)):
+        raise ValueError("group_order must not contain duplicate values")
 
     sorted_samples = []
     for subtype in group_order:
@@ -49,5 +51,8 @@ def sort_samples_by_group(table, group_col: str, group_order: List[str], top: in
             subtype_pivot = pivot_table.subset(samples=subtype_samples)
             sorted_subtype_pivot = subtype_pivot.sort_samples_by_mutations(top=top)
             sorted_samples.extend(sorted_subtype_pivot.columns)
+
+    remaining_samples = pivot_table.columns[~pivot_table.columns.isin(sorted_samples)]
+    sorted_samples.extend(remaining_samples)
 
     return pivot_table.subset(samples=sorted_samples)
