@@ -796,8 +796,9 @@ def plot_overview(maf: pd.DataFrame, figsize=(15, 10)):
             2,
             4,
             height_ratios=[1.0, 1.0],
-            # composition is 3 vertical bars -> ~40% narrower than its neighbours.
-            width_ratios=[0.6, 1.0, 1.0, 0.34],
+            # composition is 3 vertical bars -> narrower; top_genes spans the
+            # right two cells (widest) so its horizontal bars get room.
+            width_ratios=[0.55, 0.95, 0.95, 0.55],
             hspace=0.38,
             wspace=0.4,
             top=0.86,
@@ -810,11 +811,12 @@ def plot_overview(maf: pd.DataFrame, figsize=(15, 10)):
         )
         plot_mutation_composition(maf, ax=fig.add_subplot(gs[1, 0]))
         plot_snv_spectrum(maf, ax=fig.add_subplot(gs[1, 1]))
-        plot_top_genes(maf, ax=fig.add_subplot(gs[1, 2]), top=10)
+        plot_top_genes(maf, ax=fig.add_subplot(gs[1, 2:4]), top=10)
 
-        # Right column: shared Consequence legend (each panel annotates its own
+        # Top-right corner: shared Consequence legend, filling the white triangle
+        # left by the burden plot's sorted taper (each panel annotates its own
         # numbers; cohort-level numbers go in the subtitle).
-        legend_ax = fig.add_subplot(gs[:, 3])
+        legend_ax = fig.add_subplot(gs[0, 3])
         legend_ax.axis("off")
         func_present = _functional_order(_functional_series(maf).unique())
         style.draw_legend_cards(
