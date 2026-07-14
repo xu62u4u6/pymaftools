@@ -17,13 +17,15 @@ class MockResponse:
 
 
 def test_get_ncbi_gene_id_success_and_failure(monkeypatch):
-    def mock_get_success(url, params=None):
+    def mock_get_success(url, params=None, timeout=None):
+        assert timeout == 30
         return MockResponse({"esearchresult": {"idlist": ["7157"]}})
 
     monkeypatch.setattr(geneinfo.requests, "get", mock_get_success)
     assert geneinfo.get_ncbi_gene_ID("TP53") == "7157"
 
-    def mock_get_fail(url, params=None):
+    def mock_get_fail(url, params=None, timeout=None):
+        assert timeout == 30
         return MockResponse({}, raise_error=True)
 
     monkeypatch.setattr(geneinfo.requests, "get", mock_get_fail)
@@ -31,7 +33,8 @@ def test_get_ncbi_gene_id_success_and_failure(monkeypatch):
 
 
 def test_get_gene_info_json_and_parse(monkeypatch):
-    def mock_get(url, params=None):
+    def mock_get(url, params=None, timeout=None):
+        assert timeout == 30
         return MockResponse(
             {
                 "result": {

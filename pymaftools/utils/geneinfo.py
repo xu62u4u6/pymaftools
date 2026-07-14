@@ -6,6 +6,8 @@ import time
 import requests
 import pandas as pd
 
+_NCBI_TIMEOUT_SECONDS = 30
+
 
 def get_ncbi_gene_ID(gene_symbol: str) -> str | None:
     """
@@ -28,7 +30,7 @@ def get_ncbi_gene_ID(gene_symbol: str) -> str | None:
         "retmode": "json",
     }
     try:
-        response = requests.get(url, params=params)
+        response = requests.get(url, params=params, timeout=_NCBI_TIMEOUT_SECONDS)
         response.raise_for_status()
         data = response.json()
         gene_ids = data.get("esearchresult", {}).get("idlist", [])
@@ -89,7 +91,7 @@ def get_gene_info_json(gene_ids: dict[str, str | None]) -> dict[str, dict]:
     params = {"db": "gene", "id": joined_ids, "retmode": "json"}
 
     try:
-        response = requests.get(url, params=params)
+        response = requests.get(url, params=params, timeout=_NCBI_TIMEOUT_SECONDS)
         response.raise_for_status()
         data = response.json()
 

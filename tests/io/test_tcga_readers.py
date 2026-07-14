@@ -267,6 +267,7 @@ class TestBuildUuidToCaseMapping:
 
         mapping = build_uuid_to_case_mapping(mock_manifest)
         assert mapping == {"uuid-1": "TCGA-AA-0001", "uuid-2": "TCGA-AA-0002"}
+        assert mock_post.call_args.kwargs["timeout"] == 60
 
 
 class TestReadStarCounts:

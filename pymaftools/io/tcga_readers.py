@@ -82,7 +82,9 @@ def build_uuid_to_case_mapping(manifest_path: str | Path) -> dict[str, str]:
             "size": len(batch),
             "format": "json",
         }
-        response = requests.post("https://api.gdc.cancer.gov/files", json=payload)
+        response = requests.post(
+            "https://api.gdc.cancer.gov/files", json=payload, timeout=60
+        )
         response.raise_for_status()
         for hit in response.json()["data"]["hits"]:
             file_id = hit["file_id"]
