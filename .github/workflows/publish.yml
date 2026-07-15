@@ -50,7 +50,7 @@ jobs:
           installed_version="$(python -c "from importlib.metadata import version; print(version('pymaftools'))")"
           test "$installed_version" = "$version"
           grep -q "^version: $version$" CITATION.cff
-          grep -q "Version $version" CHANGELOG.md
+          python scripts/extract_release_notes.py "$version" --output release-notes.md
 
       - name: Lint and format
         run: |
@@ -87,11 +87,25 @@ jobs:
       - name: Check package
         run: twine check dist/*
 
+      - name: Generate checksums
+        run: |
+          mkdir checksums
+          cd dist
+          sha256sum * > ../checksums/SHA256SUMS
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload checksums
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-checksums
+          path: checksums/SHA256SUMS
           if-no-files-found: error
           retention-days: 14
 
@@ -109,6 +123,14 @@ jobs:
           name: dist
           path: dist/
 
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-checksums
+          path: checksums/
+
+      - name: Verify build artifacts
+        run: cd dist && sha256sum --check ../checksums/SHA256SUMS
+
       - name: Publish to TestPyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
@@ -122,23 +144,38 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install package from TestPyPI
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+
+      - name: Download package from TestPyPI
         shell: bash
         run: |
           version="${GITHUB_REF_NAME#v}"
+          mkdir -p testpypi
           for attempt in {1..10}; do
-            if python -m pip install --no-cache-dir \
+            if python -m pip download --no-cache-dir --no-deps --only-binary=:all: \
               --index-url https://test.pypi.org/simple/ \
-              --extra-index-url https://pypi.org/simple/ \
-              "pymaftools==$version"; then
+              --dest testpypi/ "pymaftools==$version"; then
               exit 0
             fi
             if [[ "$attempt" -eq 10 ]]; then
-              echo "TestPyPI package was not installable after 10 attempts." >&2
+              echo "TestPyPI wheel was not available after 10 attempts." >&2
               exit 1
             fi
             sleep 15
           done
+
+      - name: Verify and install TestPyPI artifact
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          built_wheel="dist/pymaftools-${version}-py3-none-any.whl"
+          testpypi_wheel="testpypi/pymaftools-${version}-py3-none-any.whl"
+          cmp "$built_wheel" "$testpypi_wheel"
+          python -m pip install --no-cache-dir \
+            --index-url https://pypi.org/simple/ "$testpypi_wheel"
 
       - name: Smoke-test installed HDF5 workflow
         run: >-
@@ -162,6 +199,14 @@ jobs:
           name: dist
           path: dist/
 
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-checksums
+          path: checksums/
+
+      - name: Verify build artifacts
+        run: cd dist && sha256sum --check ../checksums/SHA256SUMS
+
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
 
@@ -171,17 +216,29 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v6
+
       - uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist/
 
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-checksums
+          path: checksums/
+
+      - name: Extract release notes
+        run: >-
+          python scripts/extract_release_notes.py "${GITHUB_REF_NAME#v}"
+          --output release-notes.md
+
       - name: Create GitHub Release
         run: >-
-          gh release create "$GITHUB_REF_NAME" dist/*
+          gh release create "$GITHUB_REF_NAME" dist/* checksums/SHA256SUMS
           --verify-tag
           --title "pymaftools ${GITHUB_REF_NAME#v}"
-          --generate-notes
+          --notes-file release-notes.md
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
