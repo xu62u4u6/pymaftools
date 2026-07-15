@@ -1,177 +1,158 @@
-# pymaftools Optimization Roadmap
+# pymaftools Roadmap
 
-> Last updated: 2026-07-14
+> Last reviewed: 2026-07-15
 
-## Phase 1: Foundation ✅ Complete
+This file describes work that is still relevant after 0.5.0. Completed release
+details belong in `CHANGELOG.md`; release operations and risks belong in
+`RELEASE_CHECKLIST.md` and `RELEASE_AUDIT.md`.
 
-### 1.1 Fix Critical Code Quality Issues
+Items under **Next** have a concrete problem and acceptance condition. Items in
+the **Backlog** require a real use case or design decision before implementation.
 
-- [x] Replace bare `except:` with specific exceptions in `MAF.py`
-- [x] Replace wildcard imports in `__init__.py` with explicit imports
-- [x] PivotTable `False`/`"WT"` — confirmed as intentional SQLite serialization workaround
+## Current Baseline
 
-### 1.2 Dependency Version Constraints
+| Area | Current state | Near-term target |
+| --- | --- | --- |
+| Release | 0.5.0 on PyPI | Patch releases use the protected tag workflow |
+| Test coverage | 65.18%; CI fails below 60% | Raise coverage in high-risk modules before raising the gate |
+| Python | 3.10-3.12 required; 3.13-3.14 experimental | Review experimental failures on every PR |
+| Persistence | HDF5 canonical; SQLite deprecated | Preserve SQLite read compatibility during the deprecation period |
+| Documentation | Warning-free Sphinx build deployed to GitHub Pages | Add contributor and architecture guidance |
+| Largest module | `core/PivotTable.py`, 2,032 lines | Reduce responsibilities with tested extractions |
+| Bundled data | `protein_domains.csv`, about 24 MB | Decide whether network-independent lookup justifies the package cost |
 
-- [x] Add upper bounds to all dependencies in `pyproject.toml`
-- [ ] Consider making `beautifulsoup4`, `statsmodels` optional dependencies
+The coverage values above come from the 2026-07-15 full local suite. Useful
+module-level baselines include `MAF.py` 89%, `StackingModel.py` 76%,
+`geneset.py` 100%, and `CopyNumberVariationTable.py` 23%.
 
-### 1.3 CI/CD Improvements
+## Shipped in 0.5.0
 
-- [x] Add test coverage reporting and threshold enforcement (`--cov-fail-under=40`)
-- [x] Add `ruff` linting and formatting checks to CI workflow
-- [ ] Add `mypy` type checking to CI workflow
+The full list is in `CHANGELOG.md`. The main roadmap milestones delivered were:
 
----
+- HDF5-first `PivotTable` and `Cohort` persistence with SQLite deprecation.
+- Declarative OncoPlot tracks, feature/sample grouping, aligned annotations,
+  frequency strips, legends, and colorbars.
+- Public VCF parsing and same-sample caller-consensus merge.
+- Optional AnnData and expression integrations.
+- Multi-omics feature preparation and exon-size annotation.
+- MAF/WES overview, Ti/Tv, rainfall, VAF, somatic interaction, cohort
+  comparison, and forest plots.
+- Python 3.10 compatibility, expanded regression coverage, and a protected
+  OIDC release workflow with TestPyPI verification and release checksums.
 
-## Phase 2: Type Safety & Testing (In Progress)
+## Next
 
-### 2.1 Add Type Hints & Docstrings ✅ Complete
+### 1. Correctness and Data Model
 
-- [x] Core modules: `MAF.py`, `PivotTable.py`, `Cohort.py`
-- [x] Plot modules: `OncoPlot.py`, `LollipopPlot.py`
-- [x] Model modules: `StackingModel.py`
-- [x] Utils modules: `geneset.py`, `reduction.py`
-- [x] Standardize docstrings to NumPy style
-- [x] Translate comments to English
-- [x] Add `requests.get` timeout in `geneset.py`
+- [ ] Add `PivotTable.relabel_features(mapper)` so the data index and
+      `feature_metadata.index` change atomically; validate metadata alignment
+      before plotting.
+- [ ] Preserve mutation annotation fields such as `Chromosome`, `Variant_Type`,
+      `Variant_Classification`, and `HGVSp_Short` when converting to a mutation
+      table. Unify the mutation-key schema and provide a public label formatter.
+- [ ] Add feature set/group operations for shared and private events with clear
+      missing-value semantics on pandas 2.2+.
+- [ ] Define and test the SQLite removal window. Reading existing files must
+      remain possible until the documented removal release.
 
-### 2.2 Increase Test Coverage (current: 65%, target: 85%+)
+Acceptance for these items requires public API documentation, migration notes
+where applicable, and regression tests for metadata alignment and empty input.
 
-- [ ] Add tests for `MAF.py` (currently 31%, core parsing untested)
-- [ ] Add tests for `CopyNumberVariationTable.py` (currently 13%)
-- [ ] Add tests for `model/StackingModel.py` (currently 28%)
-- [ ] Add tests for `utils/geneset.py` (currently 19%)
-- [ ] Add edge case tests: empty DataFrames, invalid inputs, unicode gene names
-- [ ] Add integration tests for Cohort + PivotTable workflows
+### 2. Test Coverage
 
----
+- [ ] Increase `CopyNumberVariationTable.py` coverage from 23%, prioritizing
+      parsing, coordinate validation, and failure paths.
+- [ ] Cover low-tested TCGA client/build paths with recorded or mocked responses;
+      network availability must not determine unit-test results.
+- [ ] Add focused tests for empty tables, invalid metadata, Unicode feature
+      names, and persistence corruption.
+- [ ] Add end-to-end tests covering `MAF -> PivotTable -> Cohort -> HDF5`;
+      extend the existing installed-wheel HDF5 smoke test when another critical
+      public workflow needs packaging-level validation.
+- [ ] Raise the CI threshold only after the new tests keep the main branch
+      comfortably above the proposed gate.
 
-## Phase 3: Architecture & Performance
+Already well-covered modules should not receive low-value tests solely to chase
+a global percentage.
 
-### 3.1 Refactor PivotTable (1,692 lines -> smaller modules)
+### 3. Architecture and Performance
 
-- [x] Extract IO/persistence helpers to `core/pivot_io.py`
-- [x] Extract frequency helpers to `core/pivot_frequency.py`
-- [x] Extract sorting helpers to `core/pivot_sorting.py`
-- [x] Extract filtering helpers to `core/pivot_filtering.py`
-- [x] Extract stats helpers to `core/pivot_stats.py`
-- [ ] Extract PCA/clustering logic to `core/analysis.py`
-- [x] Keep `PivotTable.py` as the API owner and thin delegation layer
+- [ ] Continue decomposing `PivotTable.py`. Extract PCA/clustering and other
+      self-contained analysis logic while keeping `PivotTable` as the public API
+      owner.
+- [ ] Reassess whether every remaining `PivotTable` method belongs on the core
+      data object or on an accessor/helper. A line-count reduction alone is not
+      sufficient justification.
+- [ ] Profile feature-frequency calculation and large-table copies before adding
+      caching or removing defensive `.copy()` calls.
+- [ ] Decide how to handle the bundled 24 MB `protein_domains.csv`: keep it for
+      offline reproducibility, compress it, or implement a versioned download
+      cache with checksum and offline failure behavior.
 
-### 3.2 Performance Optimization
+### 4. Plotting Gaps
 
-- [ ] Add memoization/caching for `calculate_feature_frequency()`
-- [ ] Reduce unnecessary `.copy()` calls across codebase
-- [ ] Consider lazy loading for `protein_domains.csv` (24MB)
+- [ ] Support an explicit custom side label for the main y axis. `show_ylabel`
+      currently controls visibility but is not a complete labeling API.
+- [ ] Finish unknown-category handling: an `Unknown` legend entry exists, but
+      warnings and documented case/alias normalization policy are still needed.
+- [ ] Add confidence intervals and an explicit pseudo-count policy to the cohort
+      forest plot instead of relying only on capped display odds ratios.
+- [ ] Add chromosome ticks/boundaries to rainfall plots.
+- [ ] Add optional outlier handling and a raw Ti/Tv inset to the MAF overview.
 
-### 3.3 Move Large Data Files
+### 5. Documentation and Developer Experience
 
-- [ ] Move `protein_domains.csv` out of git repository
-- [ ] Implement download-on-first-use with local caching
+- [ ] Add `CONTRIBUTING.md` with environment setup, test selection, style, and
+      pull-request expectations.
+- [ ] Add an architecture page to Sphinx. The README overview image is useful,
+      but does not explain module ownership and data flow.
+- [ ] Decide whether to add mypy and `py.typed`. Do not enable a non-blocking type
+      check that is never brought to green.
+- [ ] Add pre-commit only if it mirrors CI exactly and has a documented update
+      process.
+- [ ] Reduce duplicate Tests runs caused by simultaneous `dev` push and pull
+      request events if runner usage becomes material.
 
----
+## Feature Backlog
 
-## Phase 4: Documentation & DX
+These are not committed to a release. Each needs representative user data and a
+public API proposal before implementation.
 
-### 4.1 Documentation
+### Export and Interoperability
 
-- [x] Set up Sphinx with autodoc and enforce a warning-free build
-- [ ] Add architecture overview diagram
-- [ ] Deploy docs to GitHub Pages
+- [ ] Parquet export with an explicit strategy for sample/feature metadata.
+- [ ] Excel export for small review tables, with documented sheet and size limits.
+- [ ] Caller adapters for Strelka2, DRAGEN, DeepVariant, or Sentieon when real
+      fixtures and expected harmonization behavior are available.
 
-### 4.2 Developer Experience
+### Analysis
 
-- [ ] Add `CONTRIBUTING.md`
-- [ ] Add `.pre-commit-config.yaml` (ruff, mypy)
-- [x] Add tag-gated PyPI publishing workflow
-- [ ] Add changelog generation (e.g. `git-cliff`)
+- [ ] Survival analysis with explicit censoring and time-unit validation.
+- [ ] `mafbarplot` / top-mutated-gene convenience API.
+- [ ] `coBarplot`, `coOncoplot`, and compact `oncostrip` views.
+- [ ] Paired, longitudinal, or multi-region VAF comparison.
+- [ ] Signature 96 and polished signature heatmap helpers.
+- [ ] TMB and multi-metric WES panel helpers.
+- [ ] Shared/private mutation visualization using UpSet, Venn, or a table panel.
+- [ ] CNV frequency and GISTIC-like plots after the CNV API scope is agreed.
 
----
+### User Experience
 
-## Phase 5: Feature Enhancements
+- [ ] A CLI for repeatable, non-interactive conversion and validation tasks.
+- [ ] Structured logging for long-running IO; retain progress bars only where a
+      measurable loop exists.
+- [ ] Optional interactive plots only after a concrete notebook workflow shows
+      that static Matplotlib output is insufficient.
 
-### 5.1 Export & Compatibility
+Cross-validation utilities are already public through
+`cross_validate_importance()` and clustering/model helpers; they are not a
+backlog item.
 
-- [x] Make HDF5 the canonical persistence format for PivotTable and Cohort data
-- [x] Deprecate SQLite persistence APIs in favor of HDF5
-- [x] Update README, Skill, and API docs to use HDF5 examples
-- [ ] Add Parquet export support
-- [ ] Add Excel export support
-- [ ] Add compression options for exports
-- [x] Add lightweight VCF parser / harmonized VCF table (`VCF.read_vcf`)
-- [x] Add same-sample multi-caller consensus merge (`VCF.merge_callers`)
-- [ ] Document VCF scope: caller consensus only, not full cross-vendor VCF normalization
-- [ ] Add caller adapters for Strelka2 / DRAGEN / DeepVariant / Sentieon if real inputs are available
-- [ ] Delegate production VCF normalization to external tools (`bcftools norm` / annotation tools), not hand-rolled Python
+## Candidate API Designs
 
-### 5.2 Advanced Analytics
+These sketches record intent, not an implementation commitment.
 
-- [ ] Add survival analysis support
-- [ ] Add cross-validation utilities for ML models
-- [x] Add more statistical tests (filter_by_variance, filter_by_statistical_test)
-- [x] Add MAF-level WES summaries: `plot_overview`, `plot_titv`, `plot_rainfall`, `plot_vaf`
-- [x] Add somatic interaction statistics and heatmap
-- [x] Add cohort mutation-frequency comparison and forest-style plot
-- [ ] Add `mafbarplot` / top mutated gene barplot convenience API
-- [ ] Add `coBarplot` for two-cohort mutation-frequency comparison
-- [ ] Add `coOncoplot` for side-by-side cohort oncoplots
-- [ ] Add `oncostrip` for compact single/few-gene mutation strips
-- [ ] Add `vafCompare` for paired / longitudinal / multi-region VAF comparison
-- [ ] Add `plot_somatic_interaction_network`
-- [ ] Add `plot_similarity_panel`
-- [ ] Add `plot_signature_96` and polished signature heatmap helpers
-- [ ] Add `plot_tmb` and multi-metric WES panel helper
-- [ ] Add shared/private mutation plot (`UpSet` / Venn / table-style panel)
-- [ ] Add CNV frequency / GISTIC-like plots if CNV API scope is accepted
-
-### 5.3 User Experience
-
-- [ ] Add CLI tool for common operations
-- [ ] Consistent progress bar usage (tqdm)
-- [ ] Add structured logging (replace print statements)
-- [ ] Consider interactive plots (plotly) as optional feature
-- [x] Isolate optional LLM annotation helpers from numeric clustering code
-
----
-
-## Known Issues & API Gaps (from figure reproduction, 2026-05)
-
-Surfaced while reproducing Fig3A/B/C and Supp Fig5A/B. Severity: 🔴 silently
-wrong output · 🟠 forces a workaround · 🟡 ergonomics. A1① shipped in v0.4.1
-(`add_freq` now fails loud instead of writing all-NaN); the rest are pending.
-
-### Data model (PivotTable / MAF)
-- [ ] 🟠 **A1②③** Add `PivotTable.relabel_features(mapper)` to sync data index *and* `feature_metadata.index`; auto-validate metadata before plotting. (A1① done in v0.4.1.)
-- [ ] 🟠 **A2** `to_mutation_table()` drops `Chromosome / Variant_Type / Variant_Classification / HGVSp_Short`; add them to `feature_metadata` and provide `format_feature_labels(style=...)` for human-readable labels (`EGFR p.L858R`). Unify the 6- vs 7-segment mutation key schema.
-- [ ] 🟡 **A3** No feature-level set/group operations (shared / private); `set_operations(by=..., group_col=...)` + clean pandas 2.2 `fillna` downcasting.
-- [ ] 🟡 **A4** `MAF.read_csv` uses CWD-relative paths → easy `FileNotFoundError`; resolve against a base/project dir and report attempted absolute path.
-- [ ] 🟡 **A5** (env, not code) Multiple on-disk copies + editable install cause intermittent `cannot import name 'MAF'`; ensure a single installable `pymaftools`.
-
-### Plotting (OncoPlot)
-- [x] 🟠 **B1** Feature/sample group support — done in v0.5.0: `group_features`/`group_samples` section the matrix + aligned tracks with real whitespace gaps, equal row heights, and bidirectional group titles (alignable).
-- [x] 🟠 **B2** `add_xticklabel(fontsize=None, rotation=90)` — done in v0.5.0.
-- [ ] 🟡 **B3** Custom y-axis side label; `numeric_heatmap` force-clears ylabel. (Partial: `show_ylabel` exists.)
-- [x] 🟠 **B4** `numeric_heatmap` reuses `ax_freq` as colorbar → freq column and colorbar can't coexist. — done in v0.5.0 (CNV colorbar renders in the legend area, not `ax_freq`).
-- [x] 🟡 **B5** Rigid 4-column layout requires width-0 dummy columns; use named optional components. — done in v0.5.0 (`render()` derives the GridSpec from registered tracks; `legend_pad` is the named spacer).
-- [x] 🟠 **B6** Method chain has implicit ordering dependencies and silently toggles axes; make axis on/off declarative. — done in v0.5.0 (convenience methods register-only; single declarative `render()`).
-- [x] 🟡 **B7** `set_config()` calls `plt.close("all")` and rebuilds the figure (global side effect); accept an existing `fig`/subfigure. — done in v0.5.0 (`set_config` no longer touches pyplot; `render(fig=...)` accepts an existing figure).
-- [ ] 🟡 **B8** Color mapping is exact-match; unknown categories silently turn white. Warn + add "Unknown" to legend; normalize case/aliases.
-
-### WES / MAF plotting status
-- [x] 🟢 `MAF.plot.overview()` / `plot_overview` generates a maftools-like MAF overview dashboard.
-- [x] 🟢 `MAF.plot.titv()` / `summarize_titv` covers six-class Ti/Tv summaries.
-- [x] 🟢 `MAF.plot.rainfall()` draws inter-mutation distance from MAF genomic coordinates.
-- [x] 🟢 `MAF.plot.vaf()` infers VAF from common columns or `t_alt_count` / `t_depth`.
-- [x] 🟢 `PivotTable.plot.somatic_interactions()` returns `(fig, stats)` for co-occurrence / mutual exclusivity.
-- [x] 🟢 `MAF.plot.compare_cohorts()` + `MAF.plot.forest()` provide first-pass cohort comparison.
-- [ ] 🟠 Forest plot should add confidence intervals / pseudo-count policy instead of only capped display odds ratios.
-- [ ] 🟡 Rainfall plot should add chromosome tick labels / boundary marks.
-- [ ] 🟡 MAF summary should support maftools-style outlier handling and optional raw Ti/Tv inset.
-
-### Similarity panel design
-- [ ] 🟠 Add `plot_similarity_panel` as a `SimilarityMatrix` / `PivotTable.plot` public API.
-
-Proposed API:
+### Similarity Panel
 
 ```python
 fig, result = table.plot.similarity_panel(
@@ -182,50 +163,45 @@ fig, result = table.plot.similarity_panel(
 )
 ```
 
-Design:
-- Input may be a `PivotTable` plus `method`, or a precomputed `SimilarityMatrix`.
-- Main panel: sample x sample similarity heatmap, optionally sample-sorted by `group_col`.
-- Bottom/top annotation: group color strip aligned to samples.
-- Side panels: group mean similarity heatmap and pairwise p-value heatmap.
-- Return a structured result object / dict containing the similarity matrix, group means, p-values, and figure.
-- Do not recompute similarity inside every subplot; compute once, then render.
-- Keep statistics deterministic and explicit: Mann-Whitney or permutation test must be named by parameter.
+- Accept either a `PivotTable` plus a method or a precomputed
+  `SimilarityMatrix`.
+- Compute similarity once, then render the sample heatmap, group annotation,
+  group means, and named statistical comparisons.
+- Return the matrix, summary statistics, p-values, and figure in a structured
+  result.
+- Require an explicit statistical test and deterministic random state where
+  applicable.
 
-### Somatic interaction network design
-- [ ] 🟠 Add `plot_somatic_interaction_network` as the graph companion to `somatic_interactions`.
-
-Proposed API:
+### Somatic Interaction Network
 
 ```python
 fig, graph, stats = table.plot.somatic_interaction_network(
     top=25,
     alpha=0.05,
-    interaction="both",  # "cooccur" | "exclusive" | "both"
+    interaction="both",
     layout="spring",
 )
 ```
 
-Design:
-- Reuse `somatic_interactions()` output; the network must not recompute Fisher tests differently from the heatmap.
-- Nodes: genes; node size maps to mutation frequency.
-- Edges: significant pairs after FDR; color encodes co-occurrence vs mutual exclusivity; width maps to `-log10(FDR)` or `abs(log2 odds ratio)`.
-- Return `(fig, graph, stats)` so downstream users can inspect / export the NetworkX graph.
-- Keep NetworkX optional if dependency weight is a concern; otherwise add it explicitly.
-- Fail loud when no significant edges are found; optionally allow `show_all=True` for exploratory dense networks.
+- Reuse `somatic_interactions()` results; do not recompute Fisher tests with a
+  different implementation.
+- Map node size to mutation frequency and edges to FDR-controlled co-occurrence
+  or mutual exclusivity.
+- Return the NetworkX graph and statistics with the figure.
+- Fail clearly when no significant edges remain; an exploratory `show_all`
+  mode must be explicit.
 
-### Recent design review notes (2026-07-14)
-- WES plot naming must avoid notebook shorthand. Use domain names such as `cohort1_sample_col`, `cohort1_sample_count`, `cohort1_gene_counts`, `both_mutated`, not `s1`, `n1`, `m1`, `a/b/c/d`.
-- `MAF.plot` owns raw MAF-level views; `PivotTable.plot` owns matrix-level views. Do not make `PivotTable` depend on raw MAF columns.
-- VCF merge support is currently caller-consensus over already harmonized rows. Cross-vendor VCF normalization belongs in `io.vcf` adapters plus external tools, not in plotting or MAF core.
-- Generated demo plots are under `outputs/wes_plots/`; they are verification artifacts, not package data.
+## Deferred and Non-Goals
 
-> Detailed write-up (symptoms, root cause with file:line, workarounds) in the analysis repo's `docs/pymaftools_limitations.md`.
-
-## Metrics
-
-| Metric | Current (v0.5.0) | Phase 2 Target | Phase 4 Target |
-|--------|-------------------|----------------|----------------|
-| Test Coverage | 65% | 60% | 85% |
-| Type Hints | ~90% | 95% | 95% |
-| Largest File | 1,692 lines | < 800 lines | < 500 lines |
-| CI Checks | tests + coverage + Ruff + docs/build | + types | + deploy |
+- Production cross-vendor VCF normalization is delegated to tools such as
+  `bcftools norm` and annotation pipelines. `pymaftools.VCF` focuses on parsing
+  and caller consensus over harmonized records.
+- Automatic changelog generation is deferred. Release notes intentionally come
+  from the manually reviewed version section in `CHANGELOG.md`.
+- Moving all bundled reference data behind a network request is not acceptable
+  without a versioned cache, checksums, and a documented offline path.
+- Editable-install conflicts and multiple source checkouts are environment
+  management issues, not package roadmap features.
+- Artifact attestations, versioned documentation, action SHA pinning, and other
+  release-hardening options are tracked in `RELEASE_AUDIT.md` with adoption
+  triggers.
