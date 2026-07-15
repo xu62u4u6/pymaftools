@@ -74,6 +74,7 @@ Repository controls verified on 2026-07-15:
 | O10 | Low | **The changelog can contain relative links that do not resolve correctly in a GitHub Release body.** Review links before tagging and prefer absolute repository URLs in release sections. |
 | O11 | Low | **Experimental Python 3.13 and 3.14 jobs may fail without blocking merge.** Their output must be reviewed, and a supported-version change must update the matrix and metadata together. |
 | O12 | Low | **Tags are not protected by a repository ruleset and commits are not required to be signed.** Branch protection, tag validation, and the PyPI approval gate are sufficient for the current single-maintainer model. Revisit for multiple maintainers. |
+| O13 | Low | **A push to `dev` with an open PR starts duplicate Tests runs.** One run comes from the branch push and one from the pull request event. Keep both for immediate branch feedback today; narrow push branches or add event-aware concurrency if runner usage becomes material. |
 
 ### Deferred by Design
 
