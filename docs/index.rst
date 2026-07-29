@@ -11,6 +11,7 @@ Python package for handling and analyzing Mutation Annotation Format (MAF) files
    pivottable
    oncoplot
    ai_assistants
+   agent_test_report
 
 .. toctree::
    :maxdepth: 2
