@@ -1,0 +1,4 @@
+interface:
+  display_name: "pymaftools"
+  short_description: "Build and validate cancer-genomics analyses"
+  default_prompt: "Use $pymaftools to build a reproducible mutation-analysis workflow."

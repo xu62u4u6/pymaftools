@@ -448,6 +448,24 @@ make test-coverage     # With coverage report
 
 Tests run on GitHub Actions for Python 3.10-3.12 (stable) and 3.13-3.14 (experimental).
 
+## AI Assistants
+
+pymaftools ships a reusable `bioinformatics-researcher` agent and a
+package-specific Skill from the same versioned source as the library. Preview or
+install them with:
+
+```bash
+pymaftools-ai list
+pymaftools-ai install --target codex --dry-run
+pymaftools-ai install --target codex
+```
+
+Use `--target claude` for Claude or `--scope project` to install into a checked
+out project's `.codex` or `.claude` directory. Existing different files are not
+overwritten unless `--force` is supplied. See the
+[AI assistants documentation](https://dionic.xyz/pymaftools/ai_assistants.html)
+for the asset responsibilities and installation model.
+
 ## License
 
 MIT License - see the LICENSE file for details.

@@ -25,7 +25,9 @@ Before opening the release pull request:
 - [ ] `CHANGELOG.md` has a `Version X.Y.Z` section at the top.
 - [ ] Release-note links in that changelog section work outside the repository
       file view; prefer absolute URLs.
-- [ ] `.claude/skills/pymaftools/SKILL.md` reflects public API changes.
+- [ ] `pymaftools/ai_assets/skills/pymaftools/SKILL.md` and its references
+      reflect public API changes.
+- [ ] `pymaftools-ai list` and a project-scoped dry-run succeed.
 - [ ] `README.md` and `docs/` reflect public API changes.
 - [ ] `DATA_SOURCES.md` provenance and checksums cover bundled data changes.
 
