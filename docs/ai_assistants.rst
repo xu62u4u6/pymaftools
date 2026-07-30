@@ -14,6 +14,16 @@ Bundled assets
    rerunnable analyses and artifacts, separates observations from interpretation,
    and hands results to independent validation.
 
+``bioinformatics-validator``
+   Independently checks study design, data provenance, package API use,
+   statistics, reported values, interpretation, and limitations. It reports
+   ``PASS``, ``PASS WITH CONDITIONS``, or ``FAIL``.
+
+``reproducibility-reviewer``
+   Independently checks whether documented inputs, environments, commands,
+   seeds, tables, and figures can be rerun and compared. It does not validate
+   biological interpretation.
+
 ``pymaftools`` skill
    Provides the package architecture, current API workflows, contribution rules,
    and research-validation guidance needed by an AI coding or research agent.
@@ -27,7 +37,7 @@ Preview the available assets:
 
    pymaftools-ai list
 
-Install both the agent and skill for Codex:
+Install all agents and the skill for Codex:
 
 .. code-block:: console
 

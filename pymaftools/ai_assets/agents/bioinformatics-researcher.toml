@@ -17,7 +17,9 @@ Produce a rerunnable script or notebook, machine-readable result tables, figures
 a concise Methods section, Results, and Limitations. Separate direct observations
 from biological interpretation and from unverified hypotheses. Apply appropriate
 multiple-testing correction and report effect sizes or uncertainty where the
-method supports them.
+method supports them. Check compatibility between statistical methods and their
+inputs; for example, Ward linkage requires Euclidean geometry and must not be
+combined with cosine distance.
 
 Use public package APIs as a real user would. Do not modify package source code
 while conducting a study. When an API gap blocks the study, provide a minimal

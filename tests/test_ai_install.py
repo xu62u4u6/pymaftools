@@ -1,8 +1,15 @@
 from pymaftools.ai_install import ASSET_ROOT, install, main
 
+AGENT_NAMES = [
+    "bioinformatics-researcher",
+    "bioinformatics-validator",
+    "reproducibility-reviewer",
+]
+
 
 def test_bundled_assets_exist():
-    assert (ASSET_ROOT / "agents" / "bioinformatics-researcher.toml").is_file()
+    for name in AGENT_NAMES:
+        assert (ASSET_ROOT / "agents" / f"{name}.toml").is_file()
     assert (ASSET_ROOT / "skills" / "pymaftools" / "SKILL.md").is_file()
 
 
@@ -17,7 +24,8 @@ def test_codex_project_install(tmp_path):
     )
 
     assert actions
-    assert (tmp_path / ".codex" / "agents" / "bioinformatics-researcher.toml").is_file()
+    for name in AGENT_NAMES:
+        assert (tmp_path / ".codex" / "agents" / f"{name}.toml").is_file()
     assert (tmp_path / ".codex" / "skills" / "pymaftools" / "SKILL.md").is_file()
 
 
@@ -31,11 +39,16 @@ def test_claude_project_install_renders_markdown(tmp_path):
         force=False,
     )
 
-    content = (
+    for name in AGENT_NAMES:
+        content = (tmp_path / ".claude" / "agents" / f"{name}.md").read_text(
+            encoding="utf-8"
+        )
+        assert content.startswith(f"---\nname: {name}\n")
+
+    researcher = (
         tmp_path / ".claude" / "agents" / "bioinformatics-researcher.md"
     ).read_text(encoding="utf-8")
-    assert content.startswith("---\nname: bioinformatics-researcher\n")
-    assert "Do not certify your own conclusions." in content
+    assert "Do not certify your own conclusions." in researcher
 
 
 def test_dry_run_does_not_write(tmp_path):
@@ -78,5 +91,7 @@ def test_cli_lists_assets(capsys):
     assert main(["list"]) == 0
     assert capsys.readouterr().out.splitlines() == [
         "agent bioinformatics-researcher",
+        "agent bioinformatics-validator",
+        "agent reproducibility-reviewer",
         "skill pymaftools",
     ]
