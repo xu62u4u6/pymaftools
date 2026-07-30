@@ -1,202 +1,194 @@
-AI Agent test report
-====================
+AI Agent 測試報告
+=================
 
-:Date: 2026-07-30
-:Branch: ``dev``
-:Overall result: **Partial pass**
+:日期: 2026-07-30
+:分支: ``dev``
+:整體結果: **部分通過**
 
-Scope
------
+測試範圍
+--------
 
-This report tests the packaged AI workflow:
+本報告測試 PyMAFTools 內建的 AI 協作流程：
 
 ``bioinformatics-researcher`` → ``bioinformatics-validator`` →
-``reproducibility-reviewer``.
+``reproducibility-reviewer``。
 
-It distinguishes file-format checks, actual Agent runtime loading, and
-role-behavior tests. A generic subagent with a matching task name does not count
-as a custom-role runtime pass.
+測試分成三個層次：檔案格式、Agent 實際載入，以及角色行為。只有任務名稱相同的
+通用子 Agent，不算自訂角色測試通過。
 
-Packaged agents
----------------
+內建 Agent
+----------
 
 ``bioinformatics-researcher``
-   Designs and runs exploratory, reproducible bioinformatics studies and hands
-   the results to independent review.
+   設計並執行探索性、可重現的生物資訊研究，再把結果交給獨立審查。
 
 ``bioinformatics-validator``
-   Independently checks scientific design, API use, statistics, results,
-   interpretation, and limitations.
+   獨立檢查研究設計、API 使用方式、統計方法、結果、生物解釋與限制。
 
 ``reproducibility-reviewer``
-   Independently checks whether another person can rerun the workflow and
-   reproduce material outputs.
+   獨立檢查其他人能否依文件重跑流程，並產生實質一致的結果。
 
-Automated tests
----------------
+自動化測試
+----------
 
 .. list-table::
    :header-rows: 1
    :widths: 32 18 50
 
-   * - Test
-     - Result
-     - Evidence
-   * - Agent TOML schema
-     - PASS
-     - All three files contain ``name``, ``description``, and
+   * - 測試項目
+     - 結果
+     - 證據
+   * - Agent TOML 格式
+     - 通過
+     - 三個檔案都包含 ``name``、``description`` 與
        ``developer_instructions``
-   * - Installer unit tests
-     - PASS
-     - ``6 passed`` in ``tests/test_ai_install.py``
-   * - Ruff static checks
-     - PASS
-     - Installer and tests passed
-   * - Full project test suite
-     - PASS
-     - 264 passed, 7 skipped, and 10 deselected
-   * - Wheel package contents
-     - PASS
-     - Offline wheel build contained all three Agent definitions
-   * - Codex project installation
-     - PASS
-     - All three TOML files were installed into ``.codex/agents``
-   * - Claude project installation
-     - PASS
-     - All three Markdown files were installed into ``.claude/agents``
+   * - 安裝器單元測試
+     - 通過
+     - ``tests/test_ai_install.py`` 共 6 項測試通過
+   * - Ruff 靜態檢查
+     - 通過
+     - 安裝器與測試程式皆通過
+   * - 完整專案測試
+     - 通過
+     - 264 項通過、7 項跳過、10 項未選取
+   * - Wheel 套件內容
+     - 通過
+     - 離線建置的 wheel 包含三個 Agent 定義檔
+   * - Codex 專案安裝
+     - 通過
+     - 三個 TOML 都成功安裝到 ``.codex/agents``
+   * - Claude 專案安裝
+     - 通過
+     - 三個 Markdown 都成功安裝到 ``.claude/agents``
 
-Claude runtime tests
---------------------
+Claude 實際執行測試
+-------------------
 
-Environment: Claude Code 2.1.170.
+測試環境：Claude Code 2.1.170。
 
-Each generated Agent was loaded by its real ``--agent <name>`` option. The
-command returned success and each Agent answered from role-specific
-instructions:
+三個 Agent 都透過真正的 ``--agent <name>`` 參數載入。指令成功結束，而且每個
+Agent 都依自己的角色指令回答：
 
 .. list-table::
    :header-rows: 1
    :widths: 32 22 46
 
    * - Agent
-     - Runtime result
-     - Role evidence
+     - 執行結果
+     - 角色證據
    * - ``bioinformatics-researcher``
-     - PASS
-     - Refused to certify its own conclusions and required both independent
-       reviewers
+     - 通過
+     - 拒絕替自己的結論背書，並要求交給兩個獨立審查角色
    * - ``bioinformatics-validator``
-     - PASS
-     - Returned only ``PASS``, ``PASS WITH CONDITIONS``, and ``FAIL`` as its
-       allowed statuses
+     - 通過
+     - 只使用 ``PASS``、``PASS WITH CONDITIONS`` 與 ``FAIL`` 三種審查狀態
    * - ``reproducibility-reviewer``
-     - PASS
-     - Refused to validate biological interpretation
+     - 通過
+     - 拒絕審查生物學解釋，只處理可重現性
 
-Claude role-behavior tests
---------------------------
-
-No project files were sent to Claude. The tests used synthetic prompts without
-private repository content.
-
-Researcher
-~~~~~~~~~~
-
-Result: **PASS after remediation**
-
-The researcher produced an exploratory six-sample MAF study specification,
-provenance fields, filtering rules, machine-readable outputs, limitations, and
-handoff checklists. It clearly marked the example as synthetic and non-clinical.
-
-The initial run found one material method problem: it combined
-cosine distance with Ward linkage. Ward linkage assumes Euclidean geometry, so
-that clustering plan was invalid. The researcher definition now explicitly
-requires checking method/input compatibility and prohibits Ward linkage with
-cosine distance. The focused Claude runtime regression returned
-``Euclidean distance + Ward linkage`` and correctly explained why the pair is
-mathematically compatible.
-
-Validator
-~~~~~~~~~
-
-Result: **PASS**
-
-Given an intentionally invalid six-sample report, the validator:
-
-* rejected an unsupported causal survival claim;
-* flagged the missing cohort, reference genome, test, effect size, confidence
-  interval, and multiple-testing correction;
-* refused to recompute absent data; and
-* returned ``FAIL``.
-
-Reproducibility reviewer
-~~~~~~~~~~~~~~~~~~~~~~~~
-
-Result: **PASS**
-
-Given an intentionally incomplete ``analysis.py data.maf`` workflow, the
-reviewer flagged missing input provenance and checksum, dependency versions,
-random seed, exact command, genome build, expected outputs, and comparison
-tolerances. It correctly returned ``FAIL``.
-
-Codex runtime tests
+Claude 角色行為測試
 -------------------
 
-Environment: Codex CLI 0.145.0.
+測試沒有把專案檔案傳給 Claude，而是使用不含私人 repository 內容的合成案例。
 
-Result: **FAIL — custom role selection is unavailable in this runtime**
+研究員
+~~~~~~
 
-The following paths were tested:
+結果：**修正後通過**
 
-#. Standalone Agent TOML files under ``.codex/agents``.
-#. A real isolated Git repository.
-#. Default multi-agent mode.
-#. Stable ``multi_agent_v2``.
-#. Explicit ``[agents.<role>]`` registrations in ``.codex/config.toml``.
+研究員針對六個合成 MAF 樣本，產生探索性研究規格、資料來源欄位、過濾規則、
+機器可讀輸出、研究限制與交接清單。它也清楚標示資料為合成資料，不得用於臨床
+判斷。
 
-Codex could create a generic child thread, but the child session metadata showed
-``agent_role: null`` and did not contain the packaged
-``developer_instructions``. The available ``spawn_agent`` interface had no
-``role`` or ``agent_type`` parameter. Explicit registration did not add one.
+第一次測試發現一個實質方法錯誤：研究員把 cosine distance 與 Ward linkage
+搭配使用。Ward linkage 假設資料位於 Euclidean 空間，因此這個組合無效。
 
-Enabling the under-development ``use_agent_identity`` feature was also tested.
-It attempted remote identity registration but still did not expose the custom
-role, so it is not a valid workaround.
+研究員定義已加入方法相容性防呆，明確禁止 Ward linkage 搭配 cosine distance。
+修正後的 Claude 回歸測試回傳 ``Euclidean distance + Ward linkage``，並正確
+說明兩者在數學上相容。
 
-This is a runtime compatibility gap: the packaged TOML matches the current
-documented custom-Agent schema, but this installed Codex CLI cannot select that
-role through its exposed spawn interface. A generic child with a similar name
-must not be reported as a successful custom-Agent run.
+生物資訊驗證員
+~~~~~~~~~~~~~~
 
-Other confirmed limitations
----------------------------
+結果：**通過**
 
-* Claude successfully loaded all three roles, but a real PyMAFTools study was
-  not sent to Claude because the safety layer rejected disclosing repository
-  contents to the external model. Synthetic behavior tests were used instead.
-* The existing PyMAFTools ``compare_cohorts()`` API reports odds ratio, p-value,
-  and FDR but not a confidence interval.
-* The full Sphinx ``-W`` build still contains an existing unknown ``mpltype``
-  role in ``api/plot`` and offline intersphinx warnings. The Agent report itself
-  parses successfully.
+驗證員收到一份刻意包含錯誤的六樣本研究報告後：
 
-Acceptance criteria
--------------------
+* 拒絕沒有研究設計支持的生存因果結論；
+* 指出缺少 cohort 定義、參考基因組、統計檢定、effect size、confidence
+  interval 與多重檢定校正；
+* 在沒有資料時拒絕假裝重新計算；以及
+* 最後正確回傳 ``FAIL``。
 
-The packaged workflow is fully passing only when:
+可重現性審查員
+~~~~~~~~~~~~~~
 
-#. Codex exposes a custom-role selector and the child session records the
-   expected non-null role plus the packaged developer instructions.
-#. The researcher continues to select statistically compatible
-   distance/linkage pairs in runtime regression tests.
-#. A policy-approved end-to-end study is handed from researcher to both
-   independent reviewers.
+結果：**通過**
 
-Official format source
-----------------------
+審查員收到刻意不完整的 ``analysis.py data.maf`` 流程後，正確指出缺少：
 
-The current OpenAI Codex manual documents project agents under
-``.codex/agents`` with required ``name``, ``description``, and
-``developer_instructions`` fields:
-`OpenAI Codex subagents documentation
-<https://learn.chatgpt.com/docs/agent-configuration/subagents>`_.
+* 輸入資料來源與 checksum；
+* 相依套件版本；
+* random seed；
+* 完整執行指令；
+* 參考基因組版本；
+* 預期輸出；以及
+* 結果比較容許誤差。
+
+最後正確回傳 ``FAIL``。
+
+Codex 實際執行測試
+------------------
+
+測試環境：Codex CLI 0.145.0。
+
+結果：**失敗——目前 runtime 無法選擇自訂角色**
+
+已測試以下方式：
+
+#. 將獨立 Agent TOML 放在 ``.codex/agents``。
+#. 在真正的隔離 Git repository 中執行。
+#. 使用預設 multi-agent 模式。
+#. 啟用 stable 的 ``multi_agent_v2``。
+#. 在 ``.codex/config.toml`` 明確加入 ``[agents.<role>]`` 註冊。
+
+Codex 可以建立通用 child thread，但 child session metadata 顯示
+``agent_role: null``，也沒有載入套件提供的 ``developer_instructions``。
+目前的 ``spawn_agent`` 介面沒有 ``role`` 或 ``agent_type`` 參數；明確註冊角色後
+仍然沒有增加這些參數。
+
+另外也測試了尚在開發中的 ``use_agent_identity``。它會嘗試註冊遠端 Agent
+identity，但仍無法選擇專案內的自訂角色，因此不是可用的解法。
+
+這是 runtime 相容性缺口：套件中的 TOML 符合目前官方文件的自訂 Agent 格式，
+但這個 Codex CLI 版本無法透過現有的 spawn 介面選擇角色。名稱相似的通用 child
+不能宣稱為自訂 Agent 測試通過。
+
+其他已確認限制
+--------------
+
+* Claude 已成功載入三個角色，但安全層不允許把 PyMAFTools repository 內容傳給
+  外部模型，所以改用合成案例測試角色行為。
+* PyMAFTools 現有的 ``compare_cohorts()`` 會回傳 odds ratio、p-value 與 FDR，
+  但沒有 confidence interval。
+* 完整 Sphinx ``-W`` 建置仍有既有的 ``api/plot`` 未知 ``mpltype`` role，以及
+  離線 intersphinx 警告。Agent 報告本身可以正常解析。
+
+完整通過條件
+------------
+
+必須滿足以下條件，整套流程才算完全通過：
+
+#. Codex 提供自訂角色選擇參數，而且 child session 記錄非空的正確角色與套件內
+   ``developer_instructions``。
+#. 研究員在後續回歸測試中持續選擇統計上相容的 distance/linkage 組合。
+#. 在政策允許的情況下，完成一次真實研究，並把研究結果依序交給兩個獨立審查
+   Agent。
+
+官方格式來源
+------------
+
+目前 OpenAI Codex 手冊規定專案 Agent 應放在 ``.codex/agents``，並必須包含
+``name``、``description`` 與 ``developer_instructions``：
+`OpenAI Codex subagents 文件
+<https://learn.chatgpt.com/docs/agent-configuration/subagents>`_。
