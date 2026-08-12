@@ -66,6 +66,8 @@ class CopyNumberVariationTable(PivotTable):
                     binary_data.astype(bool),
                     self.feature_metadata,
                     self.sample_metadata,
+                    observation_mask=self.observation_mask,
+                    sample_manifest=self.sample_manifest,
                 )
         return super().to_binary_table(threshold=threshold, comparison=comparison)
 
@@ -94,6 +96,12 @@ class CopyNumberVariationTable(PivotTable):
         cnv_table = cls(table.values, index=table.index, columns=table.columns)
         cnv_table.sample_metadata = table.sample_metadata.copy()
         cnv_table.feature_metadata = table.feature_metadata.copy()
+        cnv_table.observation_mask = (
+            None if table.observation_mask is None else table.observation_mask.copy()
+        )
+        cnv_table.sample_manifest = (
+            None if table.sample_manifest is None else table.sample_manifest.copy()
+        )
         cnv_table._validate_metadata()
         return cnv_table
 

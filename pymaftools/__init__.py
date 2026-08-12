@@ -13,9 +13,12 @@ from .core.Cohort import Cohort
 from .core.CopyNumberVariationTable import CopyNumberVariationTable
 from .core.ExpressionTable import ExpressionTable
 from .core.MAF import MAF
+from .core.ObservationMask import ObservationMask
 from .core.PivotTable import PivotTable, capture_size
+from .core.SampleManifest import SampleManifest
 from .core.SignatureTable import SignatureTable
 from .core.SmallVariationTable import SmallVariationTable
+from .core.TMBAudit import TMBAudit
 from .datasets import (
     example_maf_path,
     example_table_path,
@@ -97,6 +100,9 @@ __all__ = [
     "PivotTable",
     "capture_size",
     "MAF",
+    "SampleManifest",
+    "ObservationMask",
+    "TMBAudit",
     "CopyNumberVariationTable",
     "SmallVariationTable",
     "SimilarityMatrix",

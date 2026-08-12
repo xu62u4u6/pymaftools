@@ -49,6 +49,14 @@ def to_h5(
             store.put("data", pd.DataFrame(table_to_save))
             store.put("sample_metadata", table_to_save.sample_metadata)
             store.put("feature_metadata", table_to_save.feature_metadata)
+            if table_to_save.sample_manifest is not None:
+                store.put(
+                    "sample_manifest", table_to_save.sample_manifest.to_frame()
+                )
+            if table_to_save.observation_mask is not None:
+                store.put(
+                    "observation_mask", table_to_save.observation_mask.to_frame()
+                )
 
     print(f"[PivotTable] saved to {h5_path}")
 
@@ -90,6 +98,12 @@ def read_h5(table_cls, base_table_cls, h5_path: str | Path):
         data = store.get("data")
         sample_metadata = store.get("sample_metadata")
         feature_metadata = store.get("feature_metadata")
+        sample_manifest_frame = (
+            store.get("sample_manifest") if "/sample_manifest" in keys else None
+        )
+        observation_mask_frame = (
+            store.get("observation_mask") if "/observation_mask" in keys else None
+        )
 
         resolved_table_cls = table_cls
         if table_cls is base_table_cls and "/table_metadata" in keys:
@@ -103,6 +117,16 @@ def read_h5(table_cls, base_table_cls, h5_path: str | Path):
     table = resolved_table_cls(data)
     table.sample_metadata = sample_metadata.reindex(table.columns)
     table.feature_metadata = feature_metadata.reindex(table.index)
+    if sample_manifest_frame is not None:
+        from .SampleManifest import SampleManifest
+
+        table.sample_manifest = SampleManifest(sample_manifest_frame)
+    if observation_mask_frame is not None:
+        from .ObservationMask import ObservationMask
+
+        table.observation_mask = ObservationMask(
+            observation_mask_frame.reindex(index=table.index, columns=table.columns)
+        )
     table._validate_metadata()
     print(f"[PivotTable] loaded from {h5_path}")
     return table

@@ -463,13 +463,23 @@ class Cohort:
                 ):
                     storage_key = row["storage_key"]
                     table_copy = table.copy().rename_index_and_columns()
-                    store.put(f"{storage_key}/data", table_copy.T)
+                    store.put(f"{storage_key}/data", pd.DataFrame(table_copy).T)
                     store.put(
                         f"{storage_key}/sample_metadata", table_copy.sample_metadata
                     )
                     store.put(
                         f"{storage_key}/feature_metadata", table_copy.feature_metadata
                     )
+                    if table_copy.sample_manifest is not None:
+                        store.put(
+                            f"{storage_key}/sample_manifest",
+                            table_copy.sample_manifest.to_frame(),
+                        )
+                    if table_copy.observation_mask is not None:
+                        store.put(
+                            f"{storage_key}/observation_mask",
+                            table_copy.observation_mask.to_frame(),
+                        )
 
         print(f"[Cohort] saved to {h5_path}")
 
@@ -516,6 +526,9 @@ class Cohort:
                 data = store.get(f"{storage_key}/data").T
                 sample_metadata = store.get(f"{storage_key}/sample_metadata")
                 feature_metadata = store.get(f"{storage_key}/feature_metadata")
+                keys = set(store.keys())
+                sample_manifest_key = f"/{storage_key}/sample_manifest"
+                observation_mask_key = f"/{storage_key}/observation_mask"
 
                 table_cls = PivotTable
                 if has_class_info:
@@ -534,6 +547,22 @@ class Cohort:
                 pivot = table_cls(data)
                 pivot.sample_metadata = sample_metadata
                 pivot.feature_metadata = feature_metadata
+                if sample_manifest_key in keys:
+                    from .SampleManifest import SampleManifest
+
+                    pivot.sample_manifest = SampleManifest(
+                        store.get(sample_manifest_key)
+                    )
+                if observation_mask_key in keys:
+                    from .ObservationMask import ObservationMask
+
+                    pivot.observation_mask = ObservationMask(
+                        store.get(observation_mask_key).reindex(
+                            index=pivot.index,
+                            columns=pivot.columns,
+                        )
+                    )
+                pivot._validate_metadata()
 
                 cohort.add_table(pivot, table_name)
 

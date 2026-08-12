@@ -27,7 +27,9 @@ if TYPE_CHECKING:
 
     from ..plot.PivotStatsPlot import PivotStatsPlot
     from .MAF import MAF
+    from .ObservationMask import ObservationMask
     from .PairwiseMatrix import CooccurrenceMatrix, SimilarityMatrix
+    from .SampleManifest import SampleManifest
 
 
 class PivotTable(pd.DataFrame):
@@ -56,7 +58,12 @@ class PivotTable(pd.DataFrame):
     """
 
     # Store metadata attribute names for pandas inheritance
-    _metadata: List[str] = ["feature_metadata", "sample_metadata"]
+    _metadata: List[str] = [
+        "feature_metadata",
+        "sample_metadata",
+        "observation_mask",
+        "sample_manifest",
+    ]
 
     # Registry of PivotTable subclasses keyed by class name. Populated
     # automatically via __init_subclass__ so that Cohort.read_hdf5 can
@@ -96,6 +103,16 @@ class PivotTable(pd.DataFrame):
             # Initialize empty metadata DataFrames with matching indices
             self.feature_metadata: pd.DataFrame = pd.DataFrame(index=self.index)
             self.sample_metadata: pd.DataFrame = pd.DataFrame(index=self.columns)
+
+        self.observation_mask: ObservationMask | None = None
+        self.sample_manifest: SampleManifest | None = None
+        if getattr(data, "observation_mask", None) is not None:
+            self.observation_mask = data.observation_mask.reindex(
+                features=self.index,
+                samples=self.columns,
+            )
+        if getattr(data, "sample_manifest", None) is not None:
+            self.sample_manifest = data.sample_manifest.copy()
 
     def info(self) -> str:
         """Return a summary string of the PivotTable structure."""
@@ -169,9 +186,30 @@ class PivotTable(pd.DataFrame):
                             attr,
                             source_val.reindex(self.columns, fill_value=pd.NA),
                         )
+                    elif attr == "observation_mask":
+                        source_frame = source_val.to_frame()
+                        if self.index.isin(source_frame.index).all() and self.columns.isin(
+                            source_frame.columns
+                        ).all():
+                            setattr(
+                                self,
+                                attr,
+                                source_val.reindex(
+                                    features=self.index,
+                                    samples=self.columns,
+                                ),
+                            )
+                        else:
+                            setattr(self, attr, None)
+                    elif attr == "sample_manifest":
+                        if self.columns.isin(source_val.eligible_samples).all():
+                            setattr(self, attr, source_val.copy())
+                        else:
+                            setattr(self, attr, None)
                     else:
-                        # For any other metadata attributes, just copy
                         setattr(self, attr, source_val.copy())
+                elif attr in {"observation_mask", "sample_manifest"}:
+                    setattr(self, attr, None)
 
     @property
     def plot(self) -> "PivotStatsPlot":
@@ -210,6 +248,46 @@ class PivotTable(pd.DataFrame):
 
         if not self.sample_metadata.index.equals(self.columns):
             raise ValueError("sample_metadata index does not match PivotTable columns.")
+
+        if self.observation_mask is not None:
+            self.observation_mask.validate_for(self)
+
+        if self.sample_manifest is not None:
+            unknown = self.columns.difference(self.sample_manifest.eligible_samples)
+            if not unknown.empty:
+                raise ValueError(
+                    "PivotTable contains sample(s) outside the eligible "
+                    f"SampleManifest universe: {unknown.tolist()}."
+                )
+
+    def with_scientific_context(
+        self,
+        *,
+        sample_manifest: "SampleManifest | None" = None,
+        observation_mask: "ObservationMask | None" = None,
+    ) -> Self:
+        """Attach validated sample-universe and observation-state contracts."""
+        from .ObservationMask import ObservationMask
+        from .SampleManifest import SampleManifest
+
+        if sample_manifest is not None and not isinstance(
+            sample_manifest, SampleManifest
+        ):
+            raise TypeError("sample_manifest must be a SampleManifest.")
+        if observation_mask is not None and not isinstance(
+            observation_mask, ObservationMask
+        ):
+            raise TypeError("observation_mask must be an ObservationMask.")
+
+        table = self.copy()
+        table.sample_manifest = (
+            None if sample_manifest is None else sample_manifest.copy()
+        )
+        table.observation_mask = (
+            None if observation_mask is None else observation_mask.copy()
+        )
+        table._validate_metadata()
+        return table
 
     def rename_index_and_columns(
         self, index_name: str = "feature", columns_name: str = "sample"
@@ -505,6 +583,12 @@ class PivotTable(pd.DataFrame):
         pivot_table = super().copy(deep=deep)
         pivot_table.feature_metadata = self.feature_metadata.copy(deep=deep)
         pivot_table.sample_metadata = self.sample_metadata.copy(deep=deep)
+        pivot_table.observation_mask = (
+            None if self.observation_mask is None else self.observation_mask.copy()
+        )
+        pivot_table.sample_manifest = (
+            None if self.sample_manifest is None else self.sample_manifest.copy()
+        )
         return pivot_table
 
     @classmethod
@@ -516,6 +600,8 @@ class PivotTable(pd.DataFrame):
         *,
         feature_fill: Any = np.nan,
         sample_fill: Any = np.nan,
+        observation_mask: "ObservationMask | None" = None,
+        sample_manifest: "SampleManifest | None" = None,
     ) -> "PivotTable":
         """
         Create a PivotTable from a DataFrame with synchronized metadata.
@@ -553,6 +639,15 @@ class PivotTable(pd.DataFrame):
         new.sample_metadata = sample_meta_src.reindex(
             df.columns, fill_value=sample_fill
         )
+        new.observation_mask = (
+            None
+            if observation_mask is None
+            else observation_mask.reindex(features=df.index, samples=df.columns)
+        )
+        new.sample_manifest = (
+            None if sample_manifest is None else sample_manifest.copy()
+        )
+        new._validate_metadata()
         return new
 
     def __getitem__(
@@ -643,6 +738,8 @@ class PivotTable(pd.DataFrame):
             result,
             self.feature_metadata,
             self.sample_metadata,
+            observation_mask=self.observation_mask,
+            sample_manifest=self.sample_manifest,
         )
 
     def subset(
@@ -766,7 +863,11 @@ class PivotTable(pd.DataFrame):
         result = self[features, samples]
         if type(result) is not type(self):
             result = type(self)._from_dataframe(
-                result, result.feature_metadata, result.sample_metadata
+                result,
+                result.feature_metadata,
+                result.sample_metadata,
+                observation_mask=result.observation_mask,
+                sample_manifest=result.sample_manifest,
             )
         return result
 
@@ -861,6 +962,8 @@ class PivotTable(pd.DataFrame):
             self.sample_metadata,
             feature_fill=feature_fill_value,
             sample_fill=sample_fill_value,
+            observation_mask=self.observation_mask,
+            sample_manifest=self.sample_manifest,
         )
 
     @staticmethod
@@ -924,9 +1027,26 @@ class PivotTable(pd.DataFrame):
         """
         if join not in {"inner", "outer"}:
             raise ValueError("join must be either 'inner' or 'outer'.")
+        if not tables:
+            raise ValueError("tables must contain at least one PivotTable.")
+
+        masks = [table.observation_mask for table in tables]
+        manifests = [table.sample_manifest for table in tables]
+        if any(mask is not None for mask in masks) and not all(
+            mask is not None for mask in masks
+        ):
+            raise ValueError(
+                "Cannot merge tables with mixed ObservationMask coverage."
+            )
+        if any(manifest is not None for manifest in manifests) and not all(
+            manifest is not None for manifest in manifests
+        ):
+            raise ValueError(
+                "Cannot merge tables with mixed SampleManifest coverage."
+            )
 
         # Step 1: merge main data (along sample axis)
-        merged_data = pd.concat(tables, axis=1)
+        merged_data = pd.concat([pd.DataFrame(table) for table in tables], axis=1)
 
         if not merged_data.columns.is_unique:
             duplicated = merged_data.columns[merged_data.columns.duplicated()].tolist()
@@ -964,6 +1084,49 @@ class PivotTable(pd.DataFrame):
             feature_fill_value=feature_fill_value,
             sample_fill_value=sample_fill_value,
         )
+
+        merged_mask = None
+        if all(mask is not None for mask in masks):
+            from .ObservationMask import ObservationMask
+
+            mask_frame = pd.concat(
+                [
+                    mask.to_frame().reindex(index=features, fill_value=False)
+                    for mask in masks
+                ],
+                axis=1,
+            ).reindex(index=features, columns=samples, fill_value=False)
+            merged_mask = ObservationMask(mask_frame)
+
+        merged_manifest = None
+        if all(manifest is not None for manifest in manifests):
+            from .SampleManifest import SampleManifest
+
+            manifest_frame = pd.concat(
+                [manifest.to_frame() for manifest in manifests], axis=0
+            )
+            duplicate_ids = manifest_frame.index[
+                manifest_frame.index.duplicated(keep=False)
+            ].unique()
+            for sample_id in duplicate_ids:
+                rows = manifest_frame.loc[[sample_id]]
+                first = rows.iloc[0]
+                equal = rows.eq(first) | (rows.isna() & first.isna())
+                if not equal.all(axis=None):
+                    raise ValueError(
+                        "Conflicting SampleManifest rows for sample "
+                        f"'{sample_id}'."
+                    )
+            manifest_frame = manifest_frame.loc[
+                ~manifest_frame.index.duplicated(keep="first")
+            ]
+            merged_manifest = SampleManifest(manifest_frame)
+
+        if merged_mask is not None or merged_manifest is not None:
+            merged = merged.with_scientific_context(
+                sample_manifest=merged_manifest,
+                observation_mask=merged_mask,
+            )
 
         return merged
 
@@ -1034,7 +1197,10 @@ class PivotTable(pd.DataFrame):
         )
         return table
 
-    def calculate_feature_frequency(self) -> pd.Series[float]:
+    def calculate_feature_frequency(
+        self,
+        observation_mask: "ObservationMask | None" = None,
+    ) -> pd.Series[float]:
         """
         Calculate mutation frequency for each feature.
 
@@ -1092,12 +1258,15 @@ class PivotTable(pd.DataFrame):
         """
         from . import pivot_frequency
 
-        return pivot_frequency.calculate_feature_frequency(self)
+        return pivot_frequency.calculate_feature_frequency(
+            self, observation_mask=observation_mask
+        )
 
     def add_freq(
         self,
         groups: Optional[Dict[str, "PivotTable"]] = None,
         group_col: Optional[str] = None,
+        observation_mask: "ObservationMask | None" = None,
     ) -> "PivotTable":
         """
         Add mutation frequency columns to feature_metadata.
@@ -1179,7 +1348,11 @@ class PivotTable(pd.DataFrame):
         from . import pivot_frequency
 
         return pivot_frequency.add_freq(
-            self, PivotTable, groups=groups, group_col=group_col
+            self,
+            PivotTable,
+            groups=groups,
+            group_col=group_col,
+            observation_mask=observation_mask,
         )
 
     def add_exon_size(
@@ -1617,6 +1790,8 @@ class PivotTable(pd.DataFrame):
             binary_data.astype(bool),
             self.feature_metadata,
             self.sample_metadata,
+            observation_mask=self.observation_mask,
+            sample_manifest=self.sample_manifest,
         )
 
     def mutation_enrichment_test(

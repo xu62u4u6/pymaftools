@@ -13,6 +13,8 @@ from .variant_groups import FUNCTIONAL_GROUP, FUNCTIONAL_ORDER
 
 if TYPE_CHECKING:
     from ..plot.MafPlot import MafPlot
+    from .SampleManifest import SampleManifest
+    from .TMBAudit import TMBAudit
 
 
 class MAF(pd.DataFrame):
@@ -299,6 +301,142 @@ class MAF(pd.DataFrame):
         """
         return self[self.Variant_Classification.isin(mutation_types)]
 
+    def calculate_tmb_audit(
+        self,
+        sample_manifest: "SampleManifest",
+        *,
+        callable_mb_col: str = "callable_mb",
+        pass_col: str | None = None,
+        pass_values: tuple[object, ...] = ("PASS",),
+        somatic_col: str | None = None,
+        somatic_values: tuple[object, ...] = ("Somatic", "SOMATIC", True),
+        variant_classifications: list[str] | None = None,
+        genome_build_col: str | None = None,
+        expected_genome_build: str | None = None,
+        deduplicate: bool = True,
+    ) -> "TMBAudit":
+        """Calculate TMB with an event-level inclusion and exclusion ledger.
+
+        Unlike :meth:`PivotTable.calculate_tmb`, this method requires an
+        explicit sample universe and per-sample callable territory. Optional
+        event filters are applied before the numerator is counted, and every
+        excluded row retains a machine-readable reason.
+
+        Parameters
+        ----------
+        sample_manifest : SampleManifest
+            Complete sample universe. Eligible samples with zero events remain
+            in the output summary.
+        callable_mb_col : str, default "callable_mb"
+            Positive callable territory in megabases stored in the manifest.
+        pass_col, somatic_col : str, optional
+            Event columns used for quality and somatic-status filtering. A
+            named column is required to exist; no undocumented guessing occurs.
+        variant_classifications : list of str, optional
+            Allowed ``Variant_Classification`` values. For nonsynonymous TMB,
+            pass :attr:`MAF.nonsynonymous_types` explicitly.
+        genome_build_col, expected_genome_build : str, optional
+            Both must be provided together to enforce a single build.
+        deduplicate : bool, default True
+            Exclude repeated sample/coordinate/allele events from the numerator.
+
+        Returns
+        -------
+        TMBAudit
+            Event ledger and per-sample TMB summary.
+        """
+        from .SampleManifest import SampleManifest
+        from .TMBAudit import TMBAudit
+
+        if not isinstance(sample_manifest, SampleManifest):
+            raise TypeError("sample_manifest must be a SampleManifest.")
+        if "sample_ID" not in self.columns:
+            raise ValueError("MAF must contain sample_ID for auditable TMB.")
+
+        sample_manifest.validate_event_samples(self["sample_ID"])
+        manifest = sample_manifest.eligible_frame()
+        if callable_mb_col not in manifest.columns:
+            raise ValueError(
+                f"SampleManifest must contain '{callable_mb_col}' for TMB."
+            )
+        callable_mb = pd.to_numeric(manifest[callable_mb_col], errors="coerce")
+        invalid_territory = callable_mb.isna() | (callable_mb <= 0)
+        if invalid_territory.any():
+            raise ValueError(
+                "Eligible samples must have positive callable territory; invalid "
+                f"sample(s): {callable_mb.index[invalid_territory].tolist()}."
+            )
+
+        if (genome_build_col is None) != (expected_genome_build is None):
+            raise ValueError(
+                "genome_build_col and expected_genome_build must be provided together."
+            )
+
+        events = pd.DataFrame(self).copy().reset_index(drop=True)
+        events["input_event_id"] = events.index
+        events["included"] = True
+        events["exclusion_reason"] = pd.Series(pd.NA, index=events.index, dtype="string")
+
+        def exclude(mask: pd.Series, reason: str) -> None:
+            newly_excluded = events["included"] & mask.fillna(True)
+            events.loc[newly_excluded, "included"] = False
+            events.loc[newly_excluded, "exclusion_reason"] = reason
+
+        for column in [pass_col, somatic_col, genome_build_col]:
+            if column is not None and column not in events.columns:
+                raise ValueError(f"MAF is missing requested TMB filter column '{column}'.")
+
+        if pass_col is not None:
+            exclude(~events[pass_col].isin(pass_values), "quality_filter")
+        if somatic_col is not None:
+            exclude(~events[somatic_col].isin(somatic_values), "non_somatic")
+        if variant_classifications is not None:
+            if "Variant_Classification" not in events.columns:
+                raise ValueError(
+                    "MAF is missing requested TMB filter column "
+                    "'Variant_Classification'."
+                )
+            exclude(
+                ~events["Variant_Classification"].isin(variant_classifications),
+                "variant_classification",
+            )
+        if genome_build_col is not None:
+            exclude(
+                events[genome_build_col].astype(str) != str(expected_genome_build),
+                "genome_build",
+            )
+
+        if deduplicate:
+            dedup_columns = ["sample_ID", *self.index_col]
+            missing_dedup = [c for c in dedup_columns if c not in events.columns]
+            if missing_dedup:
+                raise ValueError(
+                    f"MAF is missing TMB deduplication column(s): {missing_dedup}."
+                )
+            duplicate = events.duplicated(subset=dedup_columns, keep="first")
+            exclude(duplicate, "duplicate_event")
+
+        counts = (
+            events.loc[events["included"], "sample_ID"]
+            .value_counts()
+            .reindex(manifest.index, fill_value=0)
+            .astype(int)
+        )
+        summary = manifest.copy()
+        summary["mutation_count"] = counts
+        summary["callable_mb"] = callable_mb
+        summary["TMB"] = summary["mutation_count"] / summary["callable_mb"]
+        summary["tmb_pass_col"] = pass_col
+        summary["tmb_somatic_col"] = somatic_col
+        summary["tmb_variant_policy"] = (
+            "all"
+            if variant_classifications is None
+            else ",".join(sorted(variant_classifications))
+        )
+        summary["tmb_genome_build"] = expected_genome_build
+        summary["tmb_deduplicated"] = deduplicate
+        return TMBAudit(events=events, summary=summary)
+
     @staticmethod
     def merge_mutations(column: pd.Series) -> str | bool:
         """
@@ -330,7 +468,10 @@ class MAF(pd.DataFrame):
         elif len(non_false_mutations) == 1:
             return non_false_mutations.iloc[0]
 
-    def to_gene_table(self) -> "SmallVariationTable":
+    def to_gene_table(
+        self,
+        sample_manifest: "SampleManifest | None" = None,
+    ) -> "SmallVariationTable":
         """
         Create a gene-level (gene × sample) pivot table of variant classifications.
 
@@ -347,15 +488,18 @@ class MAF(pd.DataFrame):
         SmallVariationTable
             Gene × sample matrix with gene-level feature_metadata.
         """
-        return self.to_mutation_table().to_gene_level()
+        return self.to_mutation_table(sample_manifest=sample_manifest).to_gene_level()
 
-    def to_pivot_table(self) -> "SmallVariationTable":
+    def to_pivot_table(
+        self,
+        sample_manifest: "SampleManifest | None" = None,
+    ) -> "SmallVariationTable":
         """Alias for :meth:`to_gene_table` (gene-level pivot table).
 
         Kept for backward compatibility; ``to_gene_table`` is preferred in new
         code as its name states the granularity.
         """
-        return self.to_gene_table()
+        return self.to_gene_table(sample_manifest=sample_manifest)
 
     # Columns to carry into mutation-level feature_metadata
     _FEATURE_META_COLS = [
@@ -407,7 +551,10 @@ class MAF(pd.DataFrame):
         "callers",
     ]
 
-    def to_mutation_table(self) -> "SmallVariationTable":
+    def to_mutation_table(
+        self,
+        sample_manifest: "SampleManifest | None" = None,
+    ) -> "SmallVariationTable":
         """
         Create a mutation-level pivot table.
 
@@ -420,6 +567,13 @@ class MAF(pd.DataFrame):
         SmallVariationTable
             Pivot table indexed by individual mutations.
         """
+        if sample_manifest is not None:
+            from .SampleManifest import SampleManifest
+
+            if not isinstance(sample_manifest, SampleManifest):
+                raise TypeError("sample_manifest must be a SampleManifest.")
+            sample_manifest.validate_event_samples(self["sample_ID"])
+
         mutation_table = self.pivot_table(
             index=self.index,
             columns="sample_ID",
@@ -427,17 +581,34 @@ class MAF(pd.DataFrame):
             aggfunc="first",
         ).fillna(False)
         mutation_table = SmallVariationTable(mutation_table)
-        mutation_table.sample_metadata["mutations_count"] = self.mutations_count
+        if sample_manifest is not None:
+            mutation_table = mutation_table.reindex(
+                columns=sample_manifest.eligible_samples,
+                fill_value=False,
+                sample_fill_value=pd.NA,
+            )
+            mutation_table.sample_metadata = sample_manifest.eligible_frame()
+
+        mutation_table.sample_metadata["mutations_count"] = (
+            self.mutations_count.reindex(mutation_table.columns, fill_value=0)
+        )
         # Cache the per-functional-group TMB breakdown (the stacked-TMB source a
         # single pivot cell can't reconstruct). Aligns by sample label.
         for col, values in self.tmb_by_functional_group.items():
-            mutation_table.sample_metadata[col] = values
+            mutation_table.sample_metadata[col] = values.reindex(
+                mutation_table.columns, fill_value=0
+            )
 
         # Build feature_metadata from MAF rows (one row per unique mutation index)
         present_cols = [c for c in self._FEATURE_META_COLS if c in self.columns]
         deduped = self.reset_index().drop_duplicates(subset=["index"])
         deduped = deduped.set_index("index")[present_cols]
         mutation_table.feature_metadata = deduped.reindex(mutation_table.index)
+
+        if sample_manifest is not None:
+            mutation_table = mutation_table.with_scientific_context(
+                sample_manifest=sample_manifest
+            )
 
         return mutation_table
 

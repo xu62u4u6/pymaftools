@@ -74,6 +74,9 @@ class SmallVariationTable(PivotTable):
         gene_matrix = self.groupby(gene_col).agg(lambda col: MAF.merge_mutations(col))
         result = SmallVariationTable(gene_matrix)
         result.sample_metadata = self.sample_metadata.copy()
+        result.sample_manifest = (
+            None if self.sample_manifest is None else self.sample_manifest.copy()
+        )
 
         # Build gene-level feature_metadata
         fm = self.feature_metadata.copy()
@@ -89,4 +92,13 @@ class SmallVariationTable(PivotTable):
                 gene_fm[col] = fm[col].groupby(level=0).agg(agg_fn)
 
         result.feature_metadata = gene_fm.reindex(result.index)
+        if self.observation_mask is not None:
+            from .ObservationMask import ObservationMask
+
+            mask_frame = self.observation_mask.to_frame()
+            mask_frame.index = gene_col
+            result.observation_mask = ObservationMask(
+                mask_frame.groupby(level=0, sort=False).all().reindex(result.index)
+            )
+        result._validate_metadata()
         return result
