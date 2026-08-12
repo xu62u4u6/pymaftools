@@ -89,9 +89,7 @@ class TCGATableBuilder(ABC):
                     f"{sorted(str(value) for value in sample_types)}; "
                     "set sample_type explicitly"
                 )
-            sample_ids = {
-                f.get("sample_id") for f in candidates if f.get("sample_id")
-            }
+            sample_ids = {f.get("sample_id") for f in candidates if f.get("sample_id")}
             if len(sample_ids) > 1:
                 raise ValueError(
                     f"Case {case_id!r} has files from multiple specimens: "

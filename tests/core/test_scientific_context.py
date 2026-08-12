@@ -291,6 +291,32 @@ def test_patient_enrichment_rejects_repeated_eligible_patient():
         )
 
 
+def test_enrichment_rejects_omitted_eligible_zero_event_samples():
+    table = PivotTable([[True, False]], index=["TP53"], columns=["A1", "B1"])
+    table.sample_metadata["group"] = ["A", "B"]
+    manifest = SampleManifest(
+        pd.DataFrame(
+            {
+                "patient_id": ["P1", "P2", "P3", "P4"],
+                "eligible": True,
+            },
+            index=["A1", "A2-zero", "B1", "B2-zero"],
+        )
+    )
+    table = table.with_scientific_context(sample_manifest=manifest)
+
+    with pytest.raises(ValueError, match="every eligible SampleManifest sample"):
+        table.mutation_enrichment_test("group", "A", "B", minimum_mutations=0)
+
+
+def test_enrichment_rejects_identical_groups():
+    table = PivotTable([[True, False]], index=["TP53"], columns=["S1", "S2"])
+    table.sample_metadata["group"] = ["A", "B"]
+
+    with pytest.raises(ValueError, match="different groups"):
+        table.mutation_enrichment_test("group", "A", "A")
+
+
 def test_tmb_audit_keeps_zero_event_samples_and_deduplicates():
     manifest = SampleManifest(
         pd.DataFrame(

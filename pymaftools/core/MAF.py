@@ -375,7 +375,9 @@ class MAF(pd.DataFrame):
         events = pd.DataFrame(self).copy().reset_index(drop=True)
         events["input_event_id"] = events.index
         events["included"] = True
-        events["exclusion_reason"] = pd.Series(pd.NA, index=events.index, dtype="string")
+        events["exclusion_reason"] = pd.Series(
+            pd.NA, index=events.index, dtype="string"
+        )
 
         def exclude(mask: pd.Series, reason: str) -> None:
             newly_excluded = events["included"] & mask.fillna(True)
@@ -384,7 +386,9 @@ class MAF(pd.DataFrame):
 
         for column in [pass_col, somatic_col, genome_build_col]:
             if column is not None and column not in events.columns:
-                raise ValueError(f"MAF is missing requested TMB filter column '{column}'.")
+                raise ValueError(
+                    f"MAF is missing requested TMB filter column '{column}'."
+                )
 
         if pass_col is not None:
             exclude(~events[pass_col].isin(pass_values), "quality_filter")
@@ -479,16 +483,70 @@ class MAF(pd.DataFrame):
         per mutation); the name makes the granularity explicit. ``to_pivot_table``
         is a backward-compatible alias.
 
-        Delegates to :meth:`to_mutation_table` followed by
-        :meth:`SmallVariationTable.to_gene_level`, so both the mutation-level
-        and gene-level tables share the same construction logic.
+        The gene-by-sample matrix is built directly from the event table. This
+        avoids materializing the much larger mutation-by-sample dense matrix;
+        the direct path is essential for cohort-scale MAFs. Multiple events in
+        one gene and sample are represented as ``"Multi_Hit"``.
 
         Returns
         -------
         SmallVariationTable
             Gene × sample matrix with gene-level feature_metadata.
         """
-        return self.to_mutation_table(sample_manifest=sample_manifest).to_gene_level()
+        from .SmallVariationTable import SmallVariationTable
+
+        if sample_manifest is not None:
+            from .SampleManifest import SampleManifest
+
+            if not isinstance(sample_manifest, SampleManifest):
+                raise TypeError("sample_manifest must be a SampleManifest.")
+            sample_manifest.validate_event_samples(self["sample_ID"])
+
+        grouped = self.groupby(["Hugo_Symbol", "sample_ID"], sort=True)[
+            "Variant_Classification"
+        ].agg(event_count="size", first_classification="first")
+        grouped["classification"] = grouped["first_classification"].where(
+            grouped["event_count"].eq(1), "Multi_Hit"
+        )
+        gene_matrix = grouped["classification"].unstack("sample_ID", fill_value=False)
+        gene_matrix = gene_matrix.fillna(False)
+        result = SmallVariationTable(gene_matrix)
+
+        if sample_manifest is not None:
+            result = result.reindex(
+                columns=sample_manifest.eligible_samples,
+                fill_value=False,
+                sample_fill_value=pd.NA,
+            )
+            result.sample_metadata = sample_manifest.eligible_frame()
+
+        result.sample_metadata["mutations_count"] = self.mutations_count.reindex(
+            result.columns, fill_value=0
+        )
+        for column, values in self.tmb_by_functional_group.items():
+            result.sample_metadata[column] = values.reindex(
+                result.columns, fill_value=0
+            )
+
+        feature_metadata = self.copy()
+        feature_metadata.index = feature_metadata["Hugo_Symbol"]
+        present_gene_columns = [
+            column
+            for column in SmallVariationTable._GENE_LEVEL_COLS
+            if column in feature_metadata.columns
+        ]
+        gene_metadata = feature_metadata[present_gene_columns].groupby(level=0).first()
+        for column, aggregate in SmallVariationTable._GENE_LEVEL_AGG.items():
+            if column in feature_metadata.columns:
+                gene_metadata[column] = (
+                    feature_metadata[column].groupby(level=0).agg(aggregate)
+                )
+        result.feature_metadata = gene_metadata.reindex(result.index)
+
+        if sample_manifest is not None:
+            result = result.with_scientific_context(sample_manifest=sample_manifest)
+        result._validate_metadata()
+        return result
 
     def to_pivot_table(
         self,

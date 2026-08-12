@@ -22,9 +22,7 @@ class ObservationMask:
         if data.isna().any().any() or not all(
             is_bool_dtype(dtype) for dtype in data.dtypes
         ):
-            raise TypeError(
-                "ObservationMask values must be non-missing booleans."
-            )
+            raise TypeError("ObservationMask values must be non-missing booleans.")
         self._data = data.copy()
 
     @classmethod

@@ -30,8 +30,24 @@ def mutation_enrichment_test(
         raise ValueError("confidence_level must be between 0 and 1.")
     if minimum_mutations < 0:
         raise ValueError("minimum_mutations must be non-negative.")
+    if group1 == group2:
+        raise ValueError("group1 and group2 must identify different groups.")
     if group_col not in table.sample_metadata.columns:
         raise ValueError(f"group_col '{group_col}' not found in sample_metadata.")
+
+    table._validate_metadata()
+    if table.sample_manifest is not None:
+        missing_eligible = table.sample_manifest.eligible_samples.difference(
+            table.columns
+        )
+        if not missing_eligible.empty:
+            raise ValueError(
+                "Mutation enrichment requires every eligible SampleManifest "
+                "sample to be present in the table, including zero-event "
+                f"samples; missing: {missing_eligible.tolist()}. Create and "
+                "attach a new manifest to declare an intentional analysis "
+                "subset."
+            )
 
     if analysis_unit == "patient":
         if table.sample_manifest is None:
@@ -105,14 +121,18 @@ def mutation_enrichment_test(
                     "p_value": np.nan,
                 }
             )
-        contingency_table = row[
-            [
-                f"{group1}_True",
-                f"{group1}_False",
-                f"{group2}_True",
-                f"{group2}_False",
+        contingency_table = (
+            row[
+                [
+                    f"{group1}_True",
+                    f"{group1}_False",
+                    f"{group2}_True",
+                    f"{group2}_False",
+                ]
             ]
-        ].to_numpy(dtype=int).reshape(2, 2)
+            .to_numpy(dtype=int)
+            .reshape(2, 2)
+        )
         if method == "chi2":
             _, p, _, _ = chi2_contingency(contingency_table)
         else:
@@ -151,5 +171,8 @@ def mutation_enrichment_test(
     df["test_method"] = method
     df["analysis_unit"] = analysis_unit
     df["confidence_level"] = confidence_level
+    df["minimum_total_mutations"] = minimum_mutations
+    df["tested_family_size"] = int(valid.sum())
+    df["adjustment_method"] = "fdr_bh"
 
     return df

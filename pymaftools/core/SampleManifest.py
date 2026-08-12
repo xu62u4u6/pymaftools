@@ -61,9 +61,7 @@ class SampleManifest:
             )
         if frame["patient_id"].isna().any():
             raise ValueError("SampleManifest patient_id values cannot be missing.")
-        if frame["eligible"].isna().any() or not is_bool_dtype(
-            frame["eligible"].dtype
-        ):
+        if frame["eligible"].isna().any() or not is_bool_dtype(frame["eligible"].dtype):
             raise TypeError(
                 "SampleManifest eligible must be a non-missing boolean column."
             )

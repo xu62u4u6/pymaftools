@@ -158,8 +158,7 @@ def _extract_biospecimen_metadata(hit: dict) -> dict[str, object]:
     associated = [
         entity
         for entity in (hit.get("associated_entities") or [])
-        if entity.get("entity_type") == "aliquot"
-        and entity.get("entity_submitter_id")
+        if entity.get("entity_type") == "aliquot" and entity.get("entity_submitter_id")
     ]
     tumor_entities = [
         entity
@@ -600,9 +599,7 @@ class GDCClient:
         if "mapping_status" not in df.columns:
             df["mapping_status"] = "missing_api_metadata"
         else:
-            df["mapping_status"] = df["mapping_status"].fillna(
-                "missing_api_metadata"
-            )
+            df["mapping_status"] = df["mapping_status"].fillna("missing_api_metadata")
         return df
 
     @staticmethod
@@ -734,7 +731,8 @@ class GDCClient:
                     "case_id": case_id,
                     "project": (
                         case_all["project"].dropna().iloc[0]
-                        if "project" in case_all and not case_all["project"].dropna().empty
+                        if "project" in case_all
+                        and not case_all["project"].dropna().empty
                         else None
                     ),
                     "status": status,
@@ -841,9 +839,7 @@ class GDCClient:
             df = manifests[label]
             keep = {
                 file_id
-                for file_id in selected.loc[
-                    selected["data_type"].eq(label), "file_id"
-                ]
+                for file_id in selected.loc[selected["data_type"].eq(label), "file_id"]
             }
             filtered = df[df["file_id"].isin(keep)]
             out = outdir / f"manifest_{label}.tsv"
@@ -923,9 +919,7 @@ class GDCClient:
                     "state": hit.get("state", ""),
                     "data_type": hit.get("data_type", ""),
                     **biospecimen,
-                    "workflow_type": (hit.get("analysis") or {}).get(
-                        "workflow_type"
-                    ),
+                    "workflow_type": (hit.get("analysis") or {}).get("workflow_type"),
                 }
 
         manifests_rows: dict[str, list] = {label: [] for label in self.data_types}
@@ -952,8 +946,7 @@ class GDCClient:
                 **{
                     key: value
                     for key, value in m.items()
-                    if key
-                    not in {"filename", "md5", "size", "state", "data_type"}
+                    if key not in {"filename", "md5", "size", "state", "data_type"}
                 },
             }
 

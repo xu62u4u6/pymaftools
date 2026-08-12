@@ -50,13 +50,9 @@ def to_h5(
             store.put("sample_metadata", table_to_save.sample_metadata)
             store.put("feature_metadata", table_to_save.feature_metadata)
             if table_to_save.sample_manifest is not None:
-                store.put(
-                    "sample_manifest", table_to_save.sample_manifest.to_frame()
-                )
+                store.put("sample_manifest", table_to_save.sample_manifest.to_frame())
             if table_to_save.observation_mask is not None:
-                store.put(
-                    "observation_mask", table_to_save.observation_mask.to_frame()
-                )
+                store.put("observation_mask", table_to_save.observation_mask.to_frame())
 
     print(f"[PivotTable] saved to {h5_path}")
 

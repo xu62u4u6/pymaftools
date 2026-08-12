@@ -188,9 +188,10 @@ class PivotTable(pd.DataFrame):
                         )
                     elif attr == "observation_mask":
                         source_frame = source_val.to_frame()
-                        if self.index.isin(source_frame.index).all() and self.columns.isin(
-                            source_frame.columns
-                        ).all():
+                        if (
+                            self.index.isin(source_frame.index).all()
+                            and self.columns.isin(source_frame.columns).all()
+                        ):
                             setattr(
                                 self,
                                 attr,
@@ -1035,15 +1036,11 @@ class PivotTable(pd.DataFrame):
         if any(mask is not None for mask in masks) and not all(
             mask is not None for mask in masks
         ):
-            raise ValueError(
-                "Cannot merge tables with mixed ObservationMask coverage."
-            )
+            raise ValueError("Cannot merge tables with mixed ObservationMask coverage.")
         if any(manifest is not None for manifest in manifests) and not all(
             manifest is not None for manifest in manifests
         ):
-            raise ValueError(
-                "Cannot merge tables with mixed SampleManifest coverage."
-            )
+            raise ValueError("Cannot merge tables with mixed SampleManifest coverage.")
 
         # Step 1: merge main data (along sample axis)
         merged_data = pd.concat([pd.DataFrame(table) for table in tables], axis=1)
@@ -1114,8 +1111,7 @@ class PivotTable(pd.DataFrame):
                 equal = rows.eq(first) | (rows.isna() & first.isna())
                 if not equal.all(axis=None):
                     raise ValueError(
-                        "Conflicting SampleManifest rows for sample "
-                        f"'{sample_id}'."
+                        f"Conflicting SampleManifest rows for sample '{sample_id}'."
                     )
             manifest_frame = manifest_frame.loc[
                 ~manifest_frame.index.duplicated(keep="first")
@@ -1835,8 +1831,8 @@ class PivotTable(pd.DataFrame):
         alpha : float, default 0.05
             Significance level for multiple testing correction.
         minimum_mutations : int, default 2
-            Minimum number of mutations required in either group to include
-            a feature in the analysis.
+            Minimum total number of mutated observations across both groups
+            required to include a feature in the tested family.
         method : {"chi2", "fisher"}, default "fisher"
             Statistical test method to use:
             - "chi2": Chi-squared test of independence
@@ -1876,8 +1872,8 @@ class PivotTable(pd.DataFrame):
             Mutated         a        b
             Not mutated     c        d
 
-        Features with fewer than `minimum_mutations` in both groups are excluded
-        to avoid testing rare mutations that may not be statistically meaningful.
+        Features with fewer than `minimum_mutations` mutated observations in
+        total across both groups are excluded from the tested family.
 
         Examples
         --------
