@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 import matplotlib.pyplot as plt
@@ -181,7 +182,7 @@ class BasePlot:
 
     def save(
         self,
-        filename: str,
+        filename: str | os.PathLike[str],
         dpi: int = 300,
         bbox_inches: str = "tight",
         pad_inches: float = 0.08,
@@ -193,7 +194,7 @@ class BasePlot:
 
         Parameters
         ----------
-        filename : str
+        filename : str or os.PathLike
             File name.
         dpi : int, optional
             Resolution.
@@ -211,7 +212,8 @@ class BasePlot:
             return
 
         try:
-            format = filename.split(".")[-1].lower()
+            path = os.fspath(filename)
+            format = path.split(".")[-1].lower()
 
             # Prepare save arguments
             save_kwargs: dict[str, Any] = {
@@ -230,8 +232,8 @@ class BasePlot:
             # Add any additional kwargs
             save_kwargs.update(kwargs)
 
-            self.fig.savefig(filename, **save_kwargs)
-            print(f"[INFO] Figure saved to: {filename}")
+            self.fig.savefig(path, **save_kwargs)
+            print(f"[INFO] Figure saved to: {path}")
         except Exception as e:
             print(f"Error while saving figure: {e}")
 
