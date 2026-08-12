@@ -15,6 +15,7 @@ Examples
 from __future__ import annotations
 
 import json
+import hashlib
 import shutil
 import subprocess
 import time
@@ -255,10 +256,12 @@ class GDCClient:
         retries: int = 5,
     ):
         self.token = None
+        self.token_path: Path | None = None
         if token_path:
             p = Path(token_path).expanduser()
             if p.exists():
                 self.token = p.read_text().strip()
+                self.token_path = p
 
         self.data_types = data_types or DATA_TYPE_CONFIGS
         self.projects = projects or []
@@ -1093,24 +1096,80 @@ class GDCClient:
         return pd.DataFrame(rows)
 
     @staticmethod
+    def verify_manifest_downloads(
+        manifest_path: str | Path,
+        download_dir: str | Path,
+    ) -> pd.DataFrame:
+        """Verify exact filename, size, and MD5 for every manifest row."""
+        manifest_path = Path(manifest_path)
+        download_dir = Path(download_dir)
+        manifest = pd.read_csv(manifest_path, sep="\t", dtype=str).fillna("")
+        id_column = "id" if "id" in manifest.columns else manifest.columns[0]
+        filename_column = (
+            "filename" if "filename" in manifest.columns else manifest.columns[1]
+        )
+        records = []
+        for _, row in manifest.iterrows():
+            file_id = row[id_column]
+            filename = row[filename_column]
+            path = download_dir / file_id / filename
+            expected_md5 = row.get("md5", "").lower()
+            expected_size = row.get("size", "")
+            observed_size = path.stat().st_size if path.is_file() else None
+            observed_md5 = None
+
+            if not path.is_file():
+                status = "missing"
+            elif expected_size and observed_size != int(expected_size):
+                status = "size_mismatch"
+            else:
+                digest = hashlib.md5()  # noqa: S324 - GDC publishes MD5 manifests
+                with open(path, "rb") as handle:
+                    for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                        digest.update(chunk)
+                observed_md5 = digest.hexdigest()
+                status = (
+                    "verified"
+                    if not expected_md5 or observed_md5 == expected_md5
+                    else "checksum_mismatch"
+                )
+            records.append(
+                {
+                    "file_id": file_id,
+                    "filename": filename,
+                    "path": str(path),
+                    "expected_size": int(expected_size) if expected_size else None,
+                    "observed_size": observed_size,
+                    "expected_md5": expected_md5 or None,
+                    "observed_md5": observed_md5,
+                    "status": status,
+                }
+            )
+        return pd.DataFrame(
+            records,
+            columns=[
+                "file_id",
+                "filename",
+                "path",
+                "expected_size",
+                "observed_size",
+                "expected_md5",
+                "observed_md5",
+                "status",
+            ],
+        )
+
+    @staticmethod
     def _filter_manifest_skip_existing(
         manifest_path: Path, dl_dir: Path
     ) -> tuple[Path, int, int]:
-        """Filter manifest to skip already-downloaded file UUIDs."""
+        """Skip only files that pass exact manifest verification."""
         df = pd.read_csv(manifest_path, sep="\t", dtype=str)
         id_col = "id" if "id" in df.columns else df.columns[0]
-
-        existing = set()
-        if dl_dir.exists():
-            for child in dl_dir.iterdir():
-                if child.is_dir() and child.name != "logs":
-                    data_files = [
-                        f
-                        for f in child.iterdir()
-                        if f.is_file() and f.name != "annotations.txt"
-                    ]
-                    if data_files:
-                        existing.add(child.name)
+        verification = GDCClient.verify_manifest_downloads(manifest_path, dl_dir)
+        existing = set(
+            verification.loc[verification["status"].eq("verified"), "file_id"]
+        )
 
         n_total = len(df)
         df_filtered = df[~df[id_col].isin(existing)]
@@ -1153,12 +1212,21 @@ class GDCClient:
                 str(self.retries),
             ]
             if self.token:
-                token_file = outdir / ".gdc-token"
-                token_file.write_text(self.token)
-                cmd += ["-t", str(token_file)]
+                if self.token_path is None:
+                    raise ValueError(
+                        "A token was loaded without a reusable token path."
+                    )
+                cmd += ["-t", str(self.token_path)]
 
             print(f"  Downloading {label} ({n_remaining} files)...")
             subprocess.run(cmd, check=True)
+            verification = self.verify_manifest_downloads(manifest_path, dl_dir)
+            failed = verification.loc[~verification["status"].eq("verified")]
+            if not failed.empty:
+                counts = failed["status"].value_counts().to_dict()
+                raise RuntimeError(
+                    f"GDC download verification failed for {label}: {counts}."
+                )
 
     def download(
         self,

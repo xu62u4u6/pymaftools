@@ -13,6 +13,7 @@ from unittest.mock import patch, MagicMock
 
 import pandas as pd
 import pytest
+import hashlib
 
 from pymaftools.io.tcga import GDCClient, parse_tcga_barcode, DATA_TYPE_CONFIGS
 from pymaftools.io.tcga.client import _extract_biospecimen_metadata
@@ -70,6 +71,7 @@ class TestGDCClientOffline:
         token_file.write_text("my-secret-token\n")
         client = GDCClient(token_path=str(token_file))
         assert client.token == "my-secret-token"
+        assert client.token_path == token_file
 
     def test_data_type_configs(self):
         """Verify all expected data types are configured."""
@@ -313,6 +315,76 @@ class TestGDCClientOffline:
         assert report.set_index("case_id").loc["C2", "status"] == (
             "specimen_mismatch"
         )
+
+    def test_download_resume_skips_only_checksum_verified_files(self, tmp_path):
+        content = b"verified public payload\n"
+        digest = hashlib.md5(content).hexdigest()
+        manifest = tmp_path / "manifest.tsv"
+        pd.DataFrame(
+            [
+                {
+                    "id": "good-id",
+                    "filename": "good.txt",
+                    "md5": digest,
+                    "size": len(content),
+                    "state": "released",
+                },
+                {
+                    "id": "bad-id",
+                    "filename": "bad.txt",
+                    "md5": digest,
+                    "size": len(content),
+                    "state": "released",
+                },
+            ]
+        ).to_csv(manifest, sep="\t", index=False)
+        good_dir = tmp_path / "downloads" / "good-id"
+        bad_dir = tmp_path / "downloads" / "bad-id"
+        good_dir.mkdir(parents=True)
+        bad_dir.mkdir(parents=True)
+        (good_dir / "good.txt").write_bytes(content)
+        (bad_dir / "bad.txt").write_bytes(b"wrong payload")
+
+        report = GDCClient.verify_manifest_downloads(
+            manifest, tmp_path / "downloads"
+        )
+        filtered, total, skipped = GDCClient._filter_manifest_skip_existing(
+            manifest, tmp_path / "downloads"
+        )
+
+        assert report.set_index("file_id")["status"].to_dict() == {
+            "good-id": "verified",
+            "bad-id": "size_mismatch",
+        }
+        assert (total, skipped) == (2, 1)
+        remaining = pd.read_csv(filtered, sep="\t")
+        assert remaining["id"].tolist() == ["bad-id"]
+
+    def test_download_fails_closed_when_client_does_not_produce_file(
+        self, tmp_path, monkeypatch
+    ):
+        manifest = tmp_path / "manifest.tsv"
+        pd.DataFrame(
+            [
+                {
+                    "id": "missing-id",
+                    "filename": "missing.txt",
+                    "md5": "abc",
+                    "size": 10,
+                    "state": "released",
+                }
+            ]
+        ).to_csv(manifest, sep="\t", index=False)
+        client = GDCClient()
+        monkeypatch.setattr(client, "_find_gdc_client", lambda: "gdc-client")
+        monkeypatch.setattr(
+            "pymaftools.io.tcga.client.subprocess.run", lambda *args, **kwargs: None
+        )
+
+        with pytest.raises(RuntimeError, match="verification failed"):
+            client._download_gdc_client(
+                {"mutation": manifest}, tmp_path / "downloads"
+            )
 
     @patch("pymaftools.io.tcga.client.requests.post")
     def test_get_cases(self, mock_post):
