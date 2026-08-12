@@ -1813,7 +1813,9 @@ class PivotTable(pd.DataFrame):
         group2: str,
         alpha: float = 0.05,
         minimum_mutations: int = 2,
-        method: Literal["chi2", "fisher"] = "chi2",
+        method: Literal["chi2", "fisher"] = "fisher",
+        analysis_unit: Literal["sample", "patient"] = "sample",
+        confidence_level: float = 0.95,
     ) -> pd.DataFrame:
         """
         Perform statistical enrichment test for mutations between two groups.
@@ -1835,10 +1837,15 @@ class PivotTable(pd.DataFrame):
         minimum_mutations : int, default 2
             Minimum number of mutations required in either group to include
             a feature in the analysis.
-        method : {"chi2", "fisher"}, default "chi2"
+        method : {"chi2", "fisher"}, default "fisher"
             Statistical test method to use:
             - "chi2": Chi-squared test of independence
             - "fisher": Fisher's exact test
+        analysis_unit : {"sample", "patient"}, default "sample"
+            Unit assumed independent. Patient-level analysis requires an
+            attached ``SampleManifest`` and rejects repeated eligible patients.
+        confidence_level : float, default 0.95
+            Confidence level for the continuity-corrected odds-ratio interval.
 
         Returns
         -------
@@ -1848,6 +1855,9 @@ class PivotTable(pd.DataFrame):
             - "{group1}_False": Count of non-mutated samples in group1
             - "{group2}_True": Count of mutated samples in group2
             - "{group2}_False": Count of non-mutated samples in group2
+            - group-specific observed denominators
+            - continuity-corrected odds ratio and confidence interval
+            - "tested": whether the feature entered the declared test family
             - "p_value": Raw p-values from statistical test
             - "adjusted_p_value": FDR-corrected p-values
             - "is_significant": Boolean indicating significance after correction
@@ -1898,6 +1908,8 @@ class PivotTable(pd.DataFrame):
             alpha=alpha,
             minimum_mutations=minimum_mutations,
             method=method,
+            analysis_unit=analysis_unit,
+            confidence_level=confidence_level,
         )
 
     def compute_similarity(

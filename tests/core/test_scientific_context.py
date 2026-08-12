@@ -219,6 +219,78 @@ def test_merge_rejects_partial_scientific_context():
         PivotTable.merge([contextual, legacy])
 
 
+def test_enrichment_reports_observed_denominators_effect_and_test_family():
+    table = PivotTable(
+        [[True, True, False, True, False, False], [True, False, False, False, False, False]],
+        index=["G1", "G2"],
+        columns=["A1", "A2", "A3", "B1", "B2", "B3"],
+    )
+    table.sample_metadata["group"] = ["A", "A", "A", "B", "B", "B"]
+    manifest = SampleManifest(
+        pd.DataFrame(
+            {
+                "patient_id": ["P1", "P2", "P3", "P4", "P5", "P6"],
+                "eligible": True,
+            },
+            index=table.columns,
+        )
+    )
+    mask = ObservationMask(
+        pd.DataFrame(
+            [[True, True, True, True, True, False], [True] * 6],
+            index=table.index,
+            columns=table.columns,
+        )
+    )
+    table = table.with_scientific_context(
+        sample_manifest=manifest,
+        observation_mask=mask,
+    )
+
+    result = table.mutation_enrichment_test(
+        "group",
+        "A",
+        "B",
+        minimum_mutations=2,
+        analysis_unit="patient",
+    )
+
+    assert result.loc["G1", ["A_True", "A_False"]].tolist() == [2, 1]
+    assert result.loc["G1", ["B_True", "B_False"]].tolist() == [1, 1]
+    assert result.loc["G1", ["A_denominator", "B_denominator"]].tolist() == [3, 2]
+    assert result.loc["G1", "odds_ratio"] == pytest.approx(2.0)
+    assert result.loc["G1", "ci_low"] < 2 < result.loc["G1", "ci_high"]
+    assert bool(result.loc["G1", "tested"])
+    assert not bool(result.loc["G2", "tested"])
+    assert pd.isna(result.loc["G2", "p_value"])
+    assert result.loc["G1", "test_method"] == "fisher"
+    assert result.loc["G1", "analysis_unit"] == "patient"
+
+
+def test_patient_enrichment_rejects_repeated_eligible_patient():
+    table = PivotTable(
+        [[True, False, True, False]],
+        index=["TP53"],
+        columns=["A1", "A2", "B1", "B2"],
+    )
+    table.sample_metadata["group"] = ["A", "A", "B", "B"]
+    manifest = SampleManifest(
+        pd.DataFrame(
+            {
+                "patient_id": ["P1", "P1", "P2", "P3"],
+                "eligible": True,
+            },
+            index=table.columns,
+        )
+    )
+    table = table.with_scientific_context(sample_manifest=manifest)
+
+    with pytest.raises(ValueError, match="independent observations"):
+        table.mutation_enrichment_test(
+            "group", "A", "B", analysis_unit="patient"
+        )
+
+
 def test_tmb_audit_keeps_zero_event_samples_and_deduplicates():
     manifest = SampleManifest(
         pd.DataFrame(
