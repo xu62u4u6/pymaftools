@@ -652,6 +652,7 @@ class GDCClient:
         candidates = file_mapping.loc[
             file_mapping["sample_type"].eq(sample_type)
             & file_mapping["data_type"].isin(modalities)
+            & file_mapping["mapping_status"].eq("resolved_tumor_aliquot")
         ].copy()
         case_ids = sorted(file_mapping["case_id"].dropna().unique())
         selected_rows: list[pd.DataFrame] = []
@@ -669,22 +670,34 @@ class GDCClient:
                 )
                 for modality in modalities
             }
-            present_modalities = set(case["data_type"])
+            all_present_modalities = set(case_all["data_type"])
+            resolved_modalities = set(case["data_type"])
             missing_modalities = [
-                modality for modality in modalities if modality not in present_modalities
+                modality
+                for modality in modalities
+                if modality not in all_present_modalities
             ]
-            unresolved = case_all.loc[
-                case_all["data_type"].isin(modalities)
-                & ~case_all["mapping_status"].eq("resolved_tumor_aliquot")
+            unresolved_modalities = [
+                modality
+                for modality in modalities
+                if modality in all_present_modalities
+                and modality not in resolved_modalities
             ]
             selected_sample_id = None
 
             if missing_modalities:
                 status = "missing_modality"
                 detail = ",".join(missing_modalities)
-            elif not unresolved.empty:
+            elif unresolved_modalities:
                 status = "unresolved_mapping"
-                detail = ",".join(sorted(unresolved["mapping_status"].unique()))
+                unresolved_states = case_all.loc[
+                    case_all["data_type"].isin(unresolved_modalities),
+                    "mapping_status",
+                ].unique()
+                detail = (
+                    f"modalities={','.join(unresolved_modalities)}; statuses="
+                    f"{','.join(sorted(unresolved_states))}"
+                )
             else:
                 shared_samples = set(available[modalities[0]])
                 for modality in modalities[1:]:

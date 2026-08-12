@@ -174,17 +174,31 @@ class TestGDCClientOffline:
         add("C4", "expression", "C4-01A", "C4-e1")
         add("C4", "expression", "C4-01A", "C4-e2")
         add("C4", "mutation", "C4-01A", "C4-m")
+        add("C5", "expression", "C5-01A", "C5-e")
+        add("C5", "mutation", "C5-01A", "C5-m")
+        rows.append(
+            {
+                "file_id": "C5-normal-expression",
+                "case_id": "C5",
+                "project": "TCGA-LUAD",
+                "data_type": "expression",
+                "sample_id": None,
+                "sample_type": None,
+                "mapping_status": "no_tumor_aliquot",
+            }
+        )
 
         selected, report = GDCClient.align_specimens(
             pd.DataFrame(rows), ["expression", "mutation"]
         )
 
-        assert selected["file_id"].tolist() == ["C1-e", "C1-m"]
+        assert selected["file_id"].tolist() == ["C1-e", "C1-m", "C5-e", "C5-m"]
         assert report.set_index("case_id")["status"].to_dict() == {
             "C1": "selected",
             "C2": "specimen_mismatch",
             "C3": "missing_modality",
             "C4": "duplicate_files",
+            "C5": "selected",
         }
 
     def test_build_file_mapping_emits_exact_provenance_columns(self, monkeypatch):
