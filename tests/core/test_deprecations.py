@@ -28,6 +28,14 @@ def test_calculate_TMB_alias_warns_and_delegates():
     assert "TMB" in out.sample_metadata.columns
 
 
+def test_legacy_tmb_warns_that_it_is_not_a_scientific_audit():
+    table = PivotTable(pd.DataFrame({"s1": [True]}, index=["TP53"]))
+    table.sample_metadata["mutations_count"] = [1]
+
+    with pytest.warns(FutureWarning, match="legacy normalized count"):
+        table.calculate_tmb(default_capture_size=40)
+
+
 def test_to_sigprofiler_alias_warns_and_delegates(tmp_path):
     maf = MAF(
         pd.DataFrame(

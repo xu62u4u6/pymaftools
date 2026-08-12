@@ -55,17 +55,16 @@ A typical prep chain turns the raw matrix into something ready to plot:
    table = (
        maf.to_gene_table()
        .add_freq()                                  # feature_metadata["freq"]
-       .calculate_tmb(default_capture_size=40)      # sample_metadata["TMB"]
        .sort_features(by="freq", ascending=False)   # high-freq genes on top
        .sort_samples_by_mutations()                 # waterfall the columns
    )
 
 .. note::
 
-   ``calculate_tmb`` returns a **new** table rather than mutating in place, so
-   capture the return value (``table = table.calculate_tmb(...)``) or the TMB
-   column will not appear. The same is true of ``add_freq`` / ``sort_*`` — they
-   all return a new table, so keep them in one chain as above.
+   ``add_freq`` and ``sort_*`` return new tables, so keep them in one chain as
+   above. For TMB, use ``MAF.calculate_tmb_audit`` with a ``SampleManifest`` and
+   sample-specific callable territory; the legacy ``PivotTable.calculate_tmb``
+   cannot audit numerator filters.
 
 Inspecting the structure
 -------------------------

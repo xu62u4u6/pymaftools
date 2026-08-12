@@ -1146,7 +1146,12 @@ class PivotTable(pd.DataFrame):
         capture_size_dict: Optional[Dict[str, float]] = None,
     ) -> "PivotTable":
         """
-        Compute Tumor Mutation Burden (TMB) per sample.
+        Compute a legacy normalized mutation count per sample.
+
+        .. deprecated:: 0.6.0
+            This convenience method cannot audit event filters or callable
+            territory and must not be used for comparable scientific TMB.
+            Use :meth:`MAF.calculate_tmb_audit` with a ``SampleManifest``.
 
         TMB is ``mutations_count / capture_size`` (mutations per Mb) and is
         stored as a new ``sample_metadata["TMB"]`` column on the returned copy.
@@ -1177,6 +1182,13 @@ class PivotTable(pd.DataFrame):
             populated by :meth:`MAF.to_mutation_table`; for tables built another
             way, set it manually before calling.
         """
+        warnings.warn(
+            "PivotTable.calculate_tmb() is a legacy normalized count and cannot "
+            "audit event filters or callable territory. Use "
+            "MAF.calculate_tmb_audit() for scientific TMB.",
+            FutureWarning,
+            stacklevel=2,
+        )
         if "mutations_count" not in self.sample_metadata.columns:
             raise KeyError(
                 "calculate_tmb requires sample_metadata['mutations_count'], which "

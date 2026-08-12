@@ -52,11 +52,11 @@ def make_mutation_table(n_genes: int = 15, n_samples: int = 30) -> PivotTable:
     matrix[mutated] = RNG.choice(VARIANT_TYPES, size=int(mutated.sum()))
     table = PivotTable(pd.DataFrame(matrix, index=genes, columns=samples))
 
-    # sample-level metadata (drawn as bottom strips / TMB bar)
+    # sample-level metadata (drawn as bottom strips / mutation-count bar)
     table.sample_metadata["subtype"] = RNG.choice(["LUAD", "LUSC", "ASC"], n_samples)
     table.sample_metadata["sex"] = RNG.choice(["M", "F"], n_samples)
     table.sample_metadata["age"] = RNG.integers(45, 80, n_samples).astype(float)
-    table.sample_metadata["TMB"] = RNG.gamma(2.0, 1.0, n_samples)
+    table.sample_metadata["mutations_count"] = table.to_binary_table().sum(axis=0)
 
     # feature-level metadata (gene annotations a user may want as a row-side strip)
     table.feature_metadata["pathway"] = RNG.choice(
@@ -91,7 +91,7 @@ def prepare(table: PivotTable) -> PivotTable:
 
 
 def demo_default(table: PivotTable) -> None:
-    """Figure 1: a basic oncoplot (heatmap + freq + TMB bar + legends).
+    """Figure 1: a basic oncoplot (heatmap + frequency + count bar + legends).
 
     The convenience methods (``mutation_heatmap``/``plot_freq``/``plot_bar``)
     now register tracks; a single ``render()`` draws the figure.
@@ -148,7 +148,7 @@ def demo_declarative(table: PivotTable) -> None:
     op = (
         OncoPlot(table, figsize=(13, 9))
         .main()
-        .add_bar("TMB", side="top")
+        .add_bar("mutations_count", side="top")
         .add_freq(side="right")
         .add_feature_annotation(["pathway"], side="right")
         .add_sample_annotation(["subtype", "sex"], side="bottom")
@@ -173,7 +173,7 @@ def demo_grouped(table: PivotTable) -> None:
     op = (
         OncoPlot(grouped, figsize=(13, 9))
         .main()
-        .add_bar("TMB", side="top")
+        .add_bar("mutations_count", side="top")
         .add_freq(side="right")
         .group_features(by="pathway")
         .group_samples(by="subtype")

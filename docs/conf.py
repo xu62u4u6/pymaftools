@@ -1,5 +1,7 @@
 """Sphinx configuration for pymaftools documentation."""
 
+from docutils.parsers.rst import roles
+
 project = "pymaftools"
 copyright = "2026, xu62u4u6"
 author = "xu62u4u6"
@@ -44,3 +46,8 @@ html_static_path = ["_static"]
 
 # Exclude patterns
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
+
+
+def setup(app):
+    """Register the Matplotlib type role used by upstream docstrings."""
+    roles.register_local_role("mpltype", roles.code_role)

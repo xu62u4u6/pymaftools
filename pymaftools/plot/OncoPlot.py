@@ -334,10 +334,16 @@ class OncoPlot(BasePlot):
         self.tracks.append(track)
         return self
 
-    def add_bar(self, bar_col: str = "TMB", side: str = "top", **kwargs) -> OncoPlot:
-        """Register a per-sample bar track (e.g. TMB) for ``render()``."""
+    def add_bar(
+        self, bar_col: str = "mutations_count", side: str = "top", **kwargs
+    ) -> OncoPlot:
+        """Register a per-sample bar track for ``render()``."""
         if bar_col not in self.sample_metadata.columns:
-            hint = " Please do table.calculate_tmb() first." if bar_col == "TMB" else ""
+            hint = (
+                " Attach audited TMB from MAF.calculate_tmb_audit().summary first."
+                if bar_col == "TMB"
+                else ""
+            )
             raise ValueError(f"Column '{bar_col}' not found in sample metadata.{hint}")
         track = BarTrack(self.sample_metadata[bar_col].values, bar_col, **kwargs)
         track.side = side
@@ -1219,11 +1225,11 @@ class OncoPlot(BasePlot):
         self,
         fontsize: int = 6,
         bar_value: bool = False,
-        bar_col: str = "TMB",
+        bar_col: str = "mutations_count",
         ylabel_size: int = 8,
     ) -> OncoPlot:
         """
-        Plot bar chart showing values (typically TMB) for each sample.
+        Plot a sample-metadata bar chart (mutation count by default).
 
         Legacy shorthand for the canonical ``add_bar()``; prefer ``add_bar()``
         in new code.
@@ -1234,7 +1240,7 @@ class OncoPlot(BasePlot):
             Font size for bar value annotations
         bar_value : bool, default False
             Whether to show values on top of bars
-        bar_col : str, default "TMB"
+        bar_col : str, default "mutations_count"
             Column name in sample_metadata to use for bar values
         ylabel_size : int, default 8
             Font size for y-axis label
@@ -1246,7 +1252,8 @@ class OncoPlot(BasePlot):
         """
         if bar_col == "TMB" and bar_col not in self.sample_metadata.columns:
             raise ValueError(
-                f"Column '{bar_col}' not found in sample metadata. Please do table.calculate_tmb() first."
+                f"Column '{bar_col}' not found in sample metadata. Attach audited "
+                "TMB from MAF.calculate_tmb_audit().summary first."
             )
         if bar_col not in self.sample_metadata.columns:
             raise ValueError(f"Column '{bar_col}' not found in sample metadata.")
@@ -1470,7 +1477,7 @@ class OncoPlot(BasePlot):
         Create a default oncoplot with standard components.
 
         Convenience constructor that registers the main mutation heatmap, the
-        frequency column and the TMB bar, then renders.
+        frequency column and a raw mutation-count bar, then renders.
 
         Parameters
         ----------
@@ -1484,10 +1491,15 @@ class OncoPlot(BasePlot):
         oncoplot : OncoPlot
             Configured and rendered OncoPlot instance
         """
+        table = pivot_table.copy()
+        if "mutations_count" not in table.sample_metadata.columns:
+            table.sample_metadata["mutations_count"] = (
+                table.to_binary_table().sum(axis=0).astype(int)
+            )
         return (
-            OncoPlot(pivot_table=pivot_table, figsize=figsize)
+            OncoPlot(pivot_table=table, figsize=figsize)
             .main()
-            .add_bar("TMB", side="top")
+            .add_bar("mutations_count", side="top")
             .add_freq(side="right")
             .render()
             .add_xticklabel()

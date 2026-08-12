@@ -26,7 +26,7 @@ plot = (
     table.plot.oncoplot(figsize=(15, 10))
     .main()
     .add_freq(side="right")
-    .add_bar("TMB", side="top")
+    .add_bar("mutations_count", side="top")
     .render()
 )
 plot.save("oncoplot.png", dpi=300)

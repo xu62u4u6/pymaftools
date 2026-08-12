@@ -26,7 +26,8 @@ Start simple
 ------------
 
 The smallest useful oncoplot is the mutation matrix with a frequency strip and a
-TMB bar. This runs as-is on the bundled example MAF:
+mutation-count bar. This runs as-is on the bundled example MAF; the fixture does
+not contain callable-territory metadata and therefore must not display TMB:
 
 .. code-block:: python
 
@@ -37,7 +38,6 @@ TMB bar. This runs as-is on the bundled example MAF:
    table = (
        maf.to_gene_table()
        .add_freq()
-       .calculate_tmb(default_capture_size=40)
        .sort_features(by="freq", ascending=False)
        .sort_samples_by_mutations()
    )
@@ -45,7 +45,7 @@ TMB bar. This runs as-is on the bundled example MAF:
    op = (
        table.plot.oncoplot(figsize=(12, 8))
        .main()                    # the mutation matrix
-       .add_bar("TMB", side="top")
+       .add_bar("mutations_count", side="top")
        .add_freq(side="right")    # feature_metadata["freq"] as a strip
        .render()
    )
@@ -58,7 +58,7 @@ TMB bar. This runs as-is on the bundled example MAF:
    once, last.
 
 .. image:: ../img/demo_oncoplot_default.png
-   :alt: Basic oncoplot — mutation matrix, frequency strip, TMB bar
+   :alt: Basic oncoplot — mutation matrix, frequency strip, mutation-count bar
    :width: 100%
 
 Add metadata strips
@@ -74,7 +74,7 @@ track with a colorbar, categorical columns a discrete colour strip.
    op = (
        table.plot.oncoplot(figsize=(13, 9))
        .main()
-       .add_bar("TMB", side="top")
+       .add_bar("mutations_count", side="top")
        .add_freq(side="right")
        .add_feature_annotation(["pathway"], side="right")          # row strip
        .add_sample_annotation(["subtype", "sex"], side="bottom")   # categorical
@@ -131,7 +131,7 @@ first so each group is contiguous, then call ``group_features`` /
    op = (
        grouped.plot.oncoplot(figsize=(13, 9))
        .main()
-       .add_bar("TMB", side="top")
+       .add_bar("mutations_count", side="top")
        .add_freq(side="right")
        .group_features(by="pathway")     # row sections + rotated titles
        .group_samples(by="subtype")      # column sections + titles

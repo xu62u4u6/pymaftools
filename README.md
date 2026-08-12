@@ -39,7 +39,7 @@
 - **filter_by_variance** — Filter by variance or median absolute deviation (MAD)
 - **filter_by_statistical_test** — Filter by statistical test (t-test, Mann-Whitney, Kruskal-Wallis, ANOVA) with FDR correction
 - **Chi-squared / Fisher's exact test** — Association testing between features and groups
-- **TMB calculation** — Tumor mutation burden per sample
+- **Auditable TMB** — explicit event filters and sample-specific callable territory
 
 ### Visualization
 - **OncoPlot** — Mutation landscape heatmaps with frequency bars, sample metadata, and legends
@@ -110,7 +110,6 @@ pt = (pt
     .add_freq()
     .sort_features(by="freq")
     .sort_samples_by_mutations()
-    .calculate_tmb(default_capture_size=50)
 )
 
 # Create an oncoplot from the `table.plot` accessor. Tracks are registered with
@@ -119,7 +118,7 @@ pt = (pt
 op = (pt.head(50).plot.oncoplot(figsize=(15, 10))
     .main()                    # mutation matrix
     .add_freq(side="right")    # per-feature frequency strip
-    .add_bar("TMB", side="top")
+    .add_bar("mutations_count", side="top")
     .render()
 )
 op.save("oncoplot.png", dpi=300)
@@ -179,7 +178,7 @@ table = (table.filter_by_freq(freq)
 op = (table.plot.oncoplot(figsize=(30, 14))
     .main()                                                       # mutation matrix
     .add_freq(freq_columns=["freq", "LUAD_freq", "ASC_freq", "LUSC_freq"], side="right")
-    .add_bar("TMB", side="top")
+    .add_bar("mutations_count", side="top")
     .add_sample_annotation(["subtype", "sex", "smoke"], side="bottom")
     .render()  # draws everything + all legends in one pass
 )
@@ -193,7 +192,6 @@ op.save("mutation_oncoplot.tiff", dpi=300)
 # Continuous main matrix via .main(kind="cnv"); same declarative track API.
 op = (CNV_gene_cosmic.plot.oncoplot(figsize=(30, 10))
     .main(kind="cnv", yticklabels=False, cmap="coolwarm", vmin=-2, vmax=2)
-    .add_bar("TMB", side="top")
     .add_sample_annotation(["subtype", "sex", "smoke"], side="bottom")
     .render()
 )
@@ -217,7 +215,7 @@ accessor as the statistical plots:
 ```python
 op = (table.plot.oncoplot(figsize=(15, 10))
     .main()                                       # mutation matrix
-    .add_bar("TMB", side="top")
+    .add_bar("mutations_count", side="top")
     .add_freq(side="right")
     .add_sample_annotation(["subtype", "sex"], side="bottom")  # categorical
     .add_sample_annotation(["age"], side="bottom")             # numeric (+ colorbar)
@@ -256,7 +254,7 @@ grouped = (table
 
 op = (grouped.plot.oncoplot(figsize=(13, 9))
     .main()
-    .add_bar("TMB", side="top")
+    .add_bar("mutations_count", side="top")
     .add_freq(side="right")
     .group_features(by="pathway")           # row sections + left titles
     .group_samples(by="subtype", freq=True) # column sections + top titles

@@ -25,7 +25,6 @@ the package, so this runs as-is after ``pip install``:
    table = (
        maf.to_gene_table()
        .add_freq()
-       .calculate_tmb(default_capture_size=40)
        .sort_features(by="freq")
        .sort_samples_by_mutations()
    )
@@ -34,7 +33,7 @@ the package, so this runs as-is after ``pip install``:
    op = (
        table.plot.oncoplot(figsize=(12, 8))
        .main()                        # mutation matrix
-       .add_bar("TMB", side="top")
+       .add_bar("mutations_count", side="top")
        .add_freq(side="right")
        .render()
    )
@@ -107,17 +106,42 @@ samples distinct:
 Computing TMB
 -------------
 
+Scientific TMB requires an explicit eligible sample universe, an event-filter
+policy, and sample-specific callable territory. A universal 40 Mb denominator
+is not assumed:
+
 .. code-block:: python
 
-   table = maf.to_gene_table()           # provides `mutations_count`, not TMB
-   table = table.calculate_tmb(default_capture_size=40)  # TMB = count / size (Mb)
-   table.sample_metadata["TMB"]
+   import pandas as pd
+   from pymaftools import MAF, SampleManifest
 
-.. note::
+   manifest = SampleManifest(
+       pd.DataFrame(
+           {
+               "patient_id": ["patient-1", "patient-2"],
+               "eligible": [True, True],
+               "callable_mb": [38.7, 41.2],
+           },
+           index=["sample-1", "sample-2"],
+       )
+   )
+   manifest.assert_independent("patient")
+   audit = maf.calculate_tmb_audit(
+       manifest,
+       variant_classifications=MAF.nonsynonymous_types,
+   )
+   audit.summary[["mutation_count", "callable_mb", "TMB"]]
+   audit.events[["included", "exclusion_reason"]]
 
-   ``to_gene_table`` does not compute TMB. ``calculate_tmb`` returns a **new**
-   table rather than modifying in place, so capture the return value
-   (``table = table.calculate_tmb(...)``) or the TMB column will not appear.
+``callable_mb`` must come from the callable territory for each analyzed sample
+under the same genome build and assay policy. Pass ``pass_col``,
+``somatic_col``, and ``genome_build_col`` when those event fields are available.
+
+.. warning::
+
+   ``PivotTable.calculate_tmb(default_capture_size=40)`` remains temporarily for
+   backward compatibility. It is a legacy normalized count without an event
+   audit and should not be reported as scientific TMB.
 
 Subsetting Data
 ---------------
