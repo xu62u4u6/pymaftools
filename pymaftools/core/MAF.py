@@ -338,7 +338,8 @@ class MAF(pd.DataFrame):
         genome_build_col, expected_genome_build : str, optional
             Both must be provided together to enforce a single build.
         deduplicate : bool, default True
-            Exclude repeated sample/coordinate/allele events from the numerator.
+            After all event filters, exclude repeated
+            sample/coordinate/allele events from the numerator.
 
         Returns
         -------
@@ -417,7 +418,11 @@ class MAF(pd.DataFrame):
                 raise ValueError(
                     f"MAF is missing TMB deduplication column(s): {missing_dedup}."
                 )
-            duplicate = events.duplicated(subset=dedup_columns, keep="first")
+            duplicate = pd.Series(False, index=events.index)
+            included_index = events.index[events["included"]]
+            duplicate.loc[included_index] = events.loc[included_index].duplicated(
+                subset=dedup_columns, keep="first"
+            )
             exclude(duplicate, "duplicate_event")
 
         counts = (

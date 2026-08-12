@@ -342,6 +342,32 @@ def test_tmb_audit_keeps_zero_event_samples_and_deduplicates():
     assert audit.exclusion_counts().to_dict() == {"duplicate_event": 1}
 
 
+@pytest.mark.parametrize("filters", [["FAIL", "PASS"], ["PASS", "FAIL"]])
+def test_tmb_deduplicates_only_after_event_filters(filters):
+    manifest = SampleManifest(
+        pd.DataFrame(
+            {
+                "patient_id": ["P1"],
+                "eligible": [True],
+                "callable_mb": [40.0],
+            },
+            index=["S1"],
+        )
+    )
+    maf = MAF(pd.concat([_maf(), _maf()], ignore_index=True))
+    maf["FILTER"] = filters
+
+    audit = maf.calculate_tmb_audit(
+        manifest,
+        pass_col="FILTER",
+        variant_classifications=MAF.nonsynonymous_types,
+    )
+
+    assert audit.summary.loc["S1", "mutation_count"] == 1
+    assert audit.exclusion_counts().to_dict() == {"quality_filter": 1}
+    assert audit.events.loc[audit.events["included"], "FILTER"].tolist() == ["PASS"]
+
+
 def test_tmb_audit_records_filter_reasons_and_build():
     manifest = SampleManifest(
         pd.DataFrame(
