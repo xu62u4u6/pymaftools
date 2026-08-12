@@ -110,6 +110,43 @@ class MAF(pd.DataFrame):
                     break
         return n
 
+    @staticmethod
+    def _detect_delimiter(
+        maf_path: str | os.PathLike,
+        *,
+        skiprows: int = 0,
+    ) -> str:
+        """Detect a comma- or tab-delimited MAF header.
+
+        Detection is deliberately limited to the two formats supported by
+        :meth:`read_maf`.  Inspecting the header instead of the data rows avoids
+        treating punctuation inside annotations as a delimiter.
+        """
+        path = os.fspath(maf_path)
+        opener = gzip.open if path.endswith(".gz") else open
+        with opener(path, mode="rt", encoding="utf-8") as handle:
+            for _ in range(skiprows):
+                next(handle, None)
+            header = next(handle, "").rstrip("\r\n")
+
+        if not header:
+            raise ValueError(f"MAF file '{maf_path}' has no column header.")
+
+        tab_count = header.count("\t")
+        comma_count = header.count(",")
+        if tab_count and not comma_count:
+            return "\t"
+        if comma_count and not tab_count:
+            return ","
+        if tab_count > comma_count:
+            return "\t"
+        if comma_count > tab_count:
+            return ","
+        raise ValueError(
+            f"Could not detect whether MAF file '{maf_path}' is comma- or "
+            "tab-delimited; pass sep=',' or sep='\\t' explicitly."
+        )
+
     @classmethod
     def read_maf(
         cls,
@@ -118,6 +155,7 @@ class MAF(pd.DataFrame):
         preffix: str = "",
         suffix: str = "",
         sample_col: str = "Tumor_Sample_Barcode",
+        sep: str | None = None,
     ) -> MAF:
         """
         Read a MAF file and return a MAF object.
@@ -125,6 +163,8 @@ class MAF(pd.DataFrame):
         Leading comment lines (``#``-prefixed, such as the GDC
         ``#version 2.4`` header) are detected and skipped automatically, so
         files with zero, one, or many comment lines are all read correctly.
+        Comma- and tab-delimited headers are detected automatically unless
+        ``sep`` is supplied explicitly.
 
         Sample identity is resolved as follows:
 
@@ -148,6 +188,9 @@ class MAF(pd.DataFrame):
         sample_col : str, default "Tumor_Sample_Barcode"
             Column holding the per-row sample identifier, used when
             ``sample_ID`` is ``None``.
+        sep : {``,`` , ``\\t``} or None, default None
+            Input delimiter. When ``None``, inspect the first non-comment
+            header line and detect comma- or tab-delimited input.
 
         Returns
         -------
@@ -160,11 +203,26 @@ class MAF(pd.DataFrame):
             If ``sample_ID`` is ``None`` and ``sample_col`` is not present.
         """
         skiprows = cls._count_leading_comment_lines(maf_path)
-        maf = cls(pd.read_csv(maf_path, skiprows=skiprows, sep="\t"))
+        detected_sep = cls._detect_delimiter(maf_path, skiprows=skiprows)
+        if sep is None:
+            sep = detected_sep
+        elif sep not in {",", "\t"}:
+            raise ValueError("sep must be ',' or '\\t'.")
+
+        maf = cls(pd.read_csv(maf_path, skiprows=skiprows, sep=sep))
         missing_index_columns = [
             column for column in cls.index_col if column not in maf.columns
         ]
         if missing_index_columns:
+            if sep != detected_sep:
+                expected = "comma" if detected_sep == "," else "tab"
+                received = "comma" if sep == "," else "tab"
+                raise ValueError(
+                    f"Delimiter mismatch for MAF file '{maf_path}': the header "
+                    f"appears {expected}-delimited, but sep selected {received}-"
+                    "delimited parsing. Remove sep to auto-detect it or pass the "
+                    "matching delimiter explicitly."
+                )
             raise ValueError(
                 f"MAF file '{maf_path}' is missing required column(s): "
                 f"{missing_index_columns}."

@@ -263,6 +263,44 @@ def test_read_maf_supports_gzip_with_leading_comments(tmp_path):
     assert "TP53|7577120|7577120|C|C|T" in maf.index
 
 
+def test_read_maf_auto_detects_comma_separated_input(tmp_path):
+    path = tmp_path / "mutations.csv"
+    pd.DataFrame(
+        {
+            "Hugo_Symbol": ["TP53"],
+            "Start_Position": [100],
+            "End_Position": [100],
+            "Reference_Allele": ["C"],
+            "Tumor_Seq_Allele1": ["C"],
+            "Tumor_Seq_Allele2": ["T"],
+            "Tumor_Sample_Barcode": ["sample-1"],
+        }
+    ).to_csv(path, index=False)
+
+    maf = MAF.read_maf(path)
+
+    assert list(maf["Hugo_Symbol"]) == ["TP53"]
+    assert list(maf["sample_ID"]) == ["sample-1"]
+
+
+def test_read_maf_reports_actionable_delimiter_mismatch(tmp_path):
+    path = tmp_path / "mutations.csv"
+    pd.DataFrame(
+        {
+            "Hugo_Symbol": ["TP53"],
+            "Start_Position": [100],
+            "End_Position": [100],
+            "Reference_Allele": ["C"],
+            "Tumor_Seq_Allele1": ["C"],
+            "Tumor_Seq_Allele2": ["T"],
+            "Tumor_Sample_Barcode": ["sample-1"],
+        }
+    ).to_csv(path, index=False)
+
+    with pytest.raises(ValueError, match="Delimiter mismatch"):
+        MAF.read_maf(path, sep="\t")
+
+
 def test_read_maf_to_pivot_table_and_tmb_end_to_end(tmp_path):
     """Full flow: read two single-sample MAFs -> merge -> pivot -> TMB."""
     path_a = _write_maf(tmp_path / "a.maf", ["#version 2.4"])
