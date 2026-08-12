@@ -15,6 +15,11 @@ Record:
 Do not silently combine incompatible identifiers, callers, genome builds, or
 measurement scales.
 
+Build the analysis universe from eligibility records, not from samples that
+happen to have mutation rows. Keep eligible zero-event samples. Treat missing
+matrix cells as unobserved unless assay/callability evidence supports observed
+absence; encode that evidence with `SampleManifest` and `ObservationMask`.
+
 ## Statistical checks
 
 - Report effect sizes and uncertainty, not only p-values.
@@ -23,6 +28,10 @@ measurement scales.
 - Keep biological absence separate from missing measurement.
 - Prevent train/test and patient-level leakage in model workflows.
 - Use deterministic seeds where randomness is involved.
+- For TMB, record event filters, duplicate policy, genome build, and
+  sample-specific callable territory; inspect the exclusion ledger.
+- For feature-wise tests, declare the tested-family rule before BH correction
+  and keep unadjusted Fisher results separate from covariate-adjusted claims.
 
 ## Plot checks
 

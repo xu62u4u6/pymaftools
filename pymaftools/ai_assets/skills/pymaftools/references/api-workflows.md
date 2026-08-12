@@ -18,6 +18,45 @@ table = (
 `MAF` owns raw mutation events. Convert it to a matrix before matrix-level
 filtering, statistics, metadata operations, or oncoplots.
 
+For scientific denominators, pass the complete sample universe rather than
+deriving it from event-bearing rows:
+
+```python
+import pandas as pd
+from pymaftools import MAF, ObservationMask, SampleManifest
+
+manifest = SampleManifest(
+    pd.DataFrame(
+        {"patient_id": ["P1", "P2"], "eligible": [True, True]},
+        index=["S1", "S2"],
+    )
+)
+table = maf.to_gene_table(sample_manifest=manifest)
+table = table.with_scientific_context(
+    observation_mask=ObservationMask.fully_observed(table)
+)
+frequency = table.calculate_feature_frequency()
+```
+
+Use `ObservationMask.fully_observed()` only when the upstream assay and calling
+policy justify that assumption. Otherwise construct a feature-by-sample mask
+from callability or QC evidence. Present events marked unobserved fail
+validation.
+
+## Audited TMB and enrichment
+
+Use `MAF.calculate_tmb_audit()` for scientific TMB. Supply a `SampleManifest`
+with positive, sample-specific `callable_mb` and explicitly name available PASS,
+somatic-status, variant-classification, and genome-build rules. Inspect both
+`audit.summary` and the event-level `audit.events` exclusion ledger. Do not
+report `PivotTable.calculate_tmb(default_capture_size=40)` as scientific TMB.
+
+Use `PivotTable.mutation_enrichment_test()` with an explicit group column,
+groups, minimum-mutation rule, method, analysis unit, and confidence level.
+The tested family receives BH correction. Patient-level analysis requires an
+attached manifest and rejects repeated eligible patients; the method does not
+adjust for confounding or paired/repeated observations.
+
 ## Matrix metadata
 
 `PivotTable` and its specialized subclasses contain:

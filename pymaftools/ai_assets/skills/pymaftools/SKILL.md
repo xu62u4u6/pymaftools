@@ -24,10 +24,13 @@ remembered signatures when source or generated API documentation is available.
 2. Inspect the relevant class or function before writing code.
 3. Preserve alignment between the feature-by-sample matrix,
    `feature_metadata`, and `sample_metadata`.
-4. Keep statistical computation separate from visualization.
-5. Use the smallest public workflow that answers the question.
-6. Save reusable tables and figures, and record versions and filtering choices.
-7. Validate behavior with focused tests or a rerunnable example.
+4. For scientific frequencies, TMB, or group comparisons, declare the complete
+   sample universe with `SampleManifest`; attach `ObservationMask` when
+   observable cells differ by feature or sample.
+5. Keep statistical computation separate from visualization.
+6. Use the smallest public workflow that answers the question.
+7. Save reusable tables and figures, and record versions and filtering choices.
+8. Validate behavior with focused tests or a rerunnable example.
 
 ## Repository commands
 
@@ -50,4 +53,6 @@ for unit tests.
 - Render plots before saving them.
 - Do not interpret a visually plausible plot as evidence that its scientific
   meaning is correct.
+- Do not infer biological wild type from a missing matrix cell without an
+  observation policy, or use legacy 40 Mb normalized counts as scientific TMB.
 - Keep package changes separate from example-study outputs.

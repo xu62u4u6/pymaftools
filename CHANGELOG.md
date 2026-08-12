@@ -2,6 +2,67 @@
 
 ---
 
+## 🔖 Version 0.6.0 (August 2026)
+
+Scientific-validity release adding explicit sample-universe and observation-state
+contracts, an auditable TCGA lung workflow, and the evidence package for the
+Pymaftools software-methods preprint.
+
+### 🧪 Scientific data contracts
+
+* **`SampleManifest`:** declares eligible and excluded samples, patient identity,
+  assay, genome build, and sample-specific callable territory; zero-event samples
+  remain part of the analysis universe.
+* **`ObservationMask`:** distinguishes observed absence from an unobserved
+  gene--sample cell and persists with supported table operations and HDF5 files.
+* **Audited TMB:** `MAF.calculate_tmb_audit()` returns sample summaries plus an
+  event-level inclusion/exclusion ledger under explicit filters, duplicate policy,
+  build, and callable-megabase inputs.
+* **Audited enrichment:** `PivotTable.mutation_enrichment_test()` reports explicit
+  group denominators, odds ratios and intervals, Fisher p-values, and BH-adjusted
+  p-values for a declared tested family; repeated patients are rejected by the
+  patient-level independence guard.
+
+### 🫁 Reproducible public case study
+
+* Added an exact primary-tumor sample/vial alignment workflow for 424 TCGA-LUAD
+  and 422 TCGA-LUSC cases across five GDC modalities.
+* Pinned 846 public mutation-file UUIDs, sizes, MD5 checksums, selection reasons,
+  data release, query time, and the one-command regeneration workflow.
+* Added deterministic synthetic, base-R, observation-mask, maftools, null/FDR,
+  confidence-interval, confounding, and patient-leakage validation artifacts.
+* Added a seven-page LaTeX manuscript, five figures, claim-evidence ledger,
+  documentation-only clean-wheel test, and clean-worktree reproduction report.
+
+### 🐛 Correctness and usability
+
+* `MAF.read_maf()` now detects comma- and tab-delimited inputs and reports
+  incompatible columns without exposing user-specific paths.
+* MAF-to-gene-table conversion scales without repeated frame concatenation.
+* TMB duplicate removal occurs after scientific event filters, making results
+  independent of input-row order.
+* Plot saving accepts `str` and `os.PathLike` destinations.
+* Complete sample universes are enforced before patient-level enrichment.
+
+### 🤖 Reusable AI assets
+
+* Added package-distributed researcher, bioinformatics-validator, and
+  reproducibility-reviewer agents plus a Pymaftools skill.
+* Added `pymaftools-ai` installation and dry-run commands for project or user
+  scope in Codex and Claude environments.
+
+### ✅ Validation
+
+* 307 tests passed with 68.52% coverage in the final local full-suite run; 29
+  focused paper and scientific-context tests passed after provenance
+  stabilization.
+* Warning-free Sphinx, Ruff, wheel/sdist metadata, deterministic PDF/arXiv source,
+  and 31/31 scientific artifact checksum checks passed.
+* A detached clean worktree created a new Python environment, freshly downloaded
+  all 846 GDC MAFs, and regenerated the committed paper evidence with no diff.
+
+---
+
 ## 🔖 Version 0.5.0 (July 2026)
 
 Track-based redesign of the plotting module (`OncoPlot`). The visualization is now

@@ -1,8 +1,8 @@
 # pymaftools Roadmap
 
-> Last reviewed: 2026-07-15
+> Last reviewed: 2026-08-12
 
-This file describes work that is still relevant after 0.5.0. Completed release
+This file describes work that is still relevant after 0.6.0. Completed release
 details belong in `CHANGELOG.md`; release operations and risks belong in
 `RELEASE_CHECKLIST.md` and `RELEASE_AUDIT.md`.
 
@@ -13,17 +13,31 @@ the **Backlog** require a real use case or design decision before implementation
 
 | Area | Current state | Near-term target |
 | --- | --- | --- |
-| Release | 0.5.0 on PyPI | Patch releases use the protected tag workflow |
-| Test coverage | 65.18%; CI fails below 60% | Raise coverage in high-risk modules before raising the gate |
+| Release | 0.6.0 release candidate on `dev`; 0.5.0 on PyPI | Confirm author metadata, merge, tag, and archive the paper release |
+| Test coverage | 68.52%; CI fails below 60%; final local suite has 307 passing tests | Raise coverage in high-risk modules before raising the gate |
 | Python | 3.10-3.12 required; 3.13-3.14 experimental | Review experimental failures on every PR |
 | Persistence | HDF5 canonical; SQLite deprecated | Preserve SQLite read compatibility during the deprecation period |
 | Documentation | Warning-free Sphinx build deployed to GitHub Pages | Add contributor and architecture guidance |
 | Largest module | `core/PivotTable.py`, 2,032 lines | Reduce responsibilities with tested extractions |
 | Bundled data | `protein_domains.csv`, about 24 MB | Decide whether network-independent lookup justifies the package cost |
 
-The coverage values above come from the 2026-07-15 full local suite. Useful
-module-level baselines include `MAF.py` 89%, `StackingModel.py` 76%,
-`geneset.py` 100%, and `CopyNumberVariationTable.py` 23%.
+The 2026-08-12 full local suite measured `MAF.py` 86%, `SampleManifest.py`
+81%, `ObservationMask.py` 85%, `TMBAudit.py` 91%, and `pivot_stats.py` 89%.
+`CopyNumberVariationTable.py` remains a priority at 23%; do not raise the
+global threshold until low-coverage, high-risk modules improve.
+
+## Shipped in 0.6.0
+
+- `SampleManifest` and `ObservationMask` make eligible samples, patient identity,
+  zero-event samples, and observed-versus-unobserved cells explicit.
+- Auditable TMB and two-group mutation-enrichment workflows expose filters,
+  denominators, tested families, intervals, and failure conditions.
+- The pinned TCGA-LUAD/LUSC paper workflow verifies 846 public MAFs and exact
+  primary-tumor sample/vial alignment across five modalities.
+- Independent R and maftools oracles, simulations, clean-wheel user testing, and
+  a clean-worktree full-data reproduction support the named manuscript claims.
+- Repository-distributed research and validation agents can be installed for
+  Codex or Claude with `pymaftools-ai`.
 
 ## Shipped in 0.5.0
 
