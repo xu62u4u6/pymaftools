@@ -16,7 +16,9 @@ def load_file_mapping(mapping_path: str | Path) -> pd.DataFrame:
     """
     Load file_to_case.tsv mapping table.
 
-    Expected columns: file_id, filename, data_type, case_id, sample_type.
+    Required columns include file_id, filename, data_type, case_id,
+    sample_id, sample_type, aliquot_id, and mapping_status. Legacy ``dtype`` is
+    normalized to ``data_type`` but does not supply missing specimen identity.
 
     Parameters
     ----------
@@ -29,6 +31,8 @@ def load_file_mapping(mapping_path: str | Path) -> pd.DataFrame:
         Mapping table indexed by file_id.
     """
     df = pd.read_csv(mapping_path, sep="\t", dtype=str)
+    if "data_type" not in df.columns and "dtype" in df.columns:
+        df = df.rename(columns={"dtype": "data_type"})
     return df.set_index("file_id")
 
 
@@ -56,8 +60,8 @@ def resolve_files(
     Returns
     -------
     list of dict
-        Each dict has keys: case_id, sample_type, data_type, file_id, filepath.
-        Sorted by case_id.
+        Each dict carries the complete mapping row plus ``file_id`` and
+        ``filepath``. Sorted by case and exact sample barcode.
     """
     data_dir = Path(data_dir)
 
@@ -88,14 +92,15 @@ def resolve_files(
             continue
 
         row = mapping_df.loc[file_id]
-        results.append(
-            {
-                "case_id": row["case_id"],
-                "sample_type": row.get("sample_type"),
-                "data_type": row.get("data_type"),
-                "file_id": file_id,
-                "filepath": filepath,
-            }
-        )
+        file_info = row.to_dict()
+        file_info.update({"file_id": file_id, "filepath": filepath})
+        results.append(file_info)
 
-    return sorted(results, key=lambda x: (x["case_id"], x["filepath"].name))
+    return sorted(
+        results,
+        key=lambda x: (
+            str(x.get("case_id")),
+            str(x.get("sample_id")),
+            x["filepath"].name,
+        ),
+    )

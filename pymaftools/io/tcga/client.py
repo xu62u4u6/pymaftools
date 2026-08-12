@@ -129,6 +129,89 @@ def _pick_preferred_sample(samples: list[dict]) -> dict | None:
     return samples[0]
 
 
+def _tcga_entity_ids(aliquot_id: str) -> dict[str, str | None]:
+    """Derive sample, portion, and analyte barcodes from a TCGA aliquot."""
+    parts = aliquot_id.split("-")
+    if len(parts) < 5:
+        return {"sample_id": None, "portion_id": None, "analyte_id": None}
+    sample_id = "-".join(parts[:4])
+    portion_id = "-".join([*parts[:4], parts[4][:2]])
+    analyte_id = "-".join(parts[:5])
+    return {
+        "sample_id": sample_id,
+        "portion_id": portion_id,
+        "analyte_id": analyte_id,
+    }
+
+
+def _extract_biospecimen_metadata(hit: dict) -> dict[str, object]:
+    """Resolve the exact tumor aliquot associated with one GDC file.
+
+    The GDC ``cases.samples`` tree contains every biospecimen for the case, so
+    selecting its first tumor sample can link a file to the wrong specimen.
+    ``associated_entities`` is the file-level relationship and is therefore
+    the authoritative starting point.
+    """
+    cases = hit.get("cases") or []
+    case = cases[0] if len(cases) == 1 else {}
+    associated = [
+        entity
+        for entity in (hit.get("associated_entities") or [])
+        if entity.get("entity_type") == "aliquot"
+        and entity.get("entity_submitter_id")
+    ]
+    tumor_entities = [
+        entity
+        for entity in associated
+        if _is_tumor_sample({"submitter_id": entity["entity_submitter_id"]})
+    ]
+    normal_entities = [entity for entity in associated if entity not in tumor_entities]
+
+    selected = tumor_entities[0] if len(tumor_entities) == 1 else None
+    if len(cases) != 1:
+        status = "ambiguous_case"
+    elif len(tumor_entities) == 0:
+        status = "no_tumor_aliquot"
+    elif len(tumor_entities) > 1:
+        status = "ambiguous_tumor_aliquot"
+    else:
+        status = "resolved_tumor_aliquot"
+
+    aliquot_id = selected.get("entity_submitter_id") if selected else None
+    derived = (
+        _tcga_entity_ids(str(aliquot_id))
+        if aliquot_id is not None
+        else {"sample_id": None, "portion_id": None, "analyte_id": None}
+    )
+    samples = case.get("samples") or []
+    sample = next(
+        (
+            value
+            for value in samples
+            if value.get("submitter_id") == derived["sample_id"]
+        ),
+        {},
+    )
+
+    return {
+        "case_id": case.get("submitter_id"),
+        "project": (case.get("project") or {}).get("project_id"),
+        "sample_id": derived["sample_id"],
+        "sample_uuid": sample.get("sample_id"),
+        "sample_type": sample.get("sample_type"),
+        "portion_id": derived["portion_id"],
+        "analyte_id": derived["analyte_id"],
+        "aliquot_id": aliquot_id,
+        "aliquot_uuid": selected.get("entity_id") if selected else None,
+        "paired_normal_aliquot_ids": ";".join(
+            sorted(str(entity["entity_submitter_id"]) for entity in normal_entities)
+        ),
+        "associated_entity_count": len(associated),
+        "tumor_aliquot_count": len(tumor_entities),
+        "mapping_status": status,
+    }
+
+
 class GDCClient:
     """
     Client for querying, aligning, and downloading TCGA data from GDC.
@@ -281,12 +364,22 @@ class GDCClient:
         return r.json()["data"]["hits"]
 
     def _batch_query_metadata(self, file_ids: list[str]) -> list[dict]:
-        """Batch query file_id → case_id, sample_type, project."""
+        """Batch query file and exact file-associated biospecimen metadata."""
         fields = (
             "file_id,file_name,file_size,md5sum,state,data_type,"
-            "analysis.workflow_type,"
+            "data_category,data_format,experimental_strategy,associated_entities,"
+            "analysis.workflow_type,analysis.updated_datetime,"
             "cases.submitter_id,cases.samples.submitter_id,"
-            "cases.samples.sample_type,cases.project.project_id"
+            "cases.samples.sample_id,cases.samples.sample_type,"
+            "cases.samples.portions.submitter_id,"
+            "cases.samples.portions.analytes.submitter_id,"
+            "cases.samples.portions.analytes.aliquots.submitter_id,"
+            "cases.project.project_id"
+        )
+        expand = (
+            "associated_entities,cases.samples,cases.samples.portions,"
+            "cases.samples.portions.analytes,"
+            "cases.samples.portions.analytes.aliquots"
         )
         results = []
         for attempt in range(1, MAX_RETRIES + 1):
@@ -298,6 +391,7 @@ class GDCClient:
                 payload = {
                     "filters": json.dumps(filters),
                     "fields": fields,
+                    "expand": expand,
                     "size": len(file_ids),
                     "format": "json",
                 }
@@ -429,7 +523,12 @@ class GDCClient:
                     {
                         "file_id": h["file_id"],
                         "filename": h["file_name"],
-                        "dtype": label,
+                        "data_type": label,
+                        "gdc_data_type": dt["data_type"],
+                        "workflow_type": dt.get("workflow_type"),
+                        "md5": h.get("md5sum", ""),
+                        "size": h.get("file_size", 0),
+                        "state": h.get("state", ""),
                     }
                 )
 
@@ -445,50 +544,200 @@ class GDCClient:
 
     def build_file_mapping(self, records: list[dict]) -> pd.DataFrame:
         """
-        Build file_id → case_id / sample_type / project mapping via GDC API.
+        Build a file-level mapping to exact tumor biospecimen entities.
 
         Parameters
         ----------
         records : list of dict
-            Each dict must have ``file_id``, ``filename``, ``dtype``.
+            Each dict must have ``file_id`` and ``filename``. ``data_type`` is
+            the Pymaftools modality label; legacy ``dtype`` is accepted.
 
         Returns
         -------
         pd.DataFrame
-            Columns: file_id, filename, dtype, case_id, sample_type, project.
+            One row per file, including case, sample, portion, analyte,
+            aliquot, workflow, checksum, and mapping status.
         """
         unique_ids = list({r["file_id"] for r in records})
         print(f"\nBuilding file mapping ({len(unique_ids)} files)...")
 
-        mapping: dict[str, tuple] = {}
+        mapping: dict[str, dict[str, object]] = {}
         for i in tqdm(
             range(0, len(unique_ids), BATCH_SIZE), desc="Querying GDC", unit="batch"
         ):
             batch = unique_ids[i : i + BATCH_SIZE]
             for hit in self._batch_query_metadata(batch):
                 fid = hit["file_id"]
-                case_id = sample_type = project = None
-                if hit.get("cases"):
-                    c = hit["cases"][0]
-                    case_id = c.get("submitter_id")
-                    project = (c.get("project") or {}).get("project_id")
-                    samples = c.get("samples", [])
-                    preferred = _pick_preferred_sample(samples)
-                    if preferred:
-                        sample_type = preferred.get("sample_type")
-                mapping[fid] = (case_id, sample_type, project)
+                analysis = hit.get("analysis") or {}
+                mapping[fid] = {
+                    **_extract_biospecimen_metadata(hit),
+                    "gdc_data_type": hit.get("data_type"),
+                    "workflow_type": analysis.get("workflow_type"),
+                    "analysis_updated_datetime": analysis.get("updated_datetime"),
+                    "md5": hit.get("md5sum", ""),
+                    "size": hit.get("file_size", 0),
+                    "state": hit.get("state", ""),
+                }
 
         df = pd.DataFrame(records)
-        df["case_id"] = df["file_id"].map(
-            lambda x: mapping.get(x, (None, None, None))[0]
-        )
-        df["sample_type"] = df["file_id"].map(
-            lambda x: mapping.get(x, (None, None, None))[1]
-        )
-        df["project"] = df["file_id"].map(
-            lambda x: mapping.get(x, (None, None, None))[2]
-        )
+        if "data_type" not in df.columns and "dtype" in df.columns:
+            df = df.rename(columns={"dtype": "data_type"})
+        if mapping:
+            metadata = pd.DataFrame.from_dict(mapping, orient="index")
+            metadata.index.name = "file_id"
+            metadata = metadata.reset_index()
+        else:
+            metadata = pd.DataFrame({"file_id": pd.Series(dtype=str)})
+        api_columns = [
+            column
+            for column in metadata.columns
+            if column == "file_id" or column not in df.columns
+        ]
+        df = df.merge(metadata[api_columns], on="file_id", how="left")
+        if "mapping_status" not in df.columns:
+            df["mapping_status"] = "missing_api_metadata"
+        else:
+            df["mapping_status"] = df["mapping_status"].fillna(
+                "missing_api_metadata"
+            )
         return df
+
+    @staticmethod
+    def align_specimens(
+        file_mapping: pd.DataFrame,
+        data_types: Optional[list[str]] = None,
+        *,
+        sample_type: str = "Primary Tumor",
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
+        """Select only cases with one exact shared specimen across modalities.
+
+        Case identifiers are participant-level and cannot establish that two
+        files came from the same tissue specimen. This method intersects exact
+        TCGA sample barcodes and rejects missing, ambiguous, duplicated, or
+        cross-vial inputs instead of selecting a file by UUID order.
+
+        Returns
+        -------
+        selected_files, alignment_report : tuple of pandas.DataFrame
+            ``selected_files`` contains exactly one file per case and modality.
+            ``alignment_report`` contains every candidate case and its attrition
+            reason.
+        """
+        required = {
+            "file_id",
+            "case_id",
+            "data_type",
+            "sample_id",
+            "sample_type",
+            "mapping_status",
+        }
+        missing_columns = sorted(required - set(file_mapping.columns))
+        if missing_columns:
+            raise ValueError(
+                "file_mapping is missing specimen-alignment column(s): "
+                f"{missing_columns}."
+            )
+        if file_mapping["file_id"].duplicated().any():
+            duplicates = file_mapping.loc[
+                file_mapping["file_id"].duplicated(keep=False), "file_id"
+            ].unique()
+            raise ValueError(
+                f"file_mapping contains duplicate file_id values: {duplicates.tolist()}."
+            )
+
+        modalities = data_types or sorted(file_mapping["data_type"].dropna().unique())
+        if not modalities:
+            raise ValueError("data_types must contain at least one modality.")
+
+        candidates = file_mapping.loc[
+            file_mapping["sample_type"].eq(sample_type)
+            & file_mapping["data_type"].isin(modalities)
+        ].copy()
+        case_ids = sorted(file_mapping["case_id"].dropna().unique())
+        selected_rows: list[pd.DataFrame] = []
+        report_rows = []
+
+        for case_id in case_ids:
+            case_all = file_mapping.loc[file_mapping["case_id"].eq(case_id)]
+            case = candidates.loc[candidates["case_id"].eq(case_id)]
+            available = {
+                modality: sorted(
+                    case.loc[case["data_type"].eq(modality), "sample_id"]
+                    .dropna()
+                    .unique()
+                    .tolist()
+                )
+                for modality in modalities
+            }
+            present_modalities = set(case["data_type"])
+            missing_modalities = [
+                modality for modality in modalities if modality not in present_modalities
+            ]
+            unresolved = case_all.loc[
+                case_all["data_type"].isin(modalities)
+                & ~case_all["mapping_status"].eq("resolved_tumor_aliquot")
+            ]
+            selected_sample_id = None
+
+            if missing_modalities:
+                status = "missing_modality"
+                detail = ",".join(missing_modalities)
+            elif not unresolved.empty:
+                status = "unresolved_mapping"
+                detail = ",".join(sorted(unresolved["mapping_status"].unique()))
+            else:
+                shared_samples = set(available[modalities[0]])
+                for modality in modalities[1:]:
+                    shared_samples &= set(available[modality])
+
+                if not shared_samples:
+                    status = "specimen_mismatch"
+                    detail = "no exact sample barcode shared by all modalities"
+                elif len(shared_samples) > 1:
+                    status = "ambiguous_shared_samples"
+                    detail = ",".join(sorted(shared_samples))
+                else:
+                    selected_sample_id = next(iter(shared_samples))
+                    chosen = case.loc[case["sample_id"].eq(selected_sample_id)]
+                    counts = chosen["data_type"].value_counts()
+                    duplicate_modalities = [
+                        modality
+                        for modality in modalities
+                        if int(counts.get(modality, 0)) != 1
+                    ]
+                    if duplicate_modalities:
+                        status = "duplicate_files"
+                        detail = ",".join(duplicate_modalities)
+                    else:
+                        status = "selected"
+                        detail = "exact sample barcode shared by all modalities"
+                        selected_rows.append(chosen)
+
+            report_rows.append(
+                {
+                    "case_id": case_id,
+                    "project": (
+                        case_all["project"].dropna().iloc[0]
+                        if "project" in case_all and not case_all["project"].dropna().empty
+                        else None
+                    ),
+                    "status": status,
+                    "selected_sample_id": selected_sample_id,
+                    "detail": detail,
+                    "available_samples": json.dumps(available, sort_keys=True),
+                }
+            )
+
+        selected = (
+            pd.concat(selected_rows, ignore_index=True)
+            if selected_rows
+            else file_mapping.iloc[0:0].copy()
+        )
+        selected = selected.sort_values(
+            ["case_id", "data_type", "file_id"]
+        ).reset_index(drop=True)
+        report = pd.DataFrame(report_rows).sort_values("case_id").reset_index(drop=True)
+        return selected, report
 
     # ── Manifest alignment ────────────────────────────────────────────────────
 
@@ -500,6 +749,7 @@ class GDCClient:
         mapping_path: str | Path = "data/file_to_case.tsv",
         outdir: str | Path = "data/manifests/aligned",
         aligned_cases_path: str | Path = "data/aligned_cases.tsv",
+        alignment_report_path: str | Path = "data/alignment_report.tsv",
     ) -> Path:
         """
         Align manifests across data types — keep only cases with all omics.
@@ -541,8 +791,7 @@ class GDCClient:
         else:
             raise ValueError(f"mode must be 'pipeline' or 'portal', got {mode!r}")
 
-        # Cases per dtype
-        dtype_cases: dict[str, set] = {}
+        # Candidate cases per dtype
         for label in self.data_types:
             df = manifests.get(label)
             if df is None or df.empty:
@@ -555,19 +804,30 @@ class GDCClient:
                 for fid in df["file_id"]
                 if fid in file_map and file_map[fid].get("case_id")
             }
-            dtype_cases[label] = cases
             print(f"  {label}: {len(cases)} cases")
 
-        aligned = set.intersection(*dtype_cases.values())
-        print(f"\n  → aligned ({len(self.data_types)}-way): {len(aligned)} cases\n")
+        mapping_df = pd.DataFrame(
+            [{"file_id": file_id, **info} for file_id, info in file_map.items()]
+        )
+        selected, alignment_report = self.align_specimens(
+            mapping_df,
+            list(self.data_types),
+        )
+        aligned = set(selected["case_id"])
+        alignment_report.to_csv(alignment_report_path, sep="\t", index=False)
+        print(
+            f"\n  → specimen-aligned ({len(self.data_types)}-way): "
+            f"{len(aligned)} cases\n"
+        )
 
         # Write aligned manifests
         for label in self.data_types:
             df = manifests[label]
             keep = {
-                fid
-                for fid, info in file_map.items()
-                if info.get("dtype") == label and info.get("case_id") in aligned
+                file_id
+                for file_id in selected.loc[
+                    selected["data_type"].eq(label), "file_id"
+                ]
             }
             filtered = df[df["file_id"].isin(keep)]
             out = outdir / f"manifest_{label}.tsv"
@@ -581,19 +841,15 @@ class GDCClient:
             print(f"  {label}: {len(filtered)} files → {out}")
 
         # aligned_cases.tsv
-        project_map = {
-            info["case_id"]: info["project"]
-            for info in file_map.values()
-            if info.get("case_id") in aligned and info.get("project")
-        }
-        aligned_df = pd.DataFrame(
-            [
-                {"submitter_id": c, "project": project_map.get(c, "unknown")}
-                for c in sorted(aligned)
-            ]
+        aligned_df = (
+            selected[["case_id", "project", "sample_id"]]
+            .drop_duplicates()
+            .rename(columns={"case_id": "submitter_id"})
+            .sort_values("submitter_id")
         )
         aligned_df.to_csv(aligned_cases_path, sep="\t", index=False)
         print(f"\nSaved: {aligned_cases_path}")
+        print(f"Saved: {alignment_report_path}")
         print(aligned_df["project"].value_counts().to_string())
         return outdir
 
@@ -606,15 +862,9 @@ class GDCClient:
                 f"{mapping_path} not found. Run generate_full_manifests() first."
             )
         mapping_df = pd.read_csv(mapping_path, sep="\t")
-        file_map = {
-            row["file_id"]: {
-                "dtype": row["dtype"],
-                "case_id": row["case_id"],
-                "sample_type": row["sample_type"],
-                "project": row.get("project"),
-            }
-            for _, row in mapping_df.iterrows()
-        }
+        if "data_type" not in mapping_df.columns and "dtype" in mapping_df.columns:
+            mapping_df = mapping_df.rename(columns={"dtype": "data_type"})
+        file_map = mapping_df.set_index("file_id").to_dict(orient="index")
         manifests = {}
         for label in self.data_types:
             path = full_dir / f"manifest_{label}.tsv"
@@ -649,24 +899,17 @@ class GDCClient:
             batch = file_ids[i : i + BATCH_SIZE]
             for hit in self._batch_query_metadata(batch):
                 fid = hit["file_id"]
-                case_id = sample_type = project = None
-                if hit.get("cases"):
-                    c = hit["cases"][0]
-                    case_id = c.get("submitter_id")
-                    project = (c.get("project") or {}).get("project_id")
-                    samples = c.get("samples", [])
-                    preferred = _pick_preferred_sample(samples)
-                    if preferred:
-                        sample_type = preferred.get("sample_type")
+                biospecimen = _extract_biospecimen_metadata(hit)
                 meta[fid] = {
                     "filename": hit.get("file_name", ""),
                     "md5": hit.get("md5sum", ""),
                     "size": hit.get("file_size", 0),
                     "state": hit.get("state", ""),
                     "data_type": hit.get("data_type", ""),
-                    "case_id": case_id,
-                    "sample_type": sample_type,
-                    "project": project,
+                    **biospecimen,
+                    "workflow_type": (hit.get("analysis") or {}).get(
+                        "workflow_type"
+                    ),
                 }
 
         manifests_rows: dict[str, list] = {label: [] for label in self.data_types}
@@ -689,10 +932,13 @@ class GDCClient:
                 }
             )
             file_map[fid] = {
-                "dtype": label,
-                "case_id": m["case_id"],
-                "sample_type": m["sample_type"],
-                "project": m["project"],
+                "data_type": label,
+                **{
+                    key: value
+                    for key, value in m.items()
+                    if key
+                    not in {"filename", "md5", "size", "state", "data_type"}
+                },
             }
 
         manifests = {

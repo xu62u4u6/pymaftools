@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-import warnings
 
 import pandas as pd
 
@@ -90,12 +89,18 @@ class TCGATableBuilder(ABC):
                     f"{sorted(str(value) for value in sample_types)}; "
                     "set sample_type explicitly"
                 )
+            sample_ids = {
+                f.get("sample_id") for f in candidates if f.get("sample_id")
+            }
+            if len(sample_ids) > 1:
+                raise ValueError(
+                    f"Case {case_id!r} has files from multiple specimens: "
+                    f"{sorted(sample_ids)}; run specimen alignment first"
+                )
             if len(candidates) > 1:
-                warnings.warn(
-                    f"Case {case_id!r} has {len(candidates)} matching files; "
-                    f"using {candidates[0]['filepath']}",
-                    UserWarning,
-                    stacklevel=2,
+                raise ValueError(
+                    f"Case {case_id!r} has {len(candidates)} files for the same "
+                    "modality/specimen; resolve duplicate files explicitly"
                 )
             selected.append(candidates[0])
 
@@ -141,11 +146,27 @@ class TCGATableBuilder(ABC):
         for f in files:
             cid = f["case_id"]
             if cid not in meta_records:
+                provenance_columns = [
+                    "case_id",
+                    "project",
+                    "sample_id",
+                    "sample_uuid",
+                    "sample_type",
+                    "portion_id",
+                    "analyte_id",
+                    "aliquot_id",
+                    "aliquot_uuid",
+                    "file_id",
+                    "data_type",
+                    "gdc_data_type",
+                    "workflow_type",
+                    "md5",
+                    "size",
+                    "state",
+                    "mapping_status",
+                ]
                 meta_records[cid] = {
-                    "case_id": cid,
-                    "sample_type": f["sample_type"],
-                    "file_id": f["file_id"],
-                    "data_type": f["data_type"],
+                    column: f.get(column) for column in provenance_columns
                 }
 
         meta = pd.DataFrame(meta_records.values())

@@ -66,11 +66,12 @@ class TCGAMutationBuilder(TCGATableBuilder):
         return pd.DataFrame(meta_records.values()).set_index("case_id")
 
     def build(self) -> MAF:
-        files = self.resolve_files()
-        if not files:
+        resolved_files = self.resolve_files()
+        if not resolved_files:
             raise FileNotFoundError(
                 f"No files matching '{self.file_pattern}' found in {self.data_dir}"
             )
+        files = self.select_files(resolved_files)
 
         maf = self.read_and_merge(files)
         maf._sample_metadata = self.build_sample_metadata(maf, files)

@@ -9,14 +9,13 @@ Integration tests are marked with @pytest.mark.integration and skipped by defaul
 Run with: pytest -m integration
 """
 
-import json
-from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 import pandas as pd
 import pytest
 
 from pymaftools.io.tcga import GDCClient, parse_tcga_barcode, DATA_TYPE_CONFIGS
+from pymaftools.io.tcga.client import _extract_biospecimen_metadata
 
 
 # ------------------------------------------------------------------ #
@@ -79,6 +78,227 @@ class TestGDCClientOffline:
         for key, config in DATA_TYPE_CONFIGS.items():
             assert "data_type" in config
             assert "label" in config
+
+    def test_extracts_file_associated_tumor_aliquot_not_first_case_sample(self):
+        hit = {
+            "cases": [
+                {
+                    "submitter_id": "TCGA-44-6147",
+                    "project": {"project_id": "TCGA-LUAD"},
+                    "samples": [
+                        {
+                            "submitter_id": "TCGA-44-6147-11A",
+                            "sample_id": "normal-sample-uuid",
+                            "sample_type": "Solid Tissue Normal",
+                        },
+                        {
+                            "submitter_id": "TCGA-44-6147-01A",
+                            "sample_id": "tumor-sample-uuid",
+                            "sample_type": "Primary Tumor",
+                        },
+                    ],
+                }
+            ],
+            "associated_entities": [
+                {
+                    "entity_type": "aliquot",
+                    "entity_submitter_id": "TCGA-44-6147-11A-01D-1111-01",
+                    "entity_id": "normal-aliquot-uuid",
+                },
+                {
+                    "entity_type": "aliquot",
+                    "entity_submitter_id": "TCGA-44-6147-01A-11R-1755-07",
+                    "entity_id": "tumor-aliquot-uuid",
+                },
+            ],
+        }
+
+        result = _extract_biospecimen_metadata(hit)
+
+        assert result["case_id"] == "TCGA-44-6147"
+        assert result["sample_id"] == "TCGA-44-6147-01A"
+        assert result["sample_uuid"] == "tumor-sample-uuid"
+        assert result["sample_type"] == "Primary Tumor"
+        assert result["portion_id"] == "TCGA-44-6147-01A-11"
+        assert result["analyte_id"] == "TCGA-44-6147-01A-11R"
+        assert result["aliquot_id"] == "TCGA-44-6147-01A-11R-1755-07"
+        assert result["paired_normal_aliquot_ids"] == (
+            "TCGA-44-6147-11A-01D-1111-01"
+        )
+        assert result["mapping_status"] == "resolved_tumor_aliquot"
+
+    def test_marks_multiple_tumor_aliquots_ambiguous(self):
+        hit = {
+            "cases": [{"submitter_id": "TCGA-XX-0001", "samples": []}],
+            "associated_entities": [
+                {
+                    "entity_type": "aliquot",
+                    "entity_submitter_id": "TCGA-XX-0001-01A-01D-0000-01",
+                    "entity_id": "a",
+                },
+                {
+                    "entity_type": "aliquot",
+                    "entity_submitter_id": "TCGA-XX-0001-01B-01D-0000-01",
+                    "entity_id": "b",
+                },
+            ],
+        }
+
+        result = _extract_biospecimen_metadata(hit)
+
+        assert result["mapping_status"] == "ambiguous_tumor_aliquot"
+        assert result["sample_id"] is None
+        assert result["tumor_aliquot_count"] == 2
+
+    def test_align_specimens_reports_attrition_without_cross_vial_join(self):
+        rows = []
+
+        def add(case, modality, sample, file_id, status="resolved_tumor_aliquot"):
+            rows.append(
+                {
+                    "file_id": file_id,
+                    "case_id": case,
+                    "project": "TCGA-LUAD",
+                    "data_type": modality,
+                    "sample_id": sample,
+                    "sample_type": "Primary Tumor",
+                    "mapping_status": status,
+                }
+            )
+
+        add("C1", "expression", "C1-01A", "C1-e")
+        add("C1", "mutation", "C1-01A", "C1-m")
+        add("C2", "expression", "C2-01A", "C2-e")
+        add("C2", "mutation", "C2-01B", "C2-m")
+        add("C3", "expression", "C3-01A", "C3-e")
+        add("C4", "expression", "C4-01A", "C4-e1")
+        add("C4", "expression", "C4-01A", "C4-e2")
+        add("C4", "mutation", "C4-01A", "C4-m")
+
+        selected, report = GDCClient.align_specimens(
+            pd.DataFrame(rows), ["expression", "mutation"]
+        )
+
+        assert selected["file_id"].tolist() == ["C1-e", "C1-m"]
+        assert report.set_index("case_id")["status"].to_dict() == {
+            "C1": "selected",
+            "C2": "specimen_mismatch",
+            "C3": "missing_modality",
+            "C4": "duplicate_files",
+        }
+
+    def test_build_file_mapping_emits_exact_provenance_columns(self, monkeypatch):
+        hit = {
+            "file_id": "file-1",
+            "data_type": "Gene Expression Quantification",
+            "md5sum": "abc",
+            "file_size": 123,
+            "state": "released",
+            "analysis": {
+                "workflow_type": "STAR - Counts",
+                "updated_datetime": "2026-01-01T00:00:00Z",
+            },
+            "cases": [
+                {
+                    "submitter_id": "TCGA-XX-0001",
+                    "project": {"project_id": "TCGA-LUAD"},
+                    "samples": [
+                        {
+                            "submitter_id": "TCGA-XX-0001-01A",
+                            "sample_id": "sample-uuid",
+                            "sample_type": "Primary Tumor",
+                        }
+                    ],
+                }
+            ],
+            "associated_entities": [
+                {
+                    "entity_type": "aliquot",
+                    "entity_submitter_id": "TCGA-XX-0001-01A-01R-0000-01",
+                    "entity_id": "aliquot-uuid",
+                }
+            ],
+        }
+        client = GDCClient()
+        monkeypatch.setattr(client, "_batch_query_metadata", lambda _: [hit])
+
+        mapping = client.build_file_mapping(
+            [{"file_id": "file-1", "filename": "counts.tsv", "dtype": "expression"}]
+        )
+
+        row = mapping.iloc[0]
+        assert row["data_type"] == "expression"
+        assert row["gdc_data_type"] == "Gene Expression Quantification"
+        assert row["workflow_type"] == "STAR - Counts"
+        assert row["sample_id"] == "TCGA-XX-0001-01A"
+        assert row["aliquot_id"] == "TCGA-XX-0001-01A-01R-0000-01"
+        assert row["mapping_status"] == "resolved_tumor_aliquot"
+
+    def test_align_manifests_uses_exact_shared_sample(self, tmp_path):
+        data_types = {
+            "expression": {"data_type": "expression"},
+            "mutation": {"data_type": "mutation"},
+        }
+        full_dir = tmp_path / "full"
+        aligned_dir = tmp_path / "aligned"
+        full_dir.mkdir()
+        mapping_rows = []
+        manifests = {"expression": [], "mutation": []}
+
+        def add(case, modality, sample, file_id):
+            mapping_rows.append(
+                {
+                    "file_id": file_id,
+                    "filename": f"{file_id}.txt",
+                    "data_type": modality,
+                    "case_id": case,
+                    "project": "TCGA-LUAD",
+                    "sample_id": sample,
+                    "sample_type": "Primary Tumor",
+                    "mapping_status": "resolved_tumor_aliquot",
+                }
+            )
+            manifests[modality].append(
+                {
+                    "id": file_id,
+                    "filename": f"{file_id}.txt",
+                    "md5": "abc",
+                    "size": 10,
+                    "state": "released",
+                }
+            )
+
+        add("C1", "expression", "C1-01A", "C1-e")
+        add("C1", "mutation", "C1-01A", "C1-m")
+        add("C2", "expression", "C2-01A", "C2-e")
+        add("C2", "mutation", "C2-01B", "C2-m")
+        for modality, rows in manifests.items():
+            pd.DataFrame(rows).to_csv(
+                full_dir / f"manifest_{modality}.tsv", sep="\t", index=False
+            )
+        mapping_path = tmp_path / "file_mapping.tsv"
+        pd.DataFrame(mapping_rows).to_csv(mapping_path, sep="\t", index=False)
+
+        GDCClient(data_types=data_types).align_manifests(
+            full_manifest_dir=full_dir,
+            mapping_path=mapping_path,
+            outdir=aligned_dir,
+            aligned_cases_path=tmp_path / "aligned_cases.tsv",
+            alignment_report_path=tmp_path / "alignment_report.tsv",
+        )
+
+        aligned_expression = pd.read_csv(
+            aligned_dir / "manifest_expression.tsv", sep="\t"
+        )
+        report = pd.read_csv(tmp_path / "alignment_report.tsv", sep="\t")
+        cases = pd.read_csv(tmp_path / "aligned_cases.tsv", sep="\t")
+        assert aligned_expression["id"].tolist() == ["C1-e"]
+        assert cases[["submitter_id", "sample_id"]].to_dict("records") == [
+            {"submitter_id": "C1", "sample_id": "C1-01A"}
+        ]
+        assert report.set_index("case_id").loc["C2", "status"] == (
+            "specimen_mismatch"
+        )
 
     @patch("pymaftools.io.tcga.client.requests.post")
     def test_get_cases(self, mock_post):

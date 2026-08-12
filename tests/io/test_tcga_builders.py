@@ -39,9 +39,10 @@ class DummyBuilder(TCGATableBuilder):
         )
 
 
-def _file(case_id, sample_type, file_id):
+def _file(case_id, sample_type, file_id, sample_id=None):
     return {
         "case_id": case_id,
+        "sample_id": sample_id or f"{case_id}-01A",
         "sample_type": sample_type,
         "data_type": "dummy",
         "file_id": file_id,
@@ -69,17 +70,24 @@ def test_builder_filters_before_building_values_and_metadata():
     assert set(table.sample_metadata["sample_type"]) == {"Primary Tumor"}
 
 
-def test_builder_selects_duplicate_files_deterministically():
+def test_builder_rejects_duplicate_files_instead_of_choosing_by_uuid():
     files = [
         _file("case-1", "Primary Tumor", "tumor-z"),
         _file("case-1", "Primary Tumor", "tumor-a"),
     ]
 
-    with pytest.warns(UserWarning, match="has 2 matching files"):
-        table = DummyBuilder(files).build()
+    with pytest.raises(ValueError, match="resolve duplicate files explicitly"):
+        DummyBuilder(files).build()
 
-    assert table.loc["source_file", "case-1"] == "tumor-a"
-    assert table.sample_metadata.loc["case-1", "file_id"] == "tumor-a"
+
+def test_builder_rejects_multiple_primary_tumor_specimens():
+    files = [
+        _file("case-1", "Primary Tumor", "tumor-a", "case-1-01A"),
+        _file("case-1", "Primary Tumor", "tumor-b", "case-1-01B"),
+    ]
+
+    with pytest.raises(ValueError, match="multiple specimens"):
+        DummyBuilder(files).build()
 
 
 def test_builder_requires_explicit_type_for_mixed_case_samples():

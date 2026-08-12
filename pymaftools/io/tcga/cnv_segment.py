@@ -37,7 +37,8 @@ class TCGACNVSegmentBuilder(TCGATableBuilder):
             df = pd.read_csv(f["filepath"], sep="\t")
             df["case_id"] = f["case_id"]
             df["sample_type"] = f["sample_type"]
-            df = df.drop(columns=["GDC_Aliquot"], errors="ignore")
+            df["source_sample_id"] = f.get("sample_id")
+            df["source_aliquot_id"] = f.get("aliquot_id")
             # Convert absolute copy number to log2 ratio (Segment_Mean convention)
             if "Segment_Mean" not in df.columns and "Copy_Number" in df.columns:
                 df["Segment_Mean"] = np.log2(np.maximum(df["Copy_Number"], 0.001) / 2)
@@ -47,11 +48,12 @@ class TCGACNVSegmentBuilder(TCGATableBuilder):
 
     def build(self) -> pd.DataFrame:
         """Build raw segment DataFrame (long format)."""
-        files = self.resolve_files()
-        if not files:
+        resolved_files = self.resolve_files()
+        if not resolved_files:
             raise FileNotFoundError(
                 f"No files matching '{self.file_pattern}' found in {self.data_dir}"
             )
+        files = self.select_files(resolved_files)
 
         seg_df = self.read_and_merge(files)
         print(
