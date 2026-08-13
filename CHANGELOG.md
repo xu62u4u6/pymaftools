@@ -5,8 +5,7 @@
 ## 🔖 Version 0.6.0 (August 2026)
 
 Scientific-validity release adding explicit sample-universe and observation-state
-contracts, an auditable TCGA lung workflow, and the evidence package for the
-Pymaftools software-methods preprint.
+contracts, auditable mutation analysis, and stricter TCGA specimen alignment.
 
 ### 🧪 Scientific data contracts
 
@@ -23,16 +22,13 @@ Pymaftools software-methods preprint.
   p-values for a declared tested family; repeated patients are rejected by the
   patient-level independence guard.
 
-### 🫁 Reproducible public case study
+### 🫁 Scientific validation
 
-* Added an exact primary-tumor sample/vial alignment workflow for 424 TCGA-LUAD
-  and 422 TCGA-LUSC cases across five GDC modalities.
-* Pinned 846 public mutation-file UUIDs, sizes, MD5 checksums, selection reasons,
-  data release, query time, and the one-command regeneration workflow.
-* Added deterministic synthetic, base-R, observation-mask, maftools, null/FDR,
-  confidence-interval, confounding, and patient-leakage validation artifacts.
-* Added a seven-page LaTeX manuscript, five figures, claim-evidence ledger,
-  documentation-only clean-wheel test, and clean-worktree reproduction report.
+* Added exact primary-tumor sample/vial alignment across GDC modalities.
+* Added fail-closed download verification and unrelated-normal-file rejection.
+* Added adversarial regression coverage for sample universes, observation masks,
+  TMB event filtering, patient independence, and enrichment denominators.
+* Added a documentation-only clean-wheel user journey for the public quick start.
 
 ### 🐛 Correctness and usability
 
@@ -53,13 +49,9 @@ Pymaftools software-methods preprint.
 
 ### ✅ Validation
 
-* 307 tests passed with 68.52% coverage in the final local full-suite run; 29
-  focused paper and scientific-context tests passed after provenance
-  stabilization.
-* Warning-free Sphinx, Ruff, wheel/sdist metadata, deterministic PDF/arXiv source,
-  and 31/31 scientific artifact checksum checks passed.
-* A detached clean worktree created a new Python environment, freshly downloaded
-  all 846 GDC MAFs, and regenerated the committed paper evidence with no diff.
+* Full-suite counts and coverage are recorded after the final release-candidate
+  run rather than inferred from development-only validation repositories.
+* Warning-free Sphinx, Ruff, and wheel/sdist metadata checks are release gates.
 
 ---
 

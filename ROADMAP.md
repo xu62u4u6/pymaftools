@@ -13,7 +13,7 @@ the **Backlog** require a real use case or design decision before implementation
 
 | Area | Current state | Near-term target |
 | --- | --- | --- |
-| Release | 0.6.0 release candidate on `dev`; 0.5.0 on PyPI | Confirm author metadata, merge, tag, and archive the paper release |
+| Release | 0.6.0 release candidate on `dev`; 0.5.0 on PyPI | Validate package metadata, merge, tag, and archive 0.6.0 |
 | Test coverage | 68.52%; CI fails below 60%; final local suite has 307 passing tests | Raise coverage in high-risk modules before raising the gate |
 | Python | 3.10-3.12 required; 3.13-3.14 experimental | Review experimental failures on every PR |
 | Persistence | HDF5 canonical; SQLite deprecated | Preserve SQLite read compatibility during the deprecation period |
@@ -32,10 +32,10 @@ global threshold until low-coverage, high-risk modules improve.
   zero-event samples, and observed-versus-unobserved cells explicit.
 - Auditable TMB and two-group mutation-enrichment workflows expose filters,
   denominators, tested families, intervals, and failure conditions.
-- The pinned TCGA-LUAD/LUSC paper workflow verifies 846 public MAFs and exact
-  primary-tumor sample/vial alignment across five modalities.
-- Independent R and maftools oracles, simulations, clean-wheel user testing, and
-  a clean-worktree full-data reproduction support the named manuscript claims.
+- GDC readers enforce exact primary-tumor sample/vial alignment across modalities
+  and fail closed when downloaded files do not match the declared manifest.
+- Scientific-context regression tests cover explicit sample universes,
+  observation states, patient independence, and zero-event samples.
 - Repository-distributed research and validation agents can be installed for
   Codex or Claude with `pymaftools-ai`.
 
