@@ -41,15 +41,19 @@ not contain callable-territory metadata and therefore must not display TMB:
        .sort_features(by="freq", ascending=False)
        .sort_samples_by_mutations()
    )
+   plot_table = table.subset(features=table.index[:20])
 
    op = (
-       table.plot.oncoplot(figsize=(12, 8))
+       plot_table.plot.oncoplot(figsize=(12, 8))
        .main()                    # the mutation matrix
        .add_bar("mutations_count", side="top")
        .add_freq(side="right")    # feature_metadata["freq"] as a strip
        .render()
    )
    op.save("oncoplot.png", dpi=300)
+
+The explicit 20-gene subset keeps the first plot readable without changing the
+full ``table`` used for downstream analysis.
 
 .. note::
 

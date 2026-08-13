@@ -28,16 +28,20 @@ the package, so this runs as-is after ``pip install``:
        .sort_features(by="freq")
        .sort_samples_by_mutations()
    )
+   plot_table = table.subset(features=table.index[:20])
 
    # Compose the oncoplot from tracks, then render once
    op = (
-       table.plot.oncoplot(figsize=(12, 8))
+       plot_table.plot.oncoplot(figsize=(12, 8))
        .main()                        # mutation matrix
        .add_bar("mutations_count", side="top")
        .add_freq(side="right")
        .render()
    )
    op.save("oncoplot.png", dpi=300)
+
+``plot_table`` limits only the visualization to the 20 most frequently mutated
+genes; ``table`` still contains the full gene-level result.
 
 Saving Results
 --------------
