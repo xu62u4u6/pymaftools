@@ -34,6 +34,7 @@ except ModuleNotFoundError:  # Python 3.10
 GDC_FILES_ENDPOINT = "https://api.gdc.cancer.gov/files"
 GDC_CASES_ENDPOINT = "https://api.gdc.cancer.gov/cases"
 GDC_DATA_ENDPOINT = "https://api.gdc.cancer.gov/data"
+GDC_STATUS_ENDPOINT = "https://api.gdc.cancer.gov/status"
 
 # Default data type configs (used when no config.toml is provided)
 DATA_TYPE_CONFIGS = {
@@ -436,6 +437,47 @@ class GDCClient:
 
     # ── Case alignment ────────────────────────────────────────────────────────
 
+    def get_status(self) -> dict:
+        """Return the current public GDC API and data-release metadata."""
+        response = requests.get(GDC_STATUS_ENDPOINT, timeout=60)
+        response.raise_for_status()
+        return response.json()
+
+    def get_file_manifest(
+        self,
+        projects: Optional[list[str]] = None,
+        data_types: Optional[list[str]] = None,
+    ) -> pd.DataFrame:
+        """Query a provenance-rich file manifest without downloading data."""
+        projects = projects or self.projects
+        modalities = data_types or list(self.data_types)
+        if not projects:
+            raise ValueError("projects must contain at least one GDC project ID.")
+
+        records = []
+        for project in projects:
+            for modality in modalities:
+                config = self.data_types[modality]
+                hits = self._query_files(
+                    project,
+                    config["data_type"],
+                    config.get("workflow_type"),
+                )
+                for hit in hits:
+                    records.append(
+                        {
+                            "file_id": hit["file_id"],
+                            "filename": hit["file_name"],
+                            "data_type": modality,
+                            "gdc_data_type": config["data_type"],
+                            "workflow_type": config.get("workflow_type"),
+                            "md5": hit.get("md5sum", ""),
+                            "size": hit.get("file_size", 0),
+                            "state": hit.get("state", ""),
+                        }
+                    )
+        return self.build_file_mapping(records)
+
     def get_cases(self, project_id: str, data_type_key: str) -> set[str]:
         """Get all case submitter_ids that have a given data type."""
         cfg = self.data_types[data_type_key]
@@ -750,7 +792,18 @@ class GDCClient:
         selected = selected.sort_values(
             ["case_id", "data_type", "file_id"]
         ).reset_index(drop=True)
-        report = pd.DataFrame(report_rows).sort_values("case_id").reset_index(drop=True)
+        report = pd.DataFrame(
+            report_rows,
+            columns=[
+                "case_id",
+                "project",
+                "status",
+                "selected_sample_id",
+                "detail",
+                "available_samples",
+            ],
+        )
+        report = report.sort_values("case_id").reset_index(drop=True)
         return selected, report
 
     # ── Manifest alignment ────────────────────────────────────────────────────

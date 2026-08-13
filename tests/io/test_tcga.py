@@ -407,6 +407,20 @@ class TestGDCClientOffline:
         assert cases == {"TCGA-44-2655", "TCGA-44-2656"}
         mock_post.assert_called_once()
 
+    @patch("pymaftools.io.tcga.client.requests.get")
+    def test_get_status(self, mock_get):
+        response = MagicMock()
+        response.json.return_value = {
+            "status": "OK",
+            "data_release": "Data Release 46.0",
+        }
+        mock_get.return_value = response
+
+        status = GDCClient().get_status()
+
+        assert status["data_release"] == "Data Release 46.0"
+        response.raise_for_status.assert_called_once()
+
     @patch("pymaftools.io.tcga.client.requests.post")
     def test_align_cases(self, mock_post):
         """Test alignment returns intersection of case sets."""
