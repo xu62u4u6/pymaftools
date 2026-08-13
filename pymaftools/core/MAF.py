@@ -507,7 +507,17 @@ class MAF(pd.DataFrame):
                 raise TypeError("sample_manifest must be a SampleManifest.")
             sample_manifest.validate_event_samples(self["sample_ID"])
 
-        grouped = self.groupby(["Hugo_Symbol", "sample_ID"], sort=True)[
+        events = self
+        if "Hugo_Symbol" not in events.columns:
+            if events.index.name != "Hugo_Symbol":
+                raise ValueError(
+                    "MAF must contain 'Hugo_Symbol' as a column or named index."
+                )
+            gene_symbols = events.index.to_numpy()
+            events = self.copy().reset_index(drop=True)
+            events["Hugo_Symbol"] = gene_symbols
+
+        grouped = events.groupby(["Hugo_Symbol", "sample_ID"], sort=True)[
             "Variant_Classification"
         ].agg(event_count="size", first_classification="first")
         grouped["classification"] = grouped["first_classification"].where(
@@ -533,7 +543,7 @@ class MAF(pd.DataFrame):
                 result.columns, fill_value=0
             )
 
-        feature_metadata = self.copy()
+        feature_metadata = events.copy()
         feature_metadata.index = feature_metadata["Hugo_Symbol"]
         present_gene_columns = [
             column
@@ -663,9 +673,14 @@ class MAF(pd.DataFrame):
             )
 
         # Build feature_metadata from MAF rows (one row per unique mutation index)
-        present_cols = [c for c in self._FEATURE_META_COLS if c in self.columns]
-        deduped = self.reset_index().drop_duplicates(subset=["index"])
-        deduped = deduped.set_index("index")[present_cols]
+        metadata = pd.DataFrame(self).copy()
+        if (
+            self.index.name in self._FEATURE_META_COLS
+            and self.index.name not in metadata.columns
+        ):
+            metadata[self.index.name] = self.index.to_numpy()
+        present_cols = [c for c in self._FEATURE_META_COLS if c in metadata.columns]
+        deduped = metadata.loc[~metadata.index.duplicated(keep="first"), present_cols]
         mutation_table.feature_metadata = deduped.reindex(mutation_table.index)
 
         if sample_manifest is not None:
@@ -775,6 +790,7 @@ class MAF(pd.DataFrame):
         csv_path: str | os.PathLike,
         sep: str = "\t",
         reindex: bool = False,
+        sample_col: str | None = None,
     ) -> MAF:
         """
         Read a CSV/TSV file into a MAF object.
@@ -788,17 +804,36 @@ class MAF(pd.DataFrame):
         reindex : bool, default False
             If ``True``, rebuild the composite index from :attr:`index_col`
             after reading.  Otherwise the first column is used as the index.
+            When that column is ``Hugo_Symbol``, it is preserved as an event
+            column instead because gene symbols are not unique mutation IDs.
+        sample_col : str or None, default None
+            Source column to copy into the canonical ``sample_ID`` column.
+            Leave as ``None`` when the input already contains ``sample_ID``.
 
         Returns
         -------
         MAF
             MAF constructed from the file contents.
+
+        Raises
+        ------
+        ValueError
+            If ``sample_col`` is provided but is absent from the input.
         """
         if reindex:
             maf = cls(pd.read_csv(csv_path, sep=sep))
             maf = maf.change_index_level()
         else:
             maf = cls(pd.read_csv(csv_path, sep=sep, index_col=0))
+            if maf.index.name == "Hugo_Symbol":
+                maf = cls(maf.reset_index())
+
+        if sample_col is not None:
+            if sample_col not in maf.columns:
+                raise ValueError(
+                    f"MAF is missing requested sample column '{sample_col}'."
+                )
+            maf["sample_ID"] = maf[sample_col]
         return maf
 
     def to_csv(self, csv_path: str | os.PathLike, **kwargs: Any) -> None:

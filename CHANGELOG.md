@@ -34,6 +34,9 @@ contracts, auditable mutation analysis, and stricter TCGA specimen alignment.
 
 * `MAF.read_maf()` now detects comma- and tab-delimited inputs and reports
   incompatible columns without exposing user-specific paths.
+* `MAF.read_csv()` preserves a leading `Hugo_Symbol` as event data and can copy
+  a declared source column into `sample_ID`; table conversion also accepts
+  named indexes without assuming they are called `index`.
 * MAF-to-gene-table conversion scales without repeated frame concatenation.
 * TMB duplicate removal occurs after scientific event filters, making results
   independent of input-row order.

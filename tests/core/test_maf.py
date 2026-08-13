@@ -55,7 +55,16 @@ _HEADER_FORMATS = [
 def _build_maf_df() -> pd.DataFrame:
     return pd.DataFrame(
         {
-            "Hugo_Symbol": ["TP53", "TP53", "EGFR", "EGFR", "KRAS", "KRAS", "PIK3CA", "PIK3CA"],
+            "Hugo_Symbol": [
+                "TP53",
+                "TP53",
+                "EGFR",
+                "EGFR",
+                "KRAS",
+                "KRAS",
+                "PIK3CA",
+                "PIK3CA",
+            ],
             "Start_Position": [100, 101, 200, 201, 300, 301, 400, 401],
             "End_Position": [100, 101, 200, 201, 300, 301, 400, 401],
             "Reference_Allele": ["C", "G", "A", "A", "G", "G", "T", "T"],
@@ -74,7 +83,16 @@ def _build_maf_df() -> pd.DataFrame:
             "Variant_Type": ["SNP", "SNP", "DEL", "SNP", "SNP", "SNP", "INS", "SNP"],
             "Tumor_Sample_Barcode": ["s1", "s1", "s2", "s2", "s3", "s3", "s4", "s4"],
             "sample_ID": ["s1", "s1", "s2", "s2", "s3", "s3", "s4", "s4"],
-            "Protein_position": ["100/400", "120/400", "50/300", "60/300", "70/250", "71/250", "30/150", "31/150"],
+            "Protein_position": [
+                "100/400",
+                "120/400",
+                "50/300",
+                "60/300",
+                "70/250",
+                "71/250",
+                "30/150",
+                "31/150",
+            ],
         }
     ).reset_index(drop=True)
 
@@ -114,6 +132,61 @@ def test_to_gene_table_matches_explicit_mutation_level_collapse():
     pd.testing.assert_frame_equal(direct.feature_metadata, explicit.feature_metadata)
 
 
+def test_read_csv_preserves_hugo_symbol_and_sets_sample_id(tmp_path):
+    """Regression for read_csv treating Hugo_Symbol as a mutation index."""
+    csv_path = tmp_path / "gene-indexed-maf.csv"
+    source = _build_maf_df().rename(columns={"Tumor_Sample_Barcode": "Sample"})
+    source = source.drop(columns="sample_ID")
+    source.to_csv(csv_path, index=False)
+    maf = MAF.read_csv(csv_path, sep=",", sample_col="Sample")
+    maf = maf.filter_maf(MAF.nonsynonymous_types)
+
+    table = maf.to_pivot_table()
+
+    assert table.loc["TP53", "s1"] == "Multi_Hit"
+    assert "Hugo_Symbol" in maf.columns
+    pd.testing.assert_series_equal(maf["sample_ID"], maf["Sample"], check_names=False)
+
+
+def test_read_csv_rejects_missing_sample_column(tmp_path):
+    csv_path = tmp_path / "maf.csv"
+    _build_maf_df().to_csv(csv_path, index=False)
+
+    with pytest.raises(ValueError, match="missing requested sample column 'Missing'"):
+        MAF.read_csv(csv_path, sep=",", sample_col="Missing")
+
+
+def test_read_csv_preserves_serialized_mutation_index(tmp_path):
+    maf = MAF(_build_maf_df()).change_index_level()
+    csv_path = tmp_path / "serialized-maf.tsv"
+    maf.to_csv(csv_path)
+
+    restored = MAF.read_csv(csv_path)
+
+    pd.testing.assert_index_equal(restored.index, maf.index)
+    assert "Hugo_Symbol" in restored.columns
+
+
+def test_to_pivot_table_accepts_hugo_symbol_named_index():
+    maf = MAF(_build_maf_df().set_index("Hugo_Symbol"))
+    maf = maf.filter_maf(MAF.nonsynonymous_types)
+
+    table = maf.to_pivot_table()
+
+    assert table.loc["TP53", "s1"] == "Multi_Hit"
+    assert "Hugo_Symbol" not in maf.columns
+
+
+def test_to_mutation_table_accepts_named_mutation_index():
+    maf = MAF(_build_maf_df()).change_index_level()
+    maf.index.name = "mutation_id"
+
+    table = maf.to_mutation_table()
+
+    assert table.index.name == "mutation_id"
+    assert "Hugo_Symbol" in table.feature_metadata.columns
+
+
 def test_to_maf_canonical_and_deprecated_aliases(tmp_path):
     """to_maf is canonical; to_MAF/write_maf warn but produce identical output."""
     maf = MAF(_build_maf_df())
@@ -135,8 +208,14 @@ def test_to_maf_canonical_and_deprecated_aliases(tmp_path):
 
 def test_merge_mutations_covers_false_single_and_multi_hit():
     assert MAF.merge_mutations(pd.Series([False, False])) is False
-    assert MAF.merge_mutations(pd.Series(["Splice_Site", False], index=[0, 10])) == "Splice_Site"
-    assert MAF.merge_mutations(pd.Series(["Missense_Mutation", "Nonsense_Mutation"])) == "Multi_Hit"
+    assert (
+        MAF.merge_mutations(pd.Series(["Splice_Site", False], index=[0, 10]))
+        == "Splice_Site"
+    )
+    assert (
+        MAF.merge_mutations(pd.Series(["Missense_Mutation", "Nonsense_Mutation"]))
+        == "Multi_Hit"
+    )
 
 
 def test_filter_maf_and_select_samples():
@@ -145,7 +224,9 @@ def test_filter_maf_and_select_samples():
     filtered = maf.filter_maf(MAF.nonsynonymous_types)
     selected = maf.select_samples(["s1", "s2"])
 
-    assert set(filtered["Variant_Classification"]).issubset(set(MAF.nonsynonymous_types))
+    assert set(filtered["Variant_Classification"]).issubset(
+        set(MAF.nonsynonymous_types)
+    )
     assert set(selected["sample_ID"]) == {"s1", "s2"}
 
 
@@ -164,9 +245,35 @@ def test_to_base_change_pivot_table_computes_ti_tv():
             "Hugo_Symbol": [f"G{i}" for i in range(12)],
             "Start_Position": list(range(1, 13)),
             "End_Position": list(range(1, 13)),
-            "Reference_Allele": ["A", "C", "G", "T", "A", "A", "C", "C", "G", "G", "T", "T"],
+            "Reference_Allele": [
+                "A",
+                "C",
+                "G",
+                "T",
+                "A",
+                "A",
+                "C",
+                "C",
+                "G",
+                "G",
+                "T",
+                "T",
+            ],
             "Tumor_Seq_Allele1": ["A"] * 12,
-            "Tumor_Seq_Allele2": ["G", "T", "A", "C", "C", "T", "A", "G", "C", "T", "A", "G"],
+            "Tumor_Seq_Allele2": [
+                "G",
+                "T",
+                "A",
+                "C",
+                "C",
+                "T",
+                "A",
+                "G",
+                "C",
+                "T",
+                "A",
+                "G",
+            ],
             "Variant_Classification": ["Missense_Mutation"] * 12,
             "Variant_Type": ["SNP"] * 12,
             "Tumor_Sample_Barcode": ["s1"] * 12,
@@ -208,7 +315,9 @@ def test_get_protein_info_returns_mutation_summary():
     assert all({"position", "type", "count"}.issubset(m.keys()) for m in mutations)
 
 
-@pytest.mark.parametrize("fmt_id, comment_lines", _HEADER_FORMATS, ids=[f[0] for f in _HEADER_FORMATS])
+@pytest.mark.parametrize(
+    "fmt_id, comment_lines", _HEADER_FORMATS, ids=[f[0] for f in _HEADER_FORMATS]
+)
 def test_read_maf_handles_varying_comment_lines(tmp_path, fmt_id, comment_lines):
     """read_maf must parse files with 0, 1, or many leading comment lines."""
     maf_path = _write_maf(tmp_path / f"{fmt_id}.maf", comment_lines)
@@ -337,9 +446,7 @@ def test_read_maf_to_pivot_table_and_tmb_end_to_end(tmp_path):
     assert "TMB" not in pivot.sample_metadata.columns
     assert "TMB" in with_tmb.sample_metadata.columns
 
-    expected = (
-        with_tmb.sample_metadata["mutations_count"] / 40
-    )
+    expected = with_tmb.sample_metadata["mutations_count"] / 40
     pd.testing.assert_series_equal(
         with_tmb.sample_metadata["TMB"], expected, check_names=False
     )
