@@ -103,6 +103,17 @@ def test_to_gene_table_matches_to_pivot_table_alias():
     assert set(gene_table.columns) == set(aliased.columns)
 
 
+def test_to_gene_table_matches_explicit_mutation_level_collapse():
+    maf = MAF(_build_maf_df())
+
+    direct = maf.to_gene_table()
+    explicit = maf.to_mutation_table().to_gene_level()
+
+    pd.testing.assert_frame_equal(pd.DataFrame(direct), pd.DataFrame(explicit))
+    pd.testing.assert_frame_equal(direct.sample_metadata, explicit.sample_metadata)
+    pd.testing.assert_frame_equal(direct.feature_metadata, explicit.feature_metadata)
+
+
 def test_to_maf_canonical_and_deprecated_aliases(tmp_path):
     """to_maf is canonical; to_MAF/write_maf warn but produce identical output."""
     maf = MAF(_build_maf_df())
