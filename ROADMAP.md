@@ -1,6 +1,6 @@
 # pymaftools Roadmap
 
-> Last reviewed: 2026-08-12
+> Last reviewed: 2026-08-28
 
 This file describes work that is still relevant after 0.6.0. Completed release
 details belong in `CHANGELOG.md`; release operations and risks belong in
