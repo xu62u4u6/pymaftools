@@ -250,6 +250,27 @@ class TestGDCClientOffline:
         assert row["aliquot_id"] == "TCGA-XX-0001-01A-01R-0000-01"
         assert row["mapping_status"] == "resolved_tumor_aliquot"
 
+    def test_build_file_mapping_queries_unique_ids_in_sorted_order(self, monkeypatch):
+        client = GDCClient()
+        batches = []
+
+        def batch_query(file_ids):
+            batches.append(file_ids)
+            return []
+
+        monkeypatch.setattr(client, "_batch_query_metadata", batch_query)
+
+        client.build_file_mapping(
+            [
+                {"file_id": "file-c", "filename": "c.tsv", "data_type": "x"},
+                {"file_id": "file-a", "filename": "a.tsv", "data_type": "x"},
+                {"file_id": "file-b", "filename": "b.tsv", "data_type": "x"},
+                {"file_id": "file-a", "filename": "a.tsv", "data_type": "x"},
+            ]
+        )
+
+        assert batches == [["file-a", "file-b", "file-c"]]
+
     def test_align_manifests_uses_exact_shared_sample(self, tmp_path):
         data_types = {
             "expression": {"data_type": "expression"},

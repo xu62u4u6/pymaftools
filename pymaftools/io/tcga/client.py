@@ -602,7 +602,9 @@ class GDCClient:
             One row per file, including case, sample, portion, analyte,
             aliquot, workflow, checksum, and mapping status.
         """
-        unique_ids = list({r["file_id"] for r in records})
+        # Sort after de-duplication so API batch boundaries and manifest output
+        # remain stable when the input record order changes.
+        unique_ids = sorted({r["file_id"] for r in records})
         print(f"\nBuilding file mapping ({len(unique_ids)} files)...")
 
         mapping: dict[str, dict[str, object]] = {}
