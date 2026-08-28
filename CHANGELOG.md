@@ -52,8 +52,8 @@ contracts, auditable mutation analysis, and stricter TCGA specimen alignment.
 
 ### ✅ Validation
 
-* The final public-repository suite passed 303 tests, skipped 7, and deselected
-  10, with 68.49% coverage.
+* The final public-repository suite passed 304 tests, skipped 7, and deselected
+  10, with 68.52% coverage.
 * Warning-free Sphinx, Ruff, and wheel/sdist metadata checks are release gates.
 
 ---
