@@ -1,6 +1,6 @@
 # Release Process Audit
 
-Last reviewed: 2026-07-15
+Last reviewed: 2026-08-28
 
 This document audits the release path for `pymaftools`. It separates controls in
 the repository from settings that live in GitHub, TestPyPI, and PyPI. The
@@ -28,6 +28,26 @@ operational checklist is in `RELEASE_CHECKLIST.md`.
 
 Local `deploy.sh` only builds and validates. It has no upload credentials or
 upload command.
+
+## 0.6.0 Release Candidate Audit (2026-08-28)
+
+The `dev` checkout at `c0d0ed7c2f26d3936b0809931b282fe5da1b50a4` was audited
+without publishing anything:
+
+- The public suite passed 304 tests, skipped 7, and deselected 10; Ruff and the
+  existing documentation/build checks passed.
+- A temporary build using `SETUPTOOLS_SCM_PRETEND_VERSION=0.6.0` produced both
+  `pymaftools-0.6.0.tar.gz` and `pymaftools-0.6.0-py3-none-any.whl`; `twine
+  check` passed for both artifacts and the metadata reported Python `>=3.10`.
+- The candidate wheel was installed with its runtime dependencies in a fresh
+  temporary Python 3.14 environment. Importing from outside the checkout
+  resolved `pymaftools` from that wheel, loaded the bundled HDF5 example
+  (`62 x 958`), and rendered/saved an OncoPlot smoke artifact.
+
+This is a local candidate verification, not a release: `dev` has not been
+merged to `main`, no `v0.6.0` tag was created, and no TestPyPI/PyPI upload was
+attempted. The external GitHub environment, branch-protection, and Trusted
+Publisher settings remain operational gates in `RELEASE_CHECKLIST.md`.
 
 ## Controls Verified
 
