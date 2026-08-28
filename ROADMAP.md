@@ -37,8 +37,9 @@ global threshold until low-coverage, high-risk modules improve.
   and fail closed when downloaded files do not match the declared manifest.
 - Scientific-context regression tests cover explicit sample universes,
   observation states, patient independence, and zero-event samples.
-- Repository-distributed research and validation agents can be installed for
-  Codex or Claude with `pymaftools-ai`.
+- Repository-distributed research, user-testing, statistical-review, validation,
+  and manuscript-writing agents can be installed for Codex or Claude with
+  `pymaftools-ai`.
 
 ## Shipped in 0.5.0
 

@@ -45,8 +45,9 @@ contracts, auditable mutation analysis, and stricter TCGA specimen alignment.
 
 ### 🤖 Reusable AI assets
 
-* Added package-distributed researcher, bioinformatics-validator, and
-  reproducibility-reviewer agents plus a Pymaftools skill.
+* Added package-distributed researcher, user-tester, biostatistics-reviewer,
+  bioinformatics-validator, reproducibility-reviewer, and manuscript-writer
+  agents plus a Pymaftools skill.
 * Added `pymaftools-ai` installation and dry-run commands for project or user
   scope in Codex and Claude environments.
 

@@ -449,9 +449,10 @@ Tests run on GitHub Actions for Python 3.10-3.12 (stable) and 3.13-3.14 (experim
 ## AI Assistants
 
 pymaftools ships reusable `bioinformatics-researcher`,
-`bioinformatics-validator`, and `reproducibility-reviewer` agents plus a
-package-specific Skill from the same versioned source as the library. Preview
-or install them with:
+`bioinformatics-validator`, `biostatistics-reviewer`,
+`scientific-user-tester`, `reproducibility-reviewer`, and
+`scientific-manuscript-writer` agents plus a package-specific Skill from the
+same versioned source as the library. Preview or install them with:
 
 ```bash
 pymaftools-ai list

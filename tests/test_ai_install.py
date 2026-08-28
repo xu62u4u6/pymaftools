@@ -3,7 +3,10 @@ from pymaftools.ai_install import ASSET_ROOT, install, main
 AGENT_NAMES = [
     "bioinformatics-researcher",
     "bioinformatics-validator",
+    "biostatistics-reviewer",
     "reproducibility-reviewer",
+    "scientific-manuscript-writer",
+    "scientific-user-tester",
 ]
 
 
@@ -50,6 +53,19 @@ def test_claude_project_install_renders_markdown(tmp_path):
     ).read_text(encoding="utf-8")
     assert "Do not certify your own conclusions." in researcher
 
+    biostatistics = (
+        tmp_path / ".claude" / "agents" / "biostatistics-reviewer.md"
+    ).read_text(encoding="utf-8")
+    assert "denominator" in biostatistics
+    user_tester = (
+        tmp_path / ".claude" / "agents" / "scientific-user-tester.md"
+    ).read_text(encoding="utf-8")
+    assert "documentation-only" in user_tester
+    writer = (
+        tmp_path / ".claude" / "agents" / "scientific-manuscript-writer.md"
+    ).read_text(encoding="utf-8")
+    assert "VERIFIED" in writer
+
 
 def test_dry_run_does_not_write(tmp_path):
     actions = install(
@@ -92,6 +108,9 @@ def test_cli_lists_assets(capsys):
     assert capsys.readouterr().out.splitlines() == [
         "agent bioinformatics-researcher",
         "agent bioinformatics-validator",
+        "agent biostatistics-reviewer",
         "agent reproducibility-reviewer",
+        "agent scientific-manuscript-writer",
+        "agent scientific-user-tester",
         "skill pymaftools",
     ]

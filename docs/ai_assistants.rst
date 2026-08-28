@@ -24,6 +24,21 @@ Bundled assets
    seeds, tables, and figures can be rerun and compared. It does not validate
    biological interpretation.
 
+``scientific-user-tester``
+   Follows the public documentation from a clean installation through a saved
+   table and figure without inspecting package source code. It reports
+   undocumented assumptions, unreadable outputs, and actionable blockers.
+
+``biostatistics-reviewer``
+   Adversarially checks denominators, independence, confounding, selection bias,
+   multiplicity, confidence intervals, sparse cells, and data leakage. It does
+   not silently repair the analysis.
+
+``scientific-manuscript-writer``
+   Assembles a manuscript from verified claim records, executable artifacts, and
+   independent reviews. It preserves evidence boundaries and never invents
+   author, funding, or scientific claims.
+
 ``pymaftools`` skill
    Provides the package architecture, current API workflows, contribution rules,
    and research-validation guidance needed by an AI coding or research agent.
