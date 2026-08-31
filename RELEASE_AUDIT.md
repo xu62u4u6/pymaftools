@@ -1,6 +1,6 @@
 # Release Process Audit
 
-Last reviewed: 2026-08-28
+Last reviewed: 2026-09-01
 
 This document audits the release path for `pymaftools`. It separates controls in
 the repository from settings that live in GitHub, TestPyPI, and PyPI. The
@@ -28,6 +28,21 @@ operational checklist is in `RELEASE_CHECKLIST.md`.
 
 Local `deploy.sh` only builds and validates. It has no upload credentials or
 upload command.
+
+## Current Development Verification (2026-09-01)
+
+The public `dev` checkout at `8e469789a2ef3ab22b45e630c3b6e7650732ef7b`
+passed the current local release gates without publishing anything:
+
+- The package suite passed 313 tests, skipped 7, and deselected 10; coverage
+  was 69.69% with the 60% threshold enforced.
+- `ruff check pymaftools` and `ruff format --check pymaftools` passed.
+- `sphinx-build -W --keep-going docs ...` succeeded with Sphinx 9.1.0 after
+  fetching the configured intersphinx inventories.
+
+This supplements the historical 0.6.0 candidate audit below. It is still a
+development-branch verification: the code has not been merged to `main`, no
+release tag was created, and no TestPyPI/PyPI upload was attempted.
 
 ## 0.6.0 Release Candidate Audit (2026-08-28)
 

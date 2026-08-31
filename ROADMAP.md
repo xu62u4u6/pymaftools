@@ -1,6 +1,6 @@
 # pymaftools Roadmap
 
-> Last reviewed: 2026-08-28
+> Last reviewed: 2026-09-01
 
 This file describes work that is still relevant after 0.6.0. Completed release
 details belong in `CHANGELOG.md`; release operations and risks belong in
@@ -14,7 +14,7 @@ the **Backlog** require a real use case or design decision before implementation
 | Area | Current state | Near-term target |
 | --- | --- | --- |
 | Release | 0.6.0 release candidate on `dev`; 0.5.0 on PyPI | Validate package metadata, merge, tag, and archive 0.6.0 |
-| Test coverage | 68.52%; CI fails below 60%; final public-repository suite has 304 passing tests | Raise coverage in high-risk modules before raising the gate |
+| Test coverage | 69.69%; CI fails below 60%; current public-repository suite has 313 passing tests | Raise coverage in high-risk modules before raising the gate |
 | Python | 3.10-3.12 required; 3.13-3.14 experimental | Review experimental failures on every PR |
 | Persistence | HDF5 canonical; SQLite deprecated | Preserve SQLite read compatibility during the deprecation period |
 | Documentation | Warning-free Sphinx build deployed to GitHub Pages | Add contributor and architecture guidance |
