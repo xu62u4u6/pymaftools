@@ -148,9 +148,7 @@ class TCGACNVSegmentBuilder(TCGATableBuilder):
             if total == 0:
                 continue
             segment_indices = np.repeat(np.arange(len(seg_chr)), counts)
-            offsets = np.arange(total) - np.repeat(
-                np.cumsum(counts) - counts, counts
-            )
+            offsets = np.arange(total) - np.repeat(np.cumsum(counts) - counts, counts)
             band_indices = np.repeat(left, counts) + offsets
             overlap_start = np.maximum(
                 seg_starts[segment_indices], band_starts[band_indices]
@@ -164,7 +162,9 @@ class TCGACNVSegmentBuilder(TCGATableBuilder):
             overlap_frames.append(
                 pd.DataFrame(
                     {
-                        sample_column: segment_values.loc[valid, sample_column].to_numpy(),
+                        sample_column: segment_values.loc[
+                            valid, sample_column
+                        ].to_numpy(),
                         "label": bands_chr.loc[band_indices[valid], "label"].to_numpy(),
                         "weighted": (
                             segment_values.loc[valid, "Segment_Mean"].to_numpy()

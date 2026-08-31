@@ -95,12 +95,8 @@ class TCGAMethylationBuilder(TCGATableBuilder):
             positions = probe_index.get_indexer(probe_ids)
             if (positions < 0).any():
                 raise ValueError("Failed to align methylation probe identifiers.")
-            matrix_values[positions, column] = frame["beta"].to_numpy(
-                dtype=np.float64
-            )
+            matrix_values[positions, column] = frame["beta"].to_numpy(dtype=np.float64)
             identifiers.append(self.sample_identifier(file_info))
 
-        matrix = pd.DataFrame(
-            matrix_values, index=probe_index, columns=identifiers
-        )
+        matrix = pd.DataFrame(matrix_values, index=probe_index, columns=identifiers)
         return PivotTable(matrix)
