@@ -248,6 +248,28 @@ def test_methylation_builder_uses_exact_specimen_id_when_requested(tmp_path):
     assert table.loc["cg00000029", "case-1-01A"] == pytest.approx(0.25)
 
 
+def test_methylation_builder_aligns_probe_order_mismatch(tmp_path):
+    first = tmp_path / "first.txt"
+    second = tmp_path / "second.txt"
+    first.write_text("cg00000029\t0.25\ncg00000108\t0.75\n", encoding="utf-8")
+    second.write_text("cg00000108\t0.80\ncg00000029\t0.20\n", encoding="utf-8")
+    builder = TCGAMethylationBuilder(
+        tmp_path,
+        pd.DataFrame(columns=["filename", "case_id"]),
+    )
+
+    table = builder.read_and_merge(
+        [
+            {"filepath": first, "case_id": "case-1"},
+            {"filepath": second, "case_id": "case-2"},
+        ]
+    )
+
+    assert list(table.index) == ["cg00000029", "cg00000108"]
+    assert table.loc["cg00000029", "case-2"] == pytest.approx(0.20)
+    assert table.loc["cg00000108", "case-2"] == pytest.approx(0.80)
+
+
 def test_mutation_builder_writes_exact_specimen_id(tmp_path):
     path = tmp_path / "sample.maf.gz"
     pd.DataFrame(
