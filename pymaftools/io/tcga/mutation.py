@@ -21,6 +21,11 @@ class TCGAMutationBuilder(TCGATableBuilder):
         Directory containing .maf.gz files.
     mapping : str, Path, or pd.DataFrame
         Path to file_to_case.tsv or pre-loaded mapping DataFrame.
+    sample_type : str or None, default "Primary Tumor"
+        Sample type to retain during file selection.
+    sample_key : {"case_id", "sample_id"}, default "case_id"
+        Identifier written to the MAF ``sample_ID`` column. Use ``sample_id``
+        for exact specimen-level cross-omics alignment.
     """
 
     file_pattern = "*.maf.gz"
@@ -31,7 +36,7 @@ class TCGAMutationBuilder(TCGATableBuilder):
             if tumor_only and f.get("sample_type") != "Primary Tumor":
                 continue
             df = pd.read_csv(f["filepath"], sep="\t", comment="#", low_memory=False)
-            df["sample_ID"] = f["case_id"]
+            df["sample_ID"] = self.sample_identifier(f)
             df["sample_type"] = f["sample_type"]
             frames.append(df)
 
@@ -50,20 +55,23 @@ class TCGAMutationBuilder(TCGATableBuilder):
 
     def build_sample_metadata(self, table, files):
         # MAF is flat, sample_metadata doesn't apply the same way
-        # Return a per-case summary (Primary Tumor only)
+        # Return a per-sample summary (Primary Tumor only)
         meta_records = {}
         for f in files:
             if f.get("sample_type") != "Primary Tumor":
                 continue
-            cid = f["case_id"]
-            if cid not in meta_records:
-                meta_records[cid] = {
-                    "case_id": cid,
+            identifier = self.sample_identifier(f)
+            if identifier not in meta_records:
+                meta_records[identifier] = {
+                    "case_id": f["case_id"],
+                    "sample_id": f.get("sample_id"),
                     "sample_type": f["sample_type"],
                     "file_id": f["file_id"],
                     "data_type": f["data_type"],
                 }
-        return pd.DataFrame(meta_records.values()).set_index("case_id")
+        metadata = pd.DataFrame(meta_records.values())
+        metadata.index = pd.Index(meta_records.keys(), name=self.sample_key)
+        return metadata
 
     def build(self) -> MAF:
         resolved_files = self.resolve_files()
@@ -78,6 +86,6 @@ class TCGAMutationBuilder(TCGATableBuilder):
 
         print(
             f"[{self.__class__.__name__}] "
-            f"{len(maf)} mutations across {maf['sample_ID'].nunique()} cases"
+            f"{len(maf)} mutations across {maf['sample_ID'].nunique()} samples"
         )
         return maf

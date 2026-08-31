@@ -36,7 +36,10 @@ class TCGAExpressionBuilder(TCGATableBuilder):
         via :func:`pymaftools.utils.geneinfo.load_ensembl_map`.
         The first call downloads and caches the map; subsequent calls are fast.
     sample_type : str or None, default "Primary Tumor"
-        Sample type to retain in the case-level matrix.
+        Sample type to retain in the matrix.
+    sample_key : {"case_id", "sample_id"}, default "case_id"
+        Identifier used for matrix columns. Use ``sample_id`` for exact
+        specimen-level cross-omics alignment.
     """
 
     file_pattern = "*.rna_seq.augmented_star_gene_counts.tsv"
@@ -48,8 +51,11 @@ class TCGAExpressionBuilder(TCGATableBuilder):
         count_column: str = "unstranded",
         enrich_coordinates: bool = True,
         sample_type: str | None = "Primary Tumor",
+        sample_key: str = "case_id",
     ):
-        super().__init__(data_dir, mapping, sample_type=sample_type)
+        super().__init__(
+            data_dir, mapping, sample_type=sample_type, sample_key=sample_key
+        )
         self.count_column = count_column
         self.enrich_coordinates = enrich_coordinates
 
@@ -79,16 +85,17 @@ class TCGAExpressionBuilder(TCGATableBuilder):
             qc_record["mapping_rate"] = (
                 qc_record["mapped_reads"] / total if total > 0 else pd.NA
             )
-            qc_dict[f["case_id"]] = qc_record
+            identifier = self.sample_identifier(f)
+            qc_dict[identifier] = qc_record
 
             if gene_info is None:
                 gene_info = gene_rows[["gene_id", "gene_name", "gene_type"]].copy()
 
             gene_ids = gene_rows["gene_id"].str.replace(r"\.\d+$", "", regex=True)
-            series_dict[f["case_id"]] = pd.Series(
+            series_dict[identifier] = pd.Series(
                 gene_rows[self.count_column].values,
                 index=gene_ids.values,
-                name=f["case_id"],
+                name=identifier,
             )
 
         matrix = pd.DataFrame(series_dict)

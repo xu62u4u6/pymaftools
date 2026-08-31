@@ -25,6 +25,11 @@ class MAF(pd.DataFrame):
     used in cancer genomics pipelines.
     """
 
+    # Preserve builder-attached per-sample provenance as pandas propagates a
+    # MAF through filtering and concatenation.  Raw MAFs are not PivotTables,
+    # so this remains private until conversion to a gene-level table.
+    _metadata = ["_sample_metadata"]
+
     index_col = [
         "Hugo_Symbol",
         "Start_Position",

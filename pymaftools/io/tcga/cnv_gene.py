@@ -26,6 +26,11 @@ class TCGACNVGeneBuilder(TCGATableBuilder):
         Column to use as values. Options: copy_number, min_copy_number, max_copy_number.
     strip_gene_version : bool, default True
         Strip ENSG version suffix (e.g. ``.15``).
+    sample_type : str or None, default "Primary Tumor"
+        Sample type to retain.
+    sample_key : {"case_id", "sample_id"}, default "case_id"
+        Identifier used for matrix columns. Use ``sample_id`` for exact
+        specimen-level cross-omics alignment.
     """
 
     file_pattern = "*.gene_level_copy_number.v36.tsv"
@@ -36,8 +41,15 @@ class TCGACNVGeneBuilder(TCGATableBuilder):
         mapping,
         value_column: str = "copy_number",
         strip_gene_version: bool = True,
+        sample_type: str | None = "Primary Tumor",
+        sample_key: str = "case_id",
     ):
-        super().__init__(data_dir, mapping)
+        super().__init__(
+            data_dir,
+            mapping,
+            sample_type=sample_type,
+            sample_key=sample_key,
+        )
         self.value_column = value_column
         self.strip_gene_version = strip_gene_version
 
@@ -70,10 +82,11 @@ class TCGACNVGeneBuilder(TCGATableBuilder):
             if self.strip_gene_version:
                 gene_ids = gene_ids.str.replace(r"\.\d+$", "", regex=True)
 
-            series_dict[f["case_id"]] = pd.Series(
+            identifier = self.sample_identifier(f)
+            series_dict[identifier] = pd.Series(
                 df[self.value_column].values,
                 index=gene_ids.values,
-                name=f["case_id"],
+                name=identifier,
             )
 
         matrix = pd.DataFrame(series_dict)

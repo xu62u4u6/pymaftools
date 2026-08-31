@@ -27,15 +27,35 @@ class TCGACNVSegmentBuilder(TCGATableBuilder):
         Directory containing .seg.v2.txt files.
     mapping : str, Path, or pd.DataFrame
         Path to file_to_case.tsv or pre-loaded mapping DataFrame.
+    sample_type : str or None, default "Primary Tumor"
+        Sample type to retain.
+    sample_key : {"case_id", "sample_id"}, default "case_id"
+        Identifier used for cytoband matrix columns. Use ``sample_id`` for
+        exact specimen-level cross-omics alignment.
     """
 
     file_pattern = "*.ascat3.allelic_specific.seg.txt"
+
+    def __init__(
+        self,
+        data_dir,
+        mapping,
+        sample_type: str | None = "Primary Tumor",
+        sample_key: str = "case_id",
+    ):
+        super().__init__(
+            data_dir,
+            mapping,
+            sample_type=sample_type,
+            sample_key=sample_key,
+        )
 
     def read_and_merge(self, files: list[dict]) -> pd.DataFrame:
         segments = []
         for f in files:
             df = pd.read_csv(f["filepath"], sep="\t")
             df["case_id"] = f["case_id"]
+            df["sample_ID"] = self.sample_identifier(f)
             df["sample_type"] = f["sample_type"]
             df["source_sample_id"] = f.get("sample_id")
             df["source_aliquot_id"] = f.get("aliquot_id")
@@ -58,7 +78,7 @@ class TCGACNVSegmentBuilder(TCGATableBuilder):
         seg_df = self.read_and_merge(files)
         print(
             f"[{self.__class__.__name__}] "
-            f"{len(seg_df)} segments across {seg_df['case_id'].nunique()} cases"
+            f"{len(seg_df)} segments across {seg_df['sample_ID'].nunique()} samples"
         )
         return seg_df
 
@@ -107,36 +127,66 @@ class TCGACNVSegmentBuilder(TCGATableBuilder):
         if not seg["Chromosome"].iloc[0].startswith("chr"):
             seg["Chromosome"] = "chr" + seg["Chromosome"]
 
-        records = []
-        for _, b in bands.iterrows():
-            chrom, bstart, bend, label = b["chrom"], b["start"], b["end"], b["label"]
-            mask = (
-                (seg["Chromosome"] == chrom)
-                & (seg["Start"] < bend)
-                & (seg["End"] > bstart)
-            )
-            overlap = seg.loc[mask]
-            if overlap.empty:
+        sample_column = "sample_ID" if "sample_ID" in seg.columns else "case_id"
+        # Build segment–cytoband overlap pairs chromosome by chromosome.  The
+        # previous implementation scanned every segment for every band; this
+        # vectorized interval expansion only materializes actual overlaps and
+        # keeps the result mathematically identical.
+        overlap_frames = []
+        for chromosome, seg_chr in seg.groupby("Chromosome", sort=False):
+            bands_chr = bands.loc[bands["chrom"].eq(chromosome)].reset_index(drop=True)
+            if bands_chr.empty or seg_chr.empty:
                 continue
-
-            ol_start = overlap["Start"].clip(lower=bstart)
-            ol_end = overlap["End"].clip(upper=bend)
-            ol_len = ol_end - ol_start
-
-            weighted = (
-                overlap.assign(_ol_len=ol_len.values)
-                .groupby("case_id")
-                .apply(
-                    lambda g: (
-                        (g["Segment_Mean"] * g["_ol_len"]).sum() / g["_ol_len"].sum()
-                    ),
-                    include_groups=False,
-                )
-                .rename(label)
+            band_starts = bands_chr["start"].to_numpy(dtype=np.int64)
+            band_ends = bands_chr["end"].to_numpy(dtype=np.int64)
+            seg_starts = seg_chr["Start"].to_numpy(dtype=np.int64)
+            seg_ends = seg_chr["End"].to_numpy(dtype=np.int64)
+            left = np.searchsorted(band_ends, seg_starts, side="right")
+            right = np.searchsorted(band_starts, seg_ends, side="left")
+            counts = np.maximum(right - left, 0)
+            total = int(counts.sum())
+            if total == 0:
+                continue
+            segment_indices = np.repeat(np.arange(len(seg_chr)), counts)
+            offsets = np.arange(total) - np.repeat(
+                np.cumsum(counts) - counts, counts
             )
-            records.append(weighted)
+            band_indices = np.repeat(left, counts) + offsets
+            overlap_start = np.maximum(
+                seg_starts[segment_indices], band_starts[band_indices]
+            )
+            overlap_end = np.minimum(seg_ends[segment_indices], band_ends[band_indices])
+            overlap_length = overlap_end - overlap_start
+            valid = overlap_length > 0
+            if not valid.any():
+                continue
+            segment_values = seg_chr.iloc[segment_indices].reset_index(drop=True)
+            overlap_frames.append(
+                pd.DataFrame(
+                    {
+                        sample_column: segment_values.loc[valid, sample_column].to_numpy(),
+                        "label": bands_chr.loc[band_indices[valid], "label"].to_numpy(),
+                        "weighted": (
+                            segment_values.loc[valid, "Segment_Mean"].to_numpy()
+                            * overlap_length[valid]
+                        ),
+                        "overlap_length": overlap_length[valid],
+                    }
+                )
+            )
 
-        matrix = pd.DataFrame(records)
+        if overlap_frames:
+            overlaps = pd.concat(overlap_frames, ignore_index=True)
+            grouped = overlaps.groupby([sample_column, "label"], sort=False)[
+                ["weighted", "overlap_length"]
+            ].sum()
+            matrix = (
+                grouped["weighted"]
+                .div(grouped["overlap_length"])
+                .unstack(sample_column)
+            )
+        else:
+            matrix = pd.DataFrame()
         matrix.index.name = "cytoband"
 
         # Feature metadata
@@ -149,8 +199,8 @@ class TCGACNVSegmentBuilder(TCGATableBuilder):
 
         # Sample metadata from seg_df
         sample_meta = (
-            seg_df.drop_duplicates("case_id")
-            .set_index("case_id")[["sample_type"]]
+            seg_df.drop_duplicates(sample_column)
+            .set_index(sample_column)[["sample_type"]]
             .reindex(matrix.columns)
         )
 

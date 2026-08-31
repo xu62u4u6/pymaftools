@@ -30,8 +30,13 @@ class TCGATableBuilder(ABC):
     mapping : str, Path, or pd.DataFrame
         Path to file_to_case.tsv or pre-loaded mapping DataFrame.
     sample_type : str or None, default "Primary Tumor"
-        Sample type to retain when building a case-level matrix. Set to None
-        only when the input contains at most one file per case.
+        Sample type to retain when building a matrix. Set to None only when
+        the input contains at most one file per case.
+    sample_key : {"case_id", "sample_id"}, default "case_id"
+        Identifier used for matrix columns and sample metadata indices.
+        ``case_id`` preserves the historical case-level API. ``sample_id``
+        keeps the exact GDC specimen barcode selected by the mapping, which
+        is required when several modalities must be joined at specimen level.
     """
 
     file_pattern: str  # To be set by subclass
@@ -41,9 +46,13 @@ class TCGATableBuilder(ABC):
         data_dir: str | Path,
         mapping: str | Path | pd.DataFrame,
         sample_type: str | None = "Primary Tumor",
+        sample_key: str = "case_id",
     ):
         self.data_dir = Path(data_dir)
         self.sample_type = sample_type
+        if sample_key not in {"case_id", "sample_id"}:
+            raise ValueError("sample_key must be 'case_id' or 'sample_id'.")
+        self.sample_key = sample_key
 
         if isinstance(mapping, (str, Path)):
             self.mapping_df = load_file_mapping(mapping)
@@ -102,7 +111,30 @@ class TCGATableBuilder(ABC):
                 )
             selected.append(candidates[0])
 
+        identifiers = [self.sample_identifier(file_info) for file_info in selected]
+        if len(identifiers) != len(set(identifiers)):
+            duplicates = sorted(
+                identifier
+                for identifier in set(identifiers)
+                if identifiers.count(identifier) > 1
+            )
+            raise ValueError(
+                f"Selected files have duplicate {self.sample_key} values: "
+                f"{duplicates}; resolve the mapping before building."
+            )
+
         return selected
+
+    def sample_identifier(self, file_info: dict) -> str:
+        """Return the configured identifier for one resolved GDC file."""
+        value = file_info.get(self.sample_key)
+        if value is None or pd.isna(value) or str(value).strip() == "":
+            raise ValueError(
+                f"Mapping is missing '{self.sample_key}' for file "
+                f"{file_info.get('file_id', file_info.get('filepath'))}; "
+                f"cannot build with sample_key='{self.sample_key}'."
+            )
+        return str(value)
 
     @abstractmethod
     def read_and_merge(self, files: list[dict]):
@@ -125,8 +157,8 @@ class TCGATableBuilder(ABC):
         """
         Build sample_metadata from resolved file info.
 
-        Creates a DataFrame indexed by case_id with columns:
-        case_id, sample_type, file_id, data_type.
+        Creates a DataFrame indexed by ``sample_key`` with provenance columns
+        including case/specimen IDs, file IDs, and checksums.
 
         Parameters
         ----------
@@ -138,12 +170,12 @@ class TCGATableBuilder(ABC):
         Returns
         -------
         pd.DataFrame
-            Sample metadata indexed by case_id.
+            Sample metadata indexed by the configured sample identifier.
         """
         meta_records = {}
         for f in files:
-            cid = f["case_id"]
-            if cid not in meta_records:
+            identifier = self.sample_identifier(f)
+            if identifier not in meta_records:
                 provenance_columns = [
                     "case_id",
                     "project",
@@ -163,12 +195,12 @@ class TCGATableBuilder(ABC):
                     "state",
                     "mapping_status",
                 ]
-                meta_records[cid] = {
+                meta_records[identifier] = {
                     column: f.get(column) for column in provenance_columns
                 }
 
         meta = pd.DataFrame(meta_records.values())
-        meta = meta.set_index("case_id")
+        meta.index = pd.Index(meta_records.keys(), name=self.sample_key)
         # Reindex to match table columns (some cases may have been deduped)
         meta = meta.reindex(table.columns)
         return meta
