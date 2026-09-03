@@ -42,6 +42,9 @@ contracts, auditable mutation analysis, and stricter TCGA specimen alignment.
   independent of input-row order.
 * Plot saving accepts `str` and `os.PathLike` destinations.
 * Complete sample universes are enforced before patient-level enrichment.
+* Somatic interaction FDR has an explicit undirected hypothesis family: each
+  unique gene pair is tested once, with self-pairs and mirrored matrix entries
+  excluded.
 
 ### 🤖 Reusable AI assets
 

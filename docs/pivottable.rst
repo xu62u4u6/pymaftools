@@ -193,6 +193,30 @@ Sorting
    already **contiguous** by the grouping key. Always ``sort_features`` /
    ``sort_samples_by_group`` *before* ``group_features`` / ``group_samples``.
 
+Somatic interactions and FDR
+----------------------------
+
+``somatic_interactions_stats`` tests co-occurrence or mutual exclusivity for
+the selected top genes and returns one row for each **unique unordered gene
+pair**. The diagonal (``A``--``A``) and mirrored entry (``A``--``B`` versus
+``B``--``A``) are not separate biological hypotheses. Benjamini-Hochberg FDR
+is therefore calculated over ``n * (n - 1) / 2`` pairs, rather than over every
+cell of an ``n`` by ``n`` matrix:
+
+.. code-block:: python
+
+   stats = table.plot.somatic_interactions_stats(top=25)
+   significant = stats.loc[stats["is_significant"]]
+
+   figure, stats = table.plot.somatic_interactions(top=25)
+
+This definition intentionally differs from ``maftools::somaticInteractions``,
+which applies FDR to directed matrix entries and diagonal cells before
+deduplicating the displayed pairs. Raw contingency counts and Fisher
+``p_value`` values are comparable under the same input universe; adjusted
+``q``-values are not numerically equivalent because the multiple-testing
+families differ.
+
 Multi-omics integration
 ------------------------
 

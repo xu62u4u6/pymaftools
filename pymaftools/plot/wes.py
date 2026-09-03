@@ -255,11 +255,19 @@ def plot_vaf(
 
 
 def somatic_interactions(table, top: int = 25, alpha: float = 0.05) -> pd.DataFrame:
-    """Pairwise Fisher tests for co-occurrence / mutual exclusivity."""
+    """Pairwise Fisher tests for co-occurrence / mutual exclusivity.
+
+    The interaction hypothesis is undirected, so each selected gene pair is
+    tested once. The Benjamini-Hochberg correction is applied to the unique
+    unordered-pair family (``n * (n - 1) / 2`` tests); self-pairs and mirrored
+    matrix entries are not included. This is intentional and differs from
+    the matrix-cell correction used by ``maftools::somaticInteractions``.
+    """
     binary = table.to_binary_table().astype(bool)
     genes = binary.astype(int).sum(axis=1).sort_values(ascending=False).head(top).index
     binary = binary.loc[genes]
     rows = []
+    # ``combinations`` enumerates each biological (unordered) pair exactly once.
     for gene1, gene2 in combinations(binary.index, 2):
         both_mutated = int((binary.loc[gene1] & binary.loc[gene2]).sum())
         gene2_only = int((~binary.loc[gene1] & binary.loc[gene2]).sum())
@@ -286,6 +294,7 @@ def somatic_interactions(table, top: int = 25, alpha: float = 0.05) -> pd.DataFr
     result = pd.DataFrame(rows)
     if result.empty:
         return result
+    # Correct only the distinct interaction hypotheses represented in ``result``.
     result["adjusted_p_value"] = multipletests(result["p_value"], method="fdr_bh")[1]
     result["interaction"] = np.where(
         result["odds_ratio"] >= 1,

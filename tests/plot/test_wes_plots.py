@@ -6,9 +6,15 @@ matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
 import pandas as pd
+from statsmodels.stats.multitest import multipletests
 
 from pymaftools.core.MAF import MAF
-from pymaftools.plot.wes import compare_cohorts, infer_vaf, summarize_titv
+from pymaftools.plot.wes import (
+    compare_cohorts,
+    infer_vaf,
+    somatic_interactions,
+    summarize_titv,
+)
 
 
 def _maf_frame():
@@ -174,6 +180,19 @@ def test_somatic_interactions_displays_upper_triangle_only():
     assert mask[1, 0]
     assert not mask[0, 1]
     plt.close(fig)
+
+
+def test_somatic_interactions_corrects_unique_unordered_pair_family():
+    """FDR uses one hypothesis per gene pair, without diagonal cells."""
+    stats = somatic_interactions(_maf().to_gene_table(), top=4)
+
+    pairs = [frozenset((row.gene1, row.gene2)) for row in stats.itertuples()]
+    assert len(stats) == 6  # 4 * 3 / 2, not a 4 x 4 matrix family
+    assert len(set(pairs)) == 6
+    assert all(row.gene1 != row.gene2 for row in stats.itertuples())
+
+    expected = multipletests(stats["p_value"], method="fdr_bh")[1]
+    assert (stats["adjusted_p_value"].to_numpy() == expected).all()
 
 
 def test_compare_cohorts_uses_explicit_cohort_column_names():

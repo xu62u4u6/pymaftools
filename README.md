@@ -39,6 +39,8 @@
 - **filter_by_variance** — Filter by variance or median absolute deviation (MAD)
 - **filter_by_statistical_test** — Filter by statistical test (t-test, Mann-Whitney, Kruskal-Wallis, ANOVA) with FDR correction
 - **Chi-squared / Fisher's exact test** — Association testing between features and groups
+- **Somatic interactions** — Undirected co-occurrence/mutual-exclusivity tests with
+  one BH-FDR hypothesis per unique gene pair
 - **Auditable TMB** — explicit event filters and sample-specific callable territory
 
 ### Visualization

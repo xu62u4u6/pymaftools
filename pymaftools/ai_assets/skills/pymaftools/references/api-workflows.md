@@ -57,6 +57,20 @@ The tested family receives BH correction. Patient-level analysis requires an
 attached manifest and rejects repeated eligible patients; the method does not
 adjust for confounding or paired/repeated observations.
 
+For mutation co-occurrence or mutual exclusivity, use the matrix-level
+interaction workflow:
+
+```python
+stats = table.plot.somatic_interactions_stats(top=25)
+figure, stats = table.plot.somatic_interactions(top=25)
+```
+
+Each unordered gene pair is tested once and the BH-FDR correction covers only
+that unique pair family. Self-pairs and mirrored matrix entries are excluded;
+this is an intentional semantic difference from the matrix-cell correction in
+`maftools::somaticInteractions`, so adjusted p-values are not expected to be
+numerically identical between the two tools.
+
 ## Matrix metadata
 
 `PivotTable` and its specialized subclasses contain:
