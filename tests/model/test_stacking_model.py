@@ -1,5 +1,7 @@
 import numpy as np
 import pandas as pd
+from sklearn.base import BaseEstimator, ClassifierMixin
+from sklearn.linear_model import LogisticRegression
 import pytest
 
 from pymaftools.core.PivotTable import PivotTable
@@ -122,3 +124,71 @@ def test_prepare_features_namespaces_overlapping_genes():
     assert list(X.columns) == ["mutation::TP53", "KRAS", "expression::TP53", "EGFR"]
     model.fit(X, np.array(["A"] * 10 + ["B"] * 10))
     assert len(model.predict(X)) == 20
+
+
+def test_feature_selection_is_fitted_inside_stacking_and_reported():
+    omics_dict, X, y = _build_model_inputs(n_samples=30)
+    model = OmicsStackingModel(
+        omics_dict,
+        class_order=["LUAD", "LUSC"],
+        max_features=2,
+        cv=3,
+    )
+
+    model.fit(X, y)
+
+    selected = model.get_selected_features()
+    assert set(selected) == {"SNV", "CNV"}
+    assert all(len(features) == 2 for features in selected.values())
+    assert len(model.get_omics_feature_importance("SNV")) == 2
+
+
+def test_prepare_features_requires_exact_sample_universe_by_default():
+    sample_ids = [f"s{i}" for i in range(4)]
+    first = PivotTable(
+        pd.DataFrame([[1, 2, 3, 4]], index=["f"], columns=sample_ids)
+    )
+    second = PivotTable(
+        pd.DataFrame([[4, 5, 6]], index=["g"], columns=sample_ids[1:])
+    )
+
+    strict = OmicsStackingModel(
+        {"first": first, "second": second}, class_order=["A", "B"]
+    )
+    with pytest.raises(ValueError, match="do not exactly match"):
+        strict.prepare_features()
+
+    legacy = OmicsStackingModel(
+        {"first": first, "second": second},
+        class_order=["A", "B"],
+        sample_policy="intersection",
+    )
+    assert legacy.prepare_features().index.tolist() == sample_ids[1:]
+
+
+def test_custom_estimators_do_not_require_random_forest_constructor_kwargs():
+    class MinimalClassifier(BaseEstimator, ClassifierMixin):
+        def __init__(self):
+            self._model = LogisticRegression()
+
+        def fit(self, X, y):
+            self._model.fit(X, y)
+            self.classes_ = self._model.classes_
+            return self
+
+        def predict(self, X):
+            return self._model.predict(X)
+
+        def predict_proba(self, X):
+            return self._model.predict_proba(X)
+
+    omics_dict, X, y = _build_model_inputs(n_samples=30)
+    model = OmicsStackingModel(
+        omics_dict,
+        class_order=["LUAD", "LUSC"],
+        base_model=MinimalClassifier,
+        cv=3,
+    )
+
+    model.fit(X, y)
+    assert len(model.predict(X)) == len(y)

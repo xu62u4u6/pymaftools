@@ -124,16 +124,33 @@ class Cohort:
                 f"got {type(table).__name__}."
             )
 
-        if self.sample_IDs is None:
-            self.sample_IDs = table.sample_metadata.index
-            self.tables[table_name] = table
-        else:
-            table = table.subset(samples=self.sample_IDs)
-            self.tables[table_name] = table
+        if not isinstance(table_name, str) or not table_name:
+            raise ValueError("table_name must be a non-empty string.")
+        if table_name in self.tables:
+            raise ValueError(f"Cohort already contains a table named '{table_name}'.")
+        if not table.columns.is_unique:
+            raise ValueError(
+                f"Table '{table_name}' contains duplicate sample identifiers."
+            )
+        table._validate_metadata()
 
-        # Reindex sample_metadata to cohort's sample_IDs before merging
-        # (table may have fewer samples after subset)
-        meta = table.sample_metadata.reindex(self.sample_IDs)
+        if self.sample_IDs is None:
+            self.sample_IDs = table.columns.copy()
+            table_to_add = table.copy()
+        else:
+            expected = pd.Index(self.sample_IDs)
+            actual = pd.Index(table.columns)
+            missing = expected.difference(actual).tolist()
+            extra = actual.difference(expected).tolist()
+            if missing or extra:
+                raise ValueError(
+                    f"Table '{table_name}' sample identifiers do not exactly "
+                    f"match the cohort (missing={missing}, extra={extra})."
+                )
+            table_to_add = table.reindex(columns=expected)
+
+        # Reindex sample_metadata to the cohort's canonical sample order.
+        meta = table_to_add.sample_metadata.reindex(self.sample_IDs)
 
         # Rename columns that would conflict with existing metadata by prefixing table_name
         if self.sample_metadata is not None:
@@ -161,6 +178,8 @@ class Cohort:
                 )
 
         self.add_sample_metadata(meta, source=table_name)
+        self.tables[table_name] = table_to_add
+        table_to_add.sample_metadata = self.sample_metadata.copy()
 
     def _is_index_matched(self, table: PivotTable) -> bool:
         """

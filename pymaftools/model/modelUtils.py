@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
-from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import StratifiedGroupKFold, StratifiedKFold
 from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_selection import RFECV
@@ -99,6 +99,7 @@ def cross_validate_importance(
     random_state_base: int = 0,
     verbose: bool = True,
     evaluate_func: callable | None = None,
+    groups: pd.Series | np.ndarray | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame | None]:
     """
     Run repeated stratified cross-validation, collecting feature importances and metrics.
@@ -123,6 +124,10 @@ def cross_validate_importance(
         Whether to display a progress bar.
     evaluate_func : callable, optional
         Function ``(model, X_test, y_test) -> dict`` returning per-fold metrics.
+    groups : array-like, optional
+        Group identifiers, such as patient IDs. When supplied, use
+        ``StratifiedGroupKFold`` so one group cannot appear in both train and
+        test folds.
 
     Returns
     -------
@@ -134,12 +139,35 @@ def cross_validate_importance(
     importance_records: list[dict] = []
     metrics_records: list[dict] = []
 
-    for seed in tqdm(range(n_seeds), desc="CV seeds", disable=not verbose):
-        skf = StratifiedKFold(
-            n_splits=n_splits, shuffle=True, random_state=seed + random_state_base
-        )
+    if groups is not None:
+        if isinstance(groups, pd.Series):
+            if not groups.index.equals(X.index):
+                raise ValueError("groups index must match X index exactly.")
+            groups = groups.copy()
+        else:
+            groups = pd.Series(groups, index=X.index)
+        if len(groups) != len(X):
+            raise ValueError("groups must contain one value per row in X.")
+        if groups.isna().any():
+            raise ValueError("groups cannot contain missing values.")
 
-        for fold_id, (train_idx, test_idx) in enumerate(skf.split(X, y)):
+    for seed in tqdm(range(n_seeds), desc="CV seeds", disable=not verbose):
+        if groups is None:
+            splitter = StratifiedKFold(
+                n_splits=n_splits,
+                shuffle=True,
+                random_state=seed + random_state_base,
+            )
+            split_iterator = splitter.split(X, y)
+        else:
+            splitter = StratifiedGroupKFold(
+                n_splits=n_splits,
+                shuffle=True,
+                random_state=seed + random_state_base,
+            )
+            split_iterator = splitter.split(X, y, groups)
+
+        for fold_id, (train_idx, test_idx) in enumerate(split_iterator):
             X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
             y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
 
@@ -339,6 +367,7 @@ def run_rfecv_feature_selection(
     random_state: int = 42,
     title: str | None = None,
     save_path: str | None = None,
+    groups: pd.Series | np.ndarray | None = None,
     **save_kwargs,
 ) -> tuple[list[str], RFECV]:
     """
@@ -366,6 +395,9 @@ def run_rfecv_feature_selection(
         Plot title (``None`` disables title).
     save_path : str, optional
         Path to save the figure.
+    groups : array-like, optional
+        Patient or other group identifiers. When supplied, use
+        ``StratifiedGroupKFold`` so a group cannot appear in both RFECV folds.
     **save_kwargs
         Additional arguments passed to save method.
 
@@ -381,17 +413,42 @@ def run_rfecv_feature_selection(
 
     X = pivot.T.values
     y = np.array(pivot.sample_metadata[label_col].values)
+    fit_groups = None
+    if groups is not None:
+        if isinstance(groups, pd.Series):
+            if not groups.index.equals(pivot.columns):
+                raise ValueError("groups index must match PivotTable samples exactly.")
+            fit_groups = groups.to_numpy()
+        else:
+            fit_groups = np.asarray(groups)
+            if len(fit_groups) != len(pivot.columns):
+                raise ValueError("groups must contain one value per PivotTable sample.")
+        if pd.isna(fit_groups).any():
+            raise ValueError("groups cannot contain missing values.")
+
+    cv = (
+        StratifiedGroupKFold(
+            n_splits=5,
+            shuffle=True,
+            random_state=random_state,
+        )
+        if fit_groups is not None
+        else StratifiedKFold(5, shuffle=True, random_state=random_state)
+    )
 
     selector = RFECV(
         estimator=estimator,
         step=step,
-        cv=StratifiedKFold(5),
+        cv=cv,
         scoring=scoring,
         verbose=0,
         min_features_to_select=min_features_to_select,
     )
 
-    selector.fit(X, y)
+    if fit_groups is None:
+        selector.fit(X, y)
+    else:
+        selector.fit(X, y, groups=fit_groups)
 
     print(f"Optimal number of features: {selector.n_features_}")
     selected_features = pivot.index[selector.support_].tolist()
@@ -418,6 +475,7 @@ def run_model_evaluation(
     n_splits: int = 5,
     evaluate_func: callable | None = None,
     verbose: bool = True,
+    groups: pd.Series | np.ndarray | None = None,
 ) -> tuple[dict, pd.DataFrame, pd.DataFrame]:
     """
     Run cross-validation and importance analysis for multiple models.
@@ -437,6 +495,8 @@ def run_model_evaluation(
         Evaluation function ``(model, X_test, y_test) -> dict``.
     verbose : bool, default True
         Whether to print progress.
+    groups : array-like, optional
+        Group identifiers forwarded to :func:`cross_validate_importance`.
 
     Returns
     -------
@@ -465,6 +525,7 @@ def run_model_evaluation(
             n_splits=n_splits,
             evaluate_func=evaluate_func,
             verbose=verbose,
+            groups=groups,
         )
 
         result[model_name] = {

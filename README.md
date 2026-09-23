@@ -347,13 +347,20 @@ omics = {
 }
 class_order = sorted(cohort.sample_metadata["subtype"].dropna().unique())
 model = OmicsStackingModel(omics, class_order=class_order)
-X = model.prepare_features()  # aligns samples and namespaces shared gene names
+X = model.prepare_features()  # requires the same sample IDs in every layer
 y = cohort.sample_metadata.loc[X.index, "subtype"]
 model.fit(X, y)
 preds = model.predict(X)
 importance = model.get_omics_feature_importance("mutations")
 weights = model.get_omics_weights()
 ```
+
+`OmicsStackingModel` fails closed when layers contain different sample IDs. To
+explicitly reproduce the legacy inner-join behavior, pass
+`sample_policy="intersection"`. For a capped feature set, pass
+`max_features=20`; the variance selector is fitted inside each stacking CV
+split. Supply a patient-grouped splitter through `cv` when repeated specimens
+could otherwise cross a validation boundary.
 
 ## FAQ
 

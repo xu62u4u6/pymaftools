@@ -3,7 +3,12 @@ import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 
 from pymaftools.core.PivotTable import PivotTable
-from pymaftools.model.modelUtils import evaluate_model, get_importance, to_importance_table
+from pymaftools.model.modelUtils import (
+    cross_validate_importance,
+    evaluate_model,
+    get_importance,
+    to_importance_table,
+)
 
 
 def test_evaluate_model_returns_metric_dict():
@@ -51,3 +56,28 @@ def test_to_importance_table_returns_sorted_pivot_table():
     assert list(table.index)[0] == "TP53"
     assert "mean" in table.feature_metadata.columns
     assert table.shape[1] == 2
+
+
+def test_cross_validate_importance_accepts_array_groups():
+    rng = np.random.default_rng(9)
+    X = pd.DataFrame(rng.normal(size=(18, 4)), columns=list("ABCD"))
+    y = pd.Series([0, 1] * 9, index=X.index)
+    groups = np.repeat(np.arange(9), 2)
+
+    importance, metrics = cross_validate_importance(
+        X,
+        y,
+        model_func=lambda seed: RandomForestClassifier(
+            n_estimators=5, random_state=seed
+        ),
+        model_name="grouped",
+        n_seeds=1,
+        n_splits=3,
+        verbose=False,
+        groups=groups,
+        evaluate_func=evaluate_model,
+    )
+
+    assert not importance.empty
+    assert metrics is not None
+    assert len(metrics) == 3
