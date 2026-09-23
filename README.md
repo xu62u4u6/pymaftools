@@ -362,6 +362,12 @@ explicitly reproduce the legacy inner-join behavior, pass
 split. Supply a patient-grouped splitter through `cv` when repeated specimens
 could otherwise cross a validation boundary.
 
+Feature eligibility is based on finite values in each training split. Rank
+variance before feature-wise scaling, which would erase that ranking. Selected
+held-out missing values are left for the base estimator's fitted imputer or
+native missing-value support; the selector does not learn from held-out values.
+Learned preprocessing must be fitted inside the base-estimator pipeline.
+
 ## FAQ
 
 ### 1. How to adjust font sizes in OncoPlot?

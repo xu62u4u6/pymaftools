@@ -1,6 +1,6 @@
 # Release Process Audit
 
-Last reviewed: 2026-09-01
+Last reviewed: 2026-09-23
 
 This document audits the release path for `pymaftools`. It separates controls in
 the repository from settings that live in GitHub, TestPyPI, and PyPI. The
@@ -30,6 +30,16 @@ Local `deploy.sh` only builds and validates. It has no upload credentials or
 upload command.
 
 ## Current Development Verification (2026-09-01)
+
+### Follow-up verification (2026-09-23)
+
+At source revision `104bbcd`, the package suite passed 320 tests, skipped 7,
+and deselected 10; `ruff check pymaftools` passed. Fold-local completeness and
+variance selection now have a held-out-missingness regression test. The clean
+wheel documentation journey also passed in an isolated temporary environment,
+including HDF5 round-trip and an OncoPlot byte-identical to its inspected
+baseline. This is development verification; no release tag or PyPI publication
+was performed. The earlier coverage and Sphinx results below were not rerun.
 
 The public `dev` checkout at `8e469789a2ef3ab22b45e630c3b6e7650732ef7b`
 passed the current local release gates without publishing anything:
