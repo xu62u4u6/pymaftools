@@ -5,7 +5,7 @@ from sklearn.linear_model import LogisticRegression
 import pytest
 
 from pymaftools.core.PivotTable import PivotTable
-from pymaftools.model.StackingModel import OmicsStackingModel
+from pymaftools.model.StackingModel import OmicsStackingModel, _TopVarianceSelector
 
 
 def _build_model_inputs(n_samples: int = 20, seed: int = 7):
@@ -143,14 +143,22 @@ def test_feature_selection_is_fitted_inside_stacking_and_reported():
     assert len(model.get_omics_feature_importance("SNV")) == 2
 
 
+def test_selector_uses_only_training_completeness_and_variance():
+    train = np.array([[0.0, 0.0, np.nan], [1.0, 100.0, 9000.0], [2.0, 200.0, 18000.0]])
+    selector = _TopVarianceSelector(1).fit(train)
+    np.testing.assert_array_equal(selector.get_support(), [False, True, False])
+    held_out = np.array([[1e12, np.nan, 1e15]])
+    assert np.isnan(selector.transform(held_out)[0, 0])
+    np.testing.assert_array_equal(selector.get_support(), [False, True, False])
+    # A feature missing only in held-out samples remains eligible in this fit.
+    inner = _TopVarianceSelector(1).fit(train[1:])
+    np.testing.assert_array_equal(inner.get_support(), [False, False, True])
+
+
 def test_prepare_features_requires_exact_sample_universe_by_default():
     sample_ids = [f"s{i}" for i in range(4)]
-    first = PivotTable(
-        pd.DataFrame([[1, 2, 3, 4]], index=["f"], columns=sample_ids)
-    )
-    second = PivotTable(
-        pd.DataFrame([[4, 5, 6]], index=["g"], columns=sample_ids[1:])
-    )
+    first = PivotTable(pd.DataFrame([[1, 2, 3, 4]], index=["f"], columns=sample_ids))
+    second = PivotTable(pd.DataFrame([[4, 5, 6]], index=["g"], columns=sample_ids[1:]))
 
     strict = OmicsStackingModel(
         {"first": first, "second": second}, class_order=["A", "B"]

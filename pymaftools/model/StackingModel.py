@@ -42,8 +42,10 @@ class _TopVarianceSelector(BaseEstimator, TransformerMixin):
         if self.max_features is not None and self.max_features < 1:
             raise ValueError("max_features must be positive or None.")
 
-        variances = np.nanvar(values, axis=0)
-        finite = np.isfinite(variances)
+        complete = np.isfinite(values).all(axis=0)
+        variances = np.full(values.shape[1], -np.inf)
+        variances[complete] = np.var(values[:, complete], axis=0)
+        finite = complete & np.isfinite(variances)
         order = np.lexsort((np.arange(values.shape[1]), -variances))
         order = order[finite[order]]
         limit = values.shape[1] if self.max_features is None else self.max_features
@@ -66,9 +68,12 @@ class _TopVarianceSelector(BaseEstimator, TransformerMixin):
                 "Feature selector received a matrix with an unexpected number "
                 "of features."
             )
-        if not np.isfinite(values).all():
-            raise ValueError("Feature selector received missing or infinite values.")
-        return values[:, self.support_]
+        selected = values[:, self.support_]
+        if np.isinf(selected).any():
+            raise ValueError("Feature selector received infinite selected values.")
+        # Missing held-out values are handled by the downstream estimator or
+        # its fitted imputer; they must not alter training feature eligibility.
+        return selected
 
     def get_support(self) -> np.ndarray:
         if not hasattr(self, "support_"):
@@ -86,7 +91,9 @@ class _LayerVarianceSelector(BaseEstimator, TransformerMixin):
     def _layer_values(self, X: Any) -> np.ndarray:
         if isinstance(X, pd.DataFrame):
             if max(self.feature_indices, default=-1) >= X.shape[1]:
-                raise ValueError("Layer selector received an unexpected feature matrix.")
+                raise ValueError(
+                    "Layer selector received an unexpected feature matrix."
+                )
             return X.iloc[:, self.feature_indices].to_numpy(dtype=float, copy=True)
         values = np.asarray(X, dtype=float)
         if values.ndim != 2 or max(self.feature_indices, default=-1) >= values.shape[1]:
@@ -267,8 +274,7 @@ class OmicsStackingModel:
         self.model = StackingClassifier(
             estimators=estimators,
             final_estimator=self._instantiate_estimator(
-                self.final_model_class,
-                max_iter=1000, random_state=self.random_state
+                self.final_model_class, max_iter=1000, random_state=self.random_state
             ),
             cv=self.cv,
             stack_method="predict_proba",
