@@ -45,6 +45,15 @@ contracts, auditable mutation analysis, and stricter TCGA specimen alignment.
 * Somatic interaction FDR has an explicit undirected hypothesis family: each
   unique gene pair is tested once, with self-pairs and mirrored matrix entries
   excluded.
+* `somatic_interactions()` respects an attached `ObservationMask`: each pair is
+  tested only on jointly observed samples, pairs without any are reported as
+  untested and excluded from FDR, and present events marked unobserved are
+  rejected (#18).
+* `mutation_enrichment_test()` returns an empty result with the full column
+  schema for zero-feature tables instead of raising `KeyError` (#19).
+* With `method="chi2"`, enrichment marks zero-margin contingency tables as
+  untested (`not_tested_reason="degenerate_contingency_table"`) instead of
+  aborting the whole analysis; untested rows are excluded from FDR (#20).
 
 ### 🤖 Reusable AI assets
 
