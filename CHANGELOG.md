@@ -7,6 +7,16 @@
 Scientific-validity release adding explicit sample-universe and observation-state
 contracts, auditable mutation analysis, and stricter TCGA specimen alignment.
 
+### 🎨 Plot fixes
+
+* **OncoPlot sample labels (#16):** sample-label gutters now share the heatmap's
+  `(0, n)` data limits, so labels sit on their column centres instead of half a
+  cell to the right (ungrouped and `group_samples` layouts).
+* **Legend spacing (#17):** `LegendManager.plot_legends` floors title/item
+  spacing at the physical text height, so legend titles no longer overlap the
+  first entry on short figures; a `UserWarning` is raised when legends overflow
+  the legend axis.
+
 ### 🧪 Scientific data contracts
 
 * **`SampleManifest`:** declares eligible and excluded samples, patient identity,

@@ -850,7 +850,7 @@ class OncoPlot(BasePlot):
                 )
         else:
             ax.set_ylim(0, 1)
-            ax.set_xlim(-0.5, n - 0.5)
+            ax.set_xlim(0, n)  # same data limits as the heatmap (cells span [i, i+1])
             trans = blended_transform_factory(ax.transData, ax.transAxes)
             for i, label in enumerate(labels):
                 ax.text(
