@@ -616,3 +616,106 @@ def test_grouped_mode_draws_one_sample_gutter_per_section(mutation_table):
     n_sections = len(op._axis_sections("sample"))
     assert n_sections >= 2
     assert len(op._sample_gutter_axes) == n_sections
+
+
+def _label_centre_offsets_px(op, gutter_ax, heatmap_ax, positions):
+    """Display-space distance between each gutter label and its heatmap cell centre."""
+    op.fig.canvas.draw()
+    renderer = op.fig.canvas.get_renderer()
+    offsets = []
+    for text, col in zip(gutter_ax.texts, positions):
+        bbox = text.get_window_extent(renderer)
+        label_x = bbox.x0 + bbox.width / 2
+        cell_x = heatmap_ax.transData.transform((col + 0.5, 0))[0]
+        offsets.append(abs(label_x - cell_x))
+    return offsets
+
+
+@pytest.mark.parametrize("n_samples", [6, 33])
+def test_sample_labels_centred_on_heatmap_cells(n_samples):
+    """Issue #16: sample gutter shares the heatmap's (0, n) data limits, so each
+    label sits on its column centre instead of half a cell to the right."""
+    table = PivotTable(
+        pd.DataFrame(
+            "mut", index=["gene"], columns=[f"sample_{i}" for i in range(n_samples)]
+        )
+    )
+    op = OncoPlot(table).main(cmap_dict={"mut": "blue"})
+    op.render(show_sample_labels=True)
+
+    gutter = op._sample_gutter_axes[0]
+    assert gutter.get_xlim() == op.ax_heatmap.get_xlim()
+    offsets = _label_centre_offsets_px(op, gutter, op.ax_heatmap, range(n_samples))
+    assert max(offsets) < 1.0
+
+
+def test_grouped_sample_labels_centred_on_section_cells():
+    """Issue #16, grouped layout: each section's gutter aligns with its own
+    heatmap section."""
+    op = (
+        OncoPlot(_grouped_table(), figsize=(7, 5))
+        .main()
+        .group_samples(by="grp")
+        .render(show_sample_labels=True)
+    )
+    heatmap_axes = sorted(
+        (ax for ax in op.fig.axes if ax.collections),
+        key=lambda ax: ax.get_position().x0,
+    )
+    gutters = sorted(op._sample_gutter_axes, key=lambda ax: ax.get_position().x0)
+    assert len(gutters) == len(heatmap_axes) == 2
+    for gutter, heatmap_ax in zip(gutters, heatmap_axes):
+        n = len(gutter.texts)
+        assert gutter.get_xlim() == heatmap_ax.get_xlim() == (0, n)
+        assert max(_label_centre_offsets_px(op, gutter, heatmap_ax, range(n))) < 1.0
+
+
+@pytest.mark.parametrize("fig_height", [3, 4, 6, 10])
+def test_legend_title_does_not_overlap_first_item(fig_height):
+    """Issue #17: on short figures the fixed axes-fraction title offset was
+    smaller than the glyph height; spacing is now floored in physical units."""
+    table = PivotTable(
+        pd.DataFrame("mut", index=["gene"], columns=[f"sample_{i}" for i in range(6)])
+    )
+    op = OncoPlot(table).set_config(figsize=(9, fig_height))
+    op.main(cmap_dict={"mut": "steelblue"}, linewidths=1)
+    op.render(show_sample_labels=True)
+    op.fig.canvas.draw()
+    renderer = op.fig.canvas.get_renderer()
+
+    title, first_item = op.ax_legend.texts[:2]
+    assert title.get_text() == "Mutation"
+    assert first_item.get_text() == "mut"
+    title_box = title.get_window_extent(renderer)
+    item_box = first_item.get_window_extent(renderer)
+    assert title_box.y0 >= item_box.y1
+
+
+def test_legend_spacing_unchanged_on_tall_axes():
+    """The physical floor only kicks in when needed: a tall legend axis keeps
+    the caller's fractional spacing."""
+    from pymaftools.plot.LegendManager import LegendManager
+
+    fig, ax = plt.subplots(figsize=(3, 12))
+    floors = LegendManager._physical_spacing_floor(
+        ax,
+        fontsize=8,
+        title_fontsize=10,
+        rect_height=0.02,
+        title_offset_y=0.05,
+        item_offset_y=0.035,
+    )
+    plt.close(fig)
+    assert floors == (0.05, 0.035)
+
+
+def test_legend_overflow_warns():
+    from pymaftools.plot.LegendManager import LegendManager
+
+    fig, ax = plt.subplots(figsize=(3, 1))
+    manager = LegendManager(ax).add_legend(
+        "Many", {f"category_{i}": "#888888" for i in range(30)}
+    )
+    with pytest.warns(UserWarning, match="does not fit"):
+        manager.plot_legends()
+    plt.close(fig)
