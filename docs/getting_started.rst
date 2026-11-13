@@ -84,8 +84,15 @@ work.
 - ``Variant_Classification``
 
 The first six build the per-mutation index; ``Variant_Classification`` is the
-value used by ``to_gene_table``. (``Variant_Type`` and ``Protein_position``
-are only needed for base-change / lollipop analyses.)
+value used by ``to_gene_table``. Column names are matched case-insensitively
+(``End_position`` works), and a missing ``Tumor_Seq_Allele1`` is copied from
+``Reference_Allele``. (``Variant_Type`` is needed for base-change analyses;
+lollipops use ``Protein_position``, ``HGVSp_Short`` or ``Protein_Change``.)
+
+Every read records what was detected and changed in ``maf.ingest_report``, and
+input problems that would silently change results (blank genes, duplicate
+events, mixed genome builds) raise ``MAFValidationError`` by default. See
+:doc:`quickstart` for the full checklist.
 
 **Sample identity.** By default each row's sample comes from the
 ``Tumor_Sample_Barcode`` column, so a standard multi-sample MAF keeps its

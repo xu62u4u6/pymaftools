@@ -81,6 +81,19 @@ def read_sqlite(table_cls, db_path: str):
 
 def read_h5(table_cls, base_table_cls, h5_path: str | Path):
     """Load a PivotTable-like object from HDF5."""
+    try:
+        return _read_h5(table_cls, base_table_cls, h5_path)
+    except ModuleNotFoundError as error:
+        if error.name != "numpy._core":
+            raise
+        raise ImportError(
+            f"'{h5_path}' was written with NumPy >= 2 (pickled object columns) "
+            "and cannot be read with the installed NumPy 1.x. Upgrade NumPy "
+            "to >= 2.0, or re-save the file from a NumPy 1.x environment."
+        ) from error
+
+
+def _read_h5(table_cls, base_table_cls, h5_path: str | Path):
     h5_path = Path(h5_path)
     with pd.HDFStore(str(h5_path), mode="r") as store:
         required = {"/data", "/sample_metadata", "/feature_metadata"}
