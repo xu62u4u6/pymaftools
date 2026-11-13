@@ -46,6 +46,35 @@ contracts, auditable mutation analysis, and stricter TCGA specimen alignment.
   unique gene pair is tested once, with self-pairs and mirrored matrix entries
   excluded.
 
+### 🗣️ LLM usability: fail loud, hint the fix
+
+Calls that used to succeed silently or crash with a bare pandas error now say
+what went wrong and how to fix it. Statistical results are unchanged.
+
+* **Large-cohort oncoplots no longer render blank.** Cell gridlines now thin
+  with cell size (capped at 20% of a cell, dropped below 2 pt), so a 958-sample
+  matrix is visible instead of being painted over by 1 pt white lines. Small
+  cohorts keep their previous look.
+* `BasePlot.save()` before a figure exists raises `RuntimeError` (it used to
+  print "Figure is not exist." and write nothing).
+* `PivotTable.add_sample_metadata()` / `add_feature_metadata()` work with the
+  default `fill_value=None` (previously a pandas `ValueError`), accept a named
+  `Series`, warn on unmatched IDs, and raise when no ID matches at all.
+* `OncoPlot.add_freq()` / `plot_freq()` / sample and feature annotations name the
+  missing column, list available ones, and point to `table.add_freq()` /
+  `add_sample_metadata()`.
+* `table.plot.oncoplot()`, `somatic_interactions()` and
+  `somatic_interactions_stats()` have explicit signatures and full docstrings
+  instead of `**kwargs`; `oncoplot(top=...)` explains that gene selection is a
+  table operation.
+* `mutation_enrichment_test()` lists available columns / observed group values
+  on a bad `group_col` or group name; `maf.plot.lollipop()` says when a gene has
+  no mutations in the MAF and lists the most mutated genes.
+* New scientific reminders (warnings only): `to_gene_table()` when synonymous /
+  non-coding events are kept; somatic interactions on fewer than 10 samples, or
+  when most pairs are significant co-occurrences (typical mutation-burden
+  confounding).
+
 ### 🤖 Reusable AI assets
 
 * Added package-distributed researcher, user-tester, biostatistics-reviewer,

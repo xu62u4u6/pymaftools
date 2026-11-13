@@ -114,6 +114,13 @@ class MafPlot:
 
         AA_length, mutations_data = self.maf.get_protein_info(gene)
         if AA_length is None:
+            genes = self.maf["Hugo_Symbol"] if "Hugo_Symbol" in self.maf else None
+            if genes is not None and not genes.eq(gene).any():
+                top = genes.value_counts().index[:10].tolist()
+                raise ValueError(
+                    f"Gene {gene!r} has no mutations in this MAF. Most mutated "
+                    f"genes here: {top}."
+                )
             raise ValueError(
                 f"No protein-position data for {gene!r} in this MAF "
                 "(a populated 'Protein_position' column is required)."
