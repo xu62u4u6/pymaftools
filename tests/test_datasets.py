@@ -46,15 +46,17 @@ def test_load_example_single_sample_is_readable():
     assert maf.to_pivot_table().shape[0] > 0
 
 
-@pytest.mark.skipif(
-    int(np.__version__.split(".")[0]) < 2,
-    reason="bundled HDF5 table pickles object columns with NumPy >= 2",
-)
 def test_bundled_hdf5_table_has_installed_package_entry_points():
     path = example_table_path()
 
     assert path.exists()
     assert path.suffix == ".h5"
+    if int(np.__version__.split(".")[0]) < 2:
+        # The bundled table pickles object columns with NumPy 2 (see ROADMAP);
+        # under NumPy 1.x the reader must fail with an actionable message.
+        with pytest.raises(ImportError, match="NumPy >= 2"):
+            load_example_table()
+        return
     table = load_example_table()
     assert isinstance(table, PivotTable)
     assert table.shape[0] > 0

@@ -473,14 +473,16 @@ def test_grouping_sections_aligned_tracks_with_shared_scale():
     assert sum(a.get_title() == "TMB" for a in op.fig.axes) == 1
 
 
-@pytest.mark.skipif(
-    int(np.__version__.split(".")[0]) < 2,
-    reason="bundled HDF5 table pickles object columns with NumPy >= 2",
-)
 def test_real_tcga_lung_grouped_oncoplot_full_layout():
     """Real TCGA lung fixture: large grouped oncoplot with sample grouping,
     feature grouping, subtype sample annotation, and frequency track."""
-    table = pymaftools.read_h5(DATA_DIR / "example_tcga_lung_mutation_grouped.h5")
+    path = DATA_DIR / "example_tcga_lung_mutation_grouped.h5"
+    if int(np.__version__.split(".")[0]) < 2:
+        # NumPy-2 pickles in the bundled table (see ROADMAP): actionable error.
+        with pytest.raises(ImportError, match="NumPy >= 2"):
+            pymaftools.read_h5(path)
+        return
+    table = pymaftools.read_h5(path)
 
     assert isinstance(table, SmallVariationTable)
     assert table.shape == (62, 958)
