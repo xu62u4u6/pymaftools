@@ -33,7 +33,11 @@ def mutation_enrichment_test(
     if group1 == group2:
         raise ValueError("group1 and group2 must identify different groups.")
     if group_col not in table.sample_metadata.columns:
-        raise ValueError(f"group_col '{group_col}' not found in sample_metadata.")
+        raise ValueError(
+            f"group_col '{group_col}' not found in sample_metadata. Available "
+            f"columns: {list(table.sample_metadata.columns)}. Attach groups with "
+            "table.add_sample_metadata(df) first."
+        )
 
     table._validate_metadata()
     if table.sample_manifest is not None:
@@ -64,7 +68,17 @@ def mutation_enrichment_test(
     group1_samples = labels.index[labels.eq(group1)]
     group2_samples = labels.index[labels.eq(group2)]
     if group1_samples.empty or group2_samples.empty:
-        raise ValueError("Both requested groups must contain at least one sample.")
+        observed = sorted(map(str, labels.dropna().unique()))
+        empty = [
+            g
+            for g, idx in ((group1, group1_samples), (group2, group2_samples))
+            if idx.empty
+        ]
+        raise ValueError(
+            f"Both requested groups must contain at least one sample; no samples "
+            f"have {group_col!r} == {empty}. Values present in {group_col!r}: "
+            f"{observed[:20]}{'...' if len(observed) > 20 else ''}."
+        )
 
     observation_mask = binary_pivot_table.observation_mask
     if observation_mask is None:

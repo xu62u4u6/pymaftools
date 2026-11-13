@@ -350,6 +350,24 @@ class OncoPlot(BasePlot):
         self.tracks.append(track)
         return self
 
+    @staticmethod
+    def _require_columns(metadata, columns, where: str, hint: str = "") -> None:
+        """Raise a ValueError naming missing columns and what is available."""
+        missing = [c for c in columns if c not in metadata.columns]
+        if missing:
+            available = list(metadata.columns)
+            raise ValueError(
+                f"Column(s) {missing} not found in {where}. "
+                f"Available: {available[:15]}{'...' if len(available) > 15 else ''}."
+                f"{hint}"
+            )
+
+    _FREQ_HINT = (
+        " Frequencies are computed on the table, not the plot: call "
+        "`table = table.add_freq()` (or `add_freq(groups=...)` for per-group "
+        "columns) before `table.plot.oncoplot()`."
+    )
+
     def add_freq(
         self, freq_columns: list[str] | None = None, side: str = "right", **kwargs
     ) -> OncoPlot:
@@ -374,6 +392,9 @@ class OncoPlot(BasePlot):
         is for 0–1 proportions on a shared scale.
         """
         freq_columns = ["freq"] if freq_columns is None else list(freq_columns)
+        self._require_columns(
+            self.feature_metadata, freq_columns, "feature_metadata", self._FREQ_HINT
+        )
         track = FreqTrack(
             self.feature_metadata[freq_columns], line_color=self.line_color, **kwargs
         )
@@ -401,6 +422,14 @@ class OncoPlot(BasePlot):
         (numeric, default ``"Blues"`` in NumericTrack) or an auto-generated
         ``default_cmap`` palette (categorical)."""
         horizontal = side in ("top", "bottom")
+        where = "sample_metadata" if horizontal else "feature_metadata"
+        self._require_columns(
+            metadata,
+            list(columns),
+            where,
+            " Attach it with table.add_sample_metadata(df) / "
+            "table.add_feature_metadata(df) before plotting.",
+        )
         for col in columns:
             series = metadata[col]
             data = series.to_frame().T if horizontal else series.to_frame()
@@ -1299,6 +1328,9 @@ class OncoPlot(BasePlot):
             Returns self for method chaining
         """
         freq_columns = ["freq"] if freq_columns is None else list(freq_columns)
+        self._require_columns(
+            self.feature_metadata, freq_columns, "feature_metadata", self._FREQ_HINT
+        )
         self.tracks.append(
             FreqTrack(
                 self.feature_metadata[freq_columns],

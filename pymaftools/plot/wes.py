@@ -302,7 +302,41 @@ def somatic_interactions(table, top: int = 25, alpha: float = 0.05) -> pd.DataFr
         "Mutual exclusivity",
     )
     result["is_significant"] = result["adjusted_p_value"] < alpha
+    _warn_interaction_pitfalls(result, n_samples=binary.shape[1])
     return result.sort_values("adjusted_p_value")
+
+
+def _warn_interaction_pitfalls(result: pd.DataFrame, n_samples: int) -> None:
+    """Warn (never alter results) when the interaction table is likely misleading.
+
+    The numbers stay exactly as computed; these warnings exist because a
+    plausible-looking heatmap is easy to over-interpret, by people and by
+    automated agents alike.
+    """
+    import warnings
+
+    if n_samples < 10:
+        warnings.warn(
+            f"somatic_interactions on only {n_samples} samples: Fisher tests "
+            "have almost no power here; treat the table as descriptive.",
+            UserWarning,
+            stacklevel=3,
+        )
+    n_pairs = len(result)
+    if n_pairs >= 10:
+        cooccur = result["is_significant"] & result["interaction"].eq("Co-occurrence")
+        share = float(cooccur.mean())
+        if share > 0.5:
+            warnings.warn(
+                f"{share:.0%} of {n_pairs} gene pairs are significant "
+                "co-occurrences. Such pervasive co-occurrence usually reflects "
+                "differences in mutation burden (hypermutated samples, long genes "
+                "such as TTN/MUC16) rather than gene-gene interaction; consider "
+                "stratifying by TMB or excluding hypermutators before "
+                "interpreting individual pairs.",
+                UserWarning,
+                stacklevel=3,
+            )
 
 
 def plot_somatic_interactions(

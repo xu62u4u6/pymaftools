@@ -43,6 +43,11 @@ tags whose commit is not reachable from `origin/main`.
 - [ ] Coverage is at least 60%.
 - [ ] Ruff lint and format checks pass.
 - [ ] Sphinx builds with warnings treated as errors.
+- [ ] LLM usability check: in a clean environment, using only `help()` and
+      error messages, an agent can load the example MAF, render and save an
+      oncoplot for the bundled 958-sample table (matrix visibly non-blank), run
+      somatic interactions, and run a two-group enrichment. No step may succeed
+      silently without output; every error must name the fix.
 - [ ] Merge only after all required checks pass.
 
 Optional local equivalents:
