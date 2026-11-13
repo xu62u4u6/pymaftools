@@ -41,6 +41,19 @@ global threshold until low-coverage, high-risk modules improve.
   and manuscript-writing agents can be installed for Codex or Claude with
   `pymaftools-ai`.
 
+### MAF input decisions (0.6.0)
+
+- `read_maf` harmonizes columns and types only; normalization, liftover and
+  multi-allelic splitting stay with bcftools / vcf2maf / GATK (CLAUDE.md §6).
+- Problems that silently change results raise by default; safe changes
+  (renames, filled `Tumor_Seq_Allele1`) are made and recorded in
+  `ingest_report`. Unknown `Variant_Classification` values are reported, not
+  remapped; a Funcotator-to-GDC vocabulary map is a candidate opt-in.
+- Open: the bundled HDF5 example table pickles object columns with NumPy 2, so
+  it cannot be read under the declared NumPy 1.24 floor. Either re-save it in
+  a NumPy-1-readable form or raise the floor.
+- Open: panel-aware denominators (GENIE-style targeted panels) are not modelled.
+
 ## Shipped in 0.5.0
 
 The full list is in `CHANGELOG.md`. The main roadmap milestones delivered were:

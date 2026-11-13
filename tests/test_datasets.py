@@ -3,6 +3,7 @@
 These guard the promise that an installed user can read the documented example
 MAFs with no external download (the gap the doc-only-user agent surfaced)."""
 
+import numpy as np
 import pytest
 
 from pymaftools import (
@@ -50,6 +51,12 @@ def test_bundled_hdf5_table_has_installed_package_entry_points():
 
     assert path.exists()
     assert path.suffix == ".h5"
+    if int(np.__version__.split(".")[0]) < 2:
+        # The bundled table pickles object columns with NumPy 2 (see ROADMAP);
+        # under NumPy 1.x the reader must fail with an actionable message.
+        with pytest.raises(ImportError, match="NumPy >= 2"):
+            load_example_table()
+        return
     table = load_example_table()
     assert isinstance(table, PivotTable)
     assert table.shape[0] > 0

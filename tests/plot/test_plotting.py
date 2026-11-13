@@ -234,7 +234,7 @@ class TestPlotValidation:
         """Test handling of invalid column names"""
         plot = PivotTablePlot(sample_pivot_table)
         
-        with pytest.raises(ValueError, match="Could not interpret value"):
+        with pytest.raises(ValueError, match="Could not interpret (value|input)"):
             plot.plot_boxplot_with_annot(
                 test_col='nonexistent_column',
                 group_col='subtype'

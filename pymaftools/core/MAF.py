@@ -3,10 +3,12 @@ from __future__ import annotations
 import gzip
 import os
 import warnings
-from typing import TYPE_CHECKING, Any
+from collections.abc import Iterable
+from typing import TYPE_CHECKING, Any, Literal
 
 import pandas as pd
 
+from . import maf_io
 from .PivotTable import PivotTable
 from .SmallVariationTable import SmallVariationTable
 from .variant_groups import FUNCTIONAL_GROUP, FUNCTIONAL_ORDER
@@ -28,7 +30,7 @@ class MAF(pd.DataFrame):
     # Preserve builder-attached per-sample provenance as pandas propagates a
     # MAF through filtering and concatenation.  Raw MAFs are not PivotTables,
     # so this remains private until conversion to a gene-level table.
-    _metadata = ["_sample_metadata"]
+    _metadata = ["_sample_metadata", "_ingest_report"]
 
     index_col = [
         "Hugo_Symbol",
@@ -54,6 +56,7 @@ class MAF(pd.DataFrame):
         "Splice_Site",
         "Translation_Start_Site",
         "Nonstop_Mutation",
+        "Splice_Region",
         "3'UTR",
         "3'Flank",
         "5'UTR",
@@ -163,15 +166,35 @@ class MAF(pd.DataFrame):
         suffix: str = "",
         sample_col: str = "Tumor_Sample_Barcode",
         sep: str | None = None,
+        *,
+        validate: Literal["strict", "warn", "off"] = "strict",
+        deduplicate: bool = False,
     ) -> MAF:
         """
         Read a MAF file and return a MAF object.
 
-        Leading comment lines (``#``-prefixed, such as the GDC
-        ``#version 2.4`` header) are detected and skipped automatically, so
-        files with zero, one, or many comment lines are all read correctly.
-        Comma- and tab-delimited headers are detected automatically unless
-        ``sep`` is supplied explicitly.
+        Inputs from GDC, cBioPortal, vcf2maf, Funcotator/Oncotator and
+        maftools example data are accepted.  Everything the reader detects or
+        changes is recorded in :attr:`MAF.ingest_report`
+        (``print(maf.ingest_report)``), so nothing is altered silently:
+
+        - leading ``#`` comment lines (GDC ``#version gdc-1.0.0``, Funcotator
+          ``##`` blocks) are skipped; ``.gz`` is decompressed; comma- or
+          tab-delimited headers are detected unless ``sep`` is given;
+        - case variants of standard columns are renamed
+          (``End_position`` -> ``End_Position``);
+        - identifier columns (sample barcodes, ``Chromosome``,
+          ``Hugo_Symbol``, alleles) are kept as text, so ``"001"`` stays
+          ``"001"`` and a chromosome column never mixes ``int`` and ``str``;
+          ``Start_Position``/``End_Position`` are nullable integers;
+        - a missing ``Tumor_Seq_Allele1`` is filled from
+          ``Reference_Allele`` (it is only used to build the row index).
+
+        Problems that would silently change results are audited: blank
+        ``Hugo_Symbol``, duplicate events, mixed genome builds, mixed
+        ``chr``/no-``chr`` naming and the legacy allele layout (alternate
+        allele in ``Tumor_Seq_Allele1``).  ``validate`` decides what happens
+        when one is found.
 
         Sample identity is resolved as follows:
 
@@ -184,7 +207,7 @@ class MAF(pd.DataFrame):
         Parameters
         ----------
         maf_path : str or os.PathLike
-            Path to the MAF file.
+            Path to the MAF file (optionally ``.gz``).
         sample_ID : str or None, default None
             Sample identifier to assign to all rows.  When ``None`` the
             ``sample_col`` column is used instead.
@@ -198,25 +221,62 @@ class MAF(pd.DataFrame):
         sep : {``,`` , ``\\t``} or None, default None
             Input delimiter. When ``None``, inspect the first non-comment
             header line and detect comma- or tab-delimited input.
+        validate : {"strict", "warn", "off"}, default "strict"
+            ``"strict"`` raises :class:`MAFValidationError` listing every
+            problem found; ``"warn"`` loads the data unchanged and emits one
+            warning; ``"off"`` only records problems in the report.
+        deduplicate : bool, default False
+            Drop exact duplicate events (same sample, chromosome, gene,
+            positions and alleles) instead of reporting them as a problem.
 
         Returns
         -------
         MAF
-            A MAF DataFrame with a composite index built from ``index_col``.
+            A MAF DataFrame with a composite index built from ``index_col``
+            and the :class:`IngestReport` in :attr:`ingest_report`.
 
         Raises
         ------
         ValueError
-            If ``sample_ID`` is ``None`` and ``sample_col`` is not present.
+            If required columns are missing, or ``sample_ID`` is ``None`` and
+            ``sample_col`` is not present.
+        MAFValidationError
+            Under ``validate="strict"`` when an audited problem is found.
         """
-        skiprows = cls._count_leading_comment_lines(maf_path)
+        if validate not in maf_io.VALIDATION_MODES:
+            raise ValueError(
+                f"validate must be one of {maf_io.VALIDATION_MODES}, got {validate!r}."
+            )
+        comment_lines = maf_io.read_leading_comments(maf_path)
+        skiprows = len(comment_lines)
         detected_sep = cls._detect_delimiter(maf_path, skiprows=skiprows)
         if sep is None:
             sep = detected_sep
         elif sep not in {",", "\t"}:
             raise ValueError("sep must be ',' or '\\t'.")
 
-        maf = cls(pd.read_csv(maf_path, skiprows=skiprows, sep=sep))
+        header_columns = maf_io.split_header(
+            maf_io.read_header_line(maf_path, skiprows), sep
+        )
+        report = maf_io.IngestReport(
+            path=os.fspath(maf_path),
+            source=maf_io.detect_source(comment_lines, header_columns),
+            delimiter=sep,
+            comment_lines=skiprows,
+            renamed_columns=maf_io.resolve_column_aliases(header_columns),
+        )
+        maf = cls(
+            maf_io.read_typed_table(
+                maf_path, skiprows=skiprows, sep=sep, header_columns=header_columns
+            )
+        )
+
+        if "Tumor_Seq_Allele1" not in maf.columns and "Reference_Allele" in maf.columns:
+            maf["Tumor_Seq_Allele1"] = maf["Reference_Allele"]
+            report.filled_columns["Tumor_Seq_Allele1"] = (
+                "copied from Reference_Allele (index only)"
+            )
+
         missing_index_columns = [
             column for column in cls.index_col if column not in maf.columns
         ]
@@ -232,22 +292,73 @@ class MAF(pd.DataFrame):
                 )
             raise ValueError(
                 f"MAF file '{maf_path}' is missing required column(s): "
-                f"{missing_index_columns}."
+                f"{missing_index_columns}. Required: {cls.index_col} "
+                "(Tumor_Seq_Allele1 may be absent if Reference_Allele is present)."
             )
         if sample_ID is not None:
             maf["sample_ID"] = f"{preffix}{sample_ID}{suffix}"
         elif sample_col in maf.columns:
-            maf["sample_ID"] = preffix + maf[sample_col].astype(str) + suffix
+            barcodes = maf[sample_col].astype(str)
+            placeholders = sorted(
+                set(barcodes.unique()) & maf_io.PLACEHOLDER_SAMPLE_IDS
+            )
+            report.placeholder_sample_ids = placeholders
+            maf["sample_ID"] = preffix + barcodes + suffix
         else:
             raise ValueError(
                 f"sample_ID not provided and column '{sample_col}' not found "
                 f"in {maf_path}; pass sample_ID explicitly or set sample_col."
             )
+
+        blank_genes = maf["Hugo_Symbol"].isin(maf_io.BLANK_GENE_VALUES)
+        maf.loc[blank_genes, "Hugo_Symbol"] = pd.NA
+
+        event_keys = ["sample_ID", "Chromosome", *cls.index_col]
+        if deduplicate:
+            present_keys = [key for key in event_keys if key in maf.columns]
+            duplicated = maf.duplicated(subset=present_keys)
+            report.dropped_duplicate_rows = int(duplicated.sum())
+            maf = maf.loc[~duplicated]
+
+        maf_io.audit_events(
+            maf,
+            report,
+            key_columns=event_keys,
+            known_classifications=cls.valid_variant_classification,
+        )
+        maf_io.summarize_issues(report, deduplicate=deduplicate)
+        report.n_rows = len(maf)
+        report.n_samples = int(maf["sample_ID"].nunique())
+
+        if report.issues and validate == "strict":
+            raise maf_io.MAFValidationError(
+                f"MAF file '{maf_path}' has input problem(s) that would change "
+                "results:\n  - "
+                + "\n  - ".join(report.issues)
+                + "\nFix the file, or pass validate='warn' to load it anyway "
+                "(see the error's .report for the full ingest report).",
+                report,
+            )
+        if report.issues and validate == "warn":
+            warnings.warn(
+                f"MAF file '{maf_path}' has input problem(s): "
+                + " | ".join(report.issues),
+                UserWarning,
+                stacklevel=2,
+            )
+
         maf.index = maf.loc[:, cls.index_col].apply(
             lambda row: "|".join(row.astype(str)), axis=1
         )  # concat column
-        # maf = maf.filter_maf(cls.valid_variant_classification)
-        return cls(maf)
+        maf = cls(maf)
+        maf._ingest_report = report
+        return maf
+
+    @property
+    def ingest_report(self) -> maf_io.IngestReport | None:
+        """What :meth:`read_maf` detected, changed and found (``None`` for a
+        MAF built in memory)."""
+        return getattr(self, "_ingest_report", None)
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         """
@@ -485,6 +596,8 @@ class MAF(pd.DataFrame):
     def to_gene_table(
         self,
         sample_manifest: "SampleManifest | None" = None,
+        *,
+        samples: Iterable[object] | None = None,
     ) -> "SmallVariationTable":
         """
         Create a gene-level (gene × sample) pivot table of variant classifications.
@@ -498,12 +611,48 @@ class MAF(pd.DataFrame):
         the direct path is essential for cohort-scale MAFs. Multiple events in
         one gene and sample are represented as ``"Multi_Hit"``.
 
+        **Denominators.** An event table cannot list samples that were
+        sequenced but have no called events, so mutation frequencies computed
+        from it are only correct when the full sample universe is supplied,
+        either as ``samples`` (a list of IDs) or as a ``SampleManifest``.
+        Samples that have events but none placeable in a gene row (blank
+        ``Hugo_Symbol``) are kept as all-``False`` columns with a warning,
+        rather than silently disappearing.
+
+        Parameters
+        ----------
+        sample_manifest : SampleManifest, optional
+            Full, auditable sample universe (eligible samples become columns).
+        samples : iterable of sample IDs, optional
+            Full sample universe as plain IDs, including samples with zero
+            events. Mutually exclusive with ``sample_manifest``.
+
         Returns
         -------
         SmallVariationTable
             Gene × sample matrix with gene-level feature_metadata.
+
+        Raises
+        ------
+        ValueError
+            If events belong to samples outside ``samples`` /
+            ``sample_manifest``, or both are given.
         """
         from .SmallVariationTable import SmallVariationTable
+
+        if sample_manifest is not None and samples is not None:
+            raise ValueError("Pass either sample_manifest or samples, not both.")
+        sample_universe = None
+        if samples is not None:
+            sample_universe = pd.Index(pd.unique(pd.Index(list(samples))))
+            unknown = pd.Index(self["sample_ID"].unique()).difference(sample_universe)
+            if not unknown.empty:
+                raise ValueError(
+                    f"{len(unknown)} sample(s) with mutation events are missing "
+                    f"from samples: {unknown[:5].tolist()}"
+                    f"{' ...' if len(unknown) > 5 else ''}. Check that the IDs "
+                    "use the same barcode level (aliquot / sample / patient)."
+                )
 
         if sample_manifest is not None:
             from .SampleManifest import SampleManifest
@@ -522,6 +671,15 @@ class MAF(pd.DataFrame):
             events = self.copy().reset_index(drop=True)
             events["Hugo_Symbol"] = gene_symbols
 
+        blank_gene = events["Hugo_Symbol"].isna()
+        if blank_gene.any():
+            warnings.warn(
+                f"{int(blank_gene.sum())} event(s) with a blank Hugo_Symbol "
+                "cannot be placed in a gene row and are left out of the gene "
+                "table (their samples are kept).",
+                UserWarning,
+                stacklevel=2,
+            )
         grouped = events.groupby(["Hugo_Symbol", "sample_ID"], sort=True)[
             "Variant_Classification"
         ].agg(event_count="size", first_classification="first")
@@ -531,6 +689,29 @@ class MAF(pd.DataFrame):
         gene_matrix = grouped["classification"].unstack("sample_ID", fill_value=False)
         gene_matrix = gene_matrix.fillna(False)
         result = SmallVariationTable(gene_matrix)
+
+        if sample_universe is not None:
+            result = result.reindex(
+                columns=sample_universe,
+                fill_value=False,
+                sample_fill_value=pd.NA,
+            )
+        elif sample_manifest is None:
+            event_samples = pd.Index(self["sample_ID"].dropna().unique())
+            lost = event_samples.difference(result.columns)
+            if not lost.empty:
+                warnings.warn(
+                    f"{len(lost)} sample(s) have events but none in a gene "
+                    f"row (e.g. {lost[:3].tolist()}); kept as all-False "
+                    "columns so frequency denominators stay correct.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+                result = result.reindex(
+                    columns=result.columns.append(lost),
+                    fill_value=False,
+                    sample_fill_value=pd.NA,
+                )
 
         if sample_manifest is not None:
             result = result.reindex(
@@ -571,13 +752,15 @@ class MAF(pd.DataFrame):
     def to_pivot_table(
         self,
         sample_manifest: "SampleManifest | None" = None,
+        *,
+        samples: Iterable[object] | None = None,
     ) -> "SmallVariationTable":
         """Alias for :meth:`to_gene_table` (gene-level pivot table).
 
         Kept for backward compatibility; ``to_gene_table`` is preferred in new
         code as its name states the granularity.
         """
-        return self.to_gene_table(sample_manifest=sample_manifest)
+        return self.to_gene_table(sample_manifest=sample_manifest, samples=samples)
 
     # Columns to carry into mutation-level feature_metadata
     _FEATURE_META_COLS = [
@@ -773,21 +956,56 @@ class MAF(pd.DataFrame):
         return self.sort_values(by=["Chromosome", "Start_Position", "End_Position"])
 
     @staticmethod
-    def merge_mafs(mafs: list[MAF]) -> MAF:
+    def merge_mafs(mafs: list[MAF], *, allow_mixed_builds: bool = False) -> MAF:
         """
         Concatenate multiple MAF objects into one.
+
+        Merging files from different sources (e.g. GDC GRCh38 with cBioPortal
+        GRCh37) silently puts two coordinate systems in one table, so mixed
+        ``NCBI_Build`` values or mixed ``chr1``/``1`` naming raise unless
+        explicitly allowed.
 
         Parameters
         ----------
         mafs : list[MAF]
             MAF objects to concatenate.
+        allow_mixed_builds : bool, default False
+            Skip the genome-build and chromosome-naming consistency check.
 
         Returns
         -------
         MAF
             A single MAF containing all rows from the input MAFs.
+
+        Raises
+        ------
+        ValueError
+            If the inputs mix genome builds or chromosome naming styles and
+            ``allow_mixed_builds`` is False.
         """
-        return MAF(pd.concat(mafs))
+        merged = MAF(pd.concat(mafs))
+        if not allow_mixed_builds:
+            problems = []
+            if "NCBI_Build" in merged.columns:
+                builds = sorted(merged["NCBI_Build"].dropna().astype(str).unique())
+                if len(builds) > 1:
+                    problems.append(f"genome builds {builds}")
+            if "Chromosome" in merged.columns:
+                styles = sorted(
+                    {
+                        maf_io.chromosome_style(value)
+                        for value in merged["Chromosome"].dropna()
+                    }
+                )
+                if len(styles) > 1:
+                    problems.append("chromosome naming 'chr1' and '1'")
+            if problems:
+                raise ValueError(
+                    "merge_mafs inputs mix " + " and ".join(problems) + ". "
+                    "Lift over / harmonize the inputs first, or pass "
+                    "allow_mixed_builds=True if this is intended."
+                )
+        return merged
 
     @classmethod
     def read_csv(
@@ -952,37 +1170,49 @@ class MAF(pd.DataFrame):
             ``"count"`` describing nonsynonymous mutations.
         """
 
-        def extract_protein_start(pos):
-            if pd.isna(pos):
-                return None
-            pos = str(pos).split("/")[0]
-            if "-" in pos:
-                return int(pos.split("-")[0])
-            try:
-                return int(pos)
-            except (ValueError, TypeError):
-                return None
-
         maf = self.filter_maf(self.nonsynonymous_types)
-        sub_df = maf.loc[
-            maf["Hugo_Symbol"] == gene,
-            ["Protein_position", "Variant_Classification", "Variant_Type"],
-        ].copy()
+        gene_rows = maf.loc[maf["Hugo_Symbol"] == gene]
 
-        # add amino acid position
-        sub_df["AA_Position"] = sub_df["Protein_position"].apply(extract_protein_start)
-
-        # get total AA length（858/1210 → 1210）
-        try:
-            AA_length = int(
-                sub_df["Protein_position"].dropna().values[0].split("/")[-1]
+        # Position source, best first: VEP/GDC/cBioPortal Protein_position,
+        # then HGVSp_Short (vcf2maf/cBioPortal), then Protein_Change
+        # (Funcotator/Oncotator/legacy TCGA).
+        if "Protein_position" in gene_rows.columns:
+            positions = gene_rows["Protein_position"].map(maf_io.protein_start)
+            if positions.isna().all():
+                positions = None
+        else:
+            positions = None
+        if positions is None:
+            for column in ("HGVSp_Short", "Protein_Change"):
+                if column in gene_rows.columns:
+                    positions = gene_rows[column].map(maf_io.hgvsp_start)
+                    break
+        if positions is None:
+            raise ValueError(
+                "Lollipop needs amino-acid positions: the MAF has none of "
+                "Protein_position, HGVSp_Short or Protein_Change."
             )
-        except (ValueError, TypeError, IndexError):
-            AA_length = None
+
+        sub_df = pd.DataFrame(
+            {
+                "AA_Position": pd.to_numeric(positions, errors="coerce"),
+                "Variant_Classification": gene_rows["Variant_Classification"],
+            }
+        )
+
+        # Total AA length from "858/1210" -> 1210. cBioPortal stores bare
+        # positions, so the length may be unknown (None).
+        AA_length = None
+        if "Protein_position" in gene_rows.columns:
+            lengths = gene_rows["Protein_position"].map(maf_io.protein_length)
+            lengths = lengths.dropna()
+            if not lengths.empty:
+                AA_length = int(lengths.iloc[0])
 
         # count mutations and to dict
         mutations_data = (
             sub_df.dropna(subset=["AA_Position", "Variant_Classification"])
+            .astype({"AA_Position": int})
             .groupby(["AA_Position", "Variant_Classification"])
             .size()
             .reset_index(name="count")
@@ -993,6 +1223,42 @@ class MAF(pd.DataFrame):
         )
 
         return AA_length, mutations_data
+
+    @staticmethod
+    def infer_protein_length(
+        gene: str,
+        max_position: int,
+        protein_domains_path: str | os.PathLike | None = None,
+    ) -> int | None:
+        """Pick a protein length for ``gene`` from the domain table.
+
+        Used when the MAF stores bare amino-acid positions (cBioPortal) and so
+        carries no ``pos/length``. The first listed transcript long enough to
+        contain ``max_position`` is chosen, with a warning naming it.
+        Returns ``None`` when no transcript fits.
+        """
+        if protein_domains_path is None:
+            protein_domains_path = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)),
+                "../data/protein_domains.csv",
+            )
+        domains = pd.read_csv(protein_domains_path, index_col=0, low_memory=False)
+        lengths = (
+            domains.loc[domains["HGNC"] == gene, ["refseq.ID", "aa.length"]]
+            .drop_duplicates()
+            .loc[lambda frame: frame["aa.length"] >= max_position]
+        )
+        if lengths.empty:
+            return None
+        chosen = lengths.iloc[0]
+        warnings.warn(
+            f"The MAF has no protein length for {gene}; using "
+            f"{int(chosen['aa.length'])} aa from {chosen['refseq.ID']} "
+            "(domain table). Positions may refer to another transcript.",
+            UserWarning,
+            stacklevel=2,
+        )
+        return int(chosen["aa.length"])
 
     @staticmethod
     def get_domain_info(

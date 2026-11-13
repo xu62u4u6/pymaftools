@@ -113,10 +113,19 @@ class MafPlot:
         from .LollipopPlot import LollipopPlot
 
         AA_length, mutations_data = self.maf.get_protein_info(gene)
+        if AA_length is None and mutations_data:
+            # cBioPortal / HGVSp-only inputs carry positions but no protein
+            # length; take it from the domain table instead.
+            AA_length = self.maf.infer_protein_length(
+                gene,
+                max(entry["position"] for entry in mutations_data),
+                protein_domains_path,
+            )
         if AA_length is None:
             raise ValueError(
                 f"No protein-position data for {gene!r} in this MAF "
-                "(a populated 'Protein_position' column is required)."
+                "(needs Protein_position, HGVSp_Short or Protein_Change, and "
+                "a protein length from 'pos/length' or the domain table)."
             )
         domains, _ = self.maf.get_domain_info(gene, AA_length, protein_domains_path)
         return LollipopPlot(
