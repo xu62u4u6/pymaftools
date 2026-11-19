@@ -6,6 +6,18 @@ contributors and users install the same reviewed definitions. Personal
 ``~/.codex`` or ``~/.claude`` directories are deployment targets, not the
 source of truth.
 
+Without installing anything
+---------------------------
+
+Agents that only browse the web can start from
+``https://dionic.xyz/pymaftools/llms.txt`` (an index of these pages, following
+the `llms.txt <https://llmstxt.org>`_ convention) or ``llms-full.txt`` (the
+documentation sources in one file). Both are generated from the same Sphinx
+sources on every docs build.
+
+Contributors' agents read ``AGENTS.md`` at the repository root. It is the only
+copy of the engineering guide; ``CLAUDE.md`` imports it with ``@AGENTS.md``.
+
 Bundled assets
 --------------
 

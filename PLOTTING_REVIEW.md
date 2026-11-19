@@ -339,13 +339,13 @@ wes / MafPlot **繞過 BasePlot（→ LegendManager + ColorManager）**,所以�
   但顏色/legend 仍由 ColorManager/LegendManager 覆寫 —— seaborn 只負責字級/留白基準。
 - **markers**:點圖統一深色細邊 + 適度大小;heatmap 用白細格線分隔。
 
-### 驗收（呼應 CLAUDE.md §4）
+### 驗收（呼應 AGENTS.md §4）
 重繪後存 `outputs/design_preview/`,**並排對照 lollipop/oncoplot 人眼檢查**:legend
 是否成卡片、是否 frameless、同一變異類別是否同色。看起來「像同一個庫畫的」才算過。
 
 ## 2026-06-07 樣本數敏感度盤點（哪些圖受 cohort size 影響）
 
-對應 CLAUDE.md §4「跨樣本數量級測圖」。逐圖分三類:
+對應 AGENTS.md §4「跨樣本數量級測圖」。逐圖分三類:
 
 ### A. 高 N 版面爆掉（每樣本一個 x 元素）→ 必測 300+
 | 圖 | 問題 | 現況 |

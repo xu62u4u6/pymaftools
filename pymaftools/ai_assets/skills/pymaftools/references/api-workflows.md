@@ -5,10 +5,12 @@
 ```python
 from pymaftools import MAF
 
-maf = MAF.read_maf("cohort.maf")
+maf = MAF.read_maf("cohort.maf.gz")  # GDC, cBioPortal, vcf2maf, Funcotator, maftools
+print(maf.ingest_report)  # what the reader detected, renamed, filled, dropped
+samples = maf["sample_ID"].unique()  # better: the full sequenced-sample list
 table = (
     maf.filter_maf(MAF.nonsynonymous_types)
-    .to_gene_table()
+    .to_gene_table(samples=samples)
     .add_freq()
     .sort_features(by="freq")
     .sort_samples_by_mutations()
@@ -17,6 +19,21 @@ table = (
 
 `MAF` owns raw mutation events. Convert it to a matrix before matrix-level
 filtering, statistics, metadata operations, or oncoplots.
+
+`read_maf()` validates strictly by default: blank `Hugo_Symbol`, duplicate
+events, mixed genome builds or `chr1`/`1` naming, and the legacy allele layout
+raise `MAFValidationError` with the fix in the message. Fix the input, or pass
+`validate="warn"` / `deduplicate=True` deliberately and say so in the analysis
+record. `merge_mafs()` rejects mixed builds unless `allow_mixed_builds=True`.
+
+Pass `samples=` (or a `SampleManifest`) to `to_gene_table()` so samples with no
+retained events stay in the denominator; filtering before conversion otherwise
+drops them silently. Errors and `UserWarning`s from pymaftools name the missing
+input and the fixing call; read them rather than working around them.
+
+Raw MAF-level plots live on `maf.plot`: `overview()` (summary header plus sample,
+variant, nucleotide and gene panels) and `lollipop(gene)`, which accepts GDC `HGVSp_Short`,
+cBioPortal bare positions and VEP `?-12/393` ranges.
 
 For scientific denominators, pass the complete sample universe rather than
 deriving it from event-bearing rows:
@@ -53,7 +70,9 @@ report `PivotTable.calculate_tmb(default_capture_size=40)` as scientific TMB.
 
 Use `PivotTable.mutation_enrichment_test()` with an explicit group column,
 groups, minimum-mutation rule, method, analysis unit, and confidence level.
-The tested family receives BH correction. Patient-level analysis requires an
+The tested family receives BH correction; rows that cannot be tested carry a
+`not_tested_reason` (`below_minimum_mutations`, `no_observed_samples`,
+`degenerate_contingency_table` for chi-squared) and NaN statistics. Patient-level analysis requires an
 attached manifest and rejects repeated eligible patients; the method does not
 adjust for confounding or paired/repeated observations.
 
@@ -66,7 +85,12 @@ figure, stats = table.plot.somatic_interactions(top=25)
 ```
 
 Each unordered gene pair is tested once and the BH-FDR correction covers only
-that unique pair family. Self-pairs and mirrored matrix entries are excluded;
+that unique pair family. With an attached `ObservationMask`, each pair's 2x2
+table uses only jointly observed samples (`jointly_observed`); pairs with none
+are `tested=False`, `interaction="Not tested"`, and are left out of the FDR
+family (`tested_family_size`). The function warns on fewer than 10 samples and
+when most tested pairs are significant co-occurrences, which usually reflects
+mutation-burden confounding rather than gene-gene interaction. Self-pairs and mirrored matrix entries are excluded;
 this is an intentional semantic difference from the matrix-cell correction in
 `maftools::somaticInteractions`, so adjusted p-values are not expected to be
 numerically identical between the two tools.
