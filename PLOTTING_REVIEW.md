@@ -427,3 +427,20 @@ st.use_theme(st.Theme(**yaml.safe_load(open("theme.yaml"))))
 - 語意色盤(mutation/TITV/functional)→ 也能做成 YAML 可覆蓋(ColorManager 讀外部
   dict),但屬選配;預設仍用內建慣例色。
 - 結論:**先有 Theme dataclass,YAML 就幾乎免費**(`Theme(**dict)`)。等做 Theme 化時一併附 `Theme.from_yaml()`。
+
+## 2026-11-12 OncoPlot 標籤對齊與圖例間距（#16、#17）
+
+### #16 樣本標籤右移半格
+- 根因：`_draw_label_gutter(axis="x")` 以 `i + 0.5` 放文字，但 xlim 設成 `(-0.5, n - 0.5)`；heatmap 是 `(0, n)`。
+- 決策：label gutter 一律與 heatmap 共用 `(0, n)` 資料座標（cell 跨 `[i, i+1]`，中心 `i + 0.5`），與 y 方向 gutter 一致。
+- 驗收：測試以 display 座標比對每個標籤中心與 heatmap cell 中心（< 1px），涵蓋未分組 6/33 欄與 `group_samples` 分組版面。
+
+### #17 短圖的圖例標題壓到第一項
+- 根因：`LegendManager.plot_legends` 的垂直間距是 axes 比例（0–1），字體是 points；legend 軸越矮，比例間距越小於字高。
+- 決策：保留比例參數作為「偏好值」，但用字高換算的實體下限墊底（`_physical_spacing_floor`：標題步距 ≥ 1.25×title_fontsize + 半個項目高 + 2pt；項目步距 ≥ max(1.25×fontsize, 色塊高) + 2pt）。高圖不受影響，矮圖自動撐開。
+- 若內容超出 legend 軸底部，發 `UserWarning`（而非默默裁切）。
+- 驗收：fig 高度 3/4/6/10 吋，量測標題 bbox 底 ≥ 第一項 bbox 頂。
+
+### 已知、未處理
+- 約 150 樣本以上時樣本標籤互相重疊，`show_sample_labels` 預設不會自動隱藏 —— 需另開 auto-hide 門檻。
+- `group_samples` 要求樣本已依群組排序；未排序時會默默畫出大量碎片 section（文件有寫，但不報錯）。

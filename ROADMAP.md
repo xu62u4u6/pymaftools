@@ -42,6 +42,23 @@ global threshold until low-coverage, high-risk modules improve.
 - Repository-distributed research, user-testing, statistical-review, validation,
   and manuscript-writing agents can be installed for Codex or Claude with
   `pymaftools-ai`.
+- LLM usability, first pass: silent failures fail loud (blank large-cohort
+  oncoplot, `save()` before `render()`, metadata crashes) and errors name the fix
+  and the valid options; scientific pitfalls emit warnings without changing
+  numbers.
+
+### MAF input decisions (0.6.0)
+
+- `read_maf` harmonizes columns and types only; normalization, liftover and
+  multi-allelic splitting stay with bcftools / vcf2maf / GATK (CLAUDE.md §6).
+- Problems that silently change results raise by default; safe changes
+  (renames, filled `Tumor_Seq_Allele1`) are made and recorded in
+  `ingest_report`. Unknown `Variant_Classification` values are reported, not
+  remapped; a Funcotator-to-GDC vocabulary map is a candidate opt-in.
+- Decided (2026-11-19): the bundled HDF5 example stores NumPy-2 pickles, so the
+  floor is `numpy>=2.0` (with the matching pandas/matplotlib/SciPy/sklearn/
+  statsmodels/PyTables floors) rather than re-saving the file for NumPy 1.x.
+- Open: panel-aware denominators (GENIE-style targeted panels) are not modelled.
 
 ## Shipped in 0.5.0
 
@@ -124,6 +141,15 @@ a global percentage.
       pull-request expectations.
 - [ ] Add an architecture page to Sphinx. The README overview image is useful,
       but does not explain module ownership and data flow.
+- [ ] LLM usability, next pass (from the 2026-11-13 agent trial): publish
+      `llms.txt` / `llms-full.txt` from the skill's `api-workflows.md`; expose
+      the same cookbook via `help(pymaftools)` so agents find it without
+      `pymaftools-ai install`; one-call `table.plot.oncoplot(top=, group=)`;
+      unify plot return types (`save()` returning a path or self); retire
+      duplicate names (`to_MAF`, `vaild_variant_classfication`, top-level
+      project-specific exports); thin CLI before any MCP server; keep a fixed
+      fresh-agent task benchmark (load MAF, oncoplot, interactions, enrichment,
+      lollipop) and re-run it each release.
 - [ ] Decide whether to add mypy and `py.typed`. Do not enable a non-blocking type
       check that is never brought to green.
 - [ ] Add pre-commit only if it mirrors CI exactly and has a documented update

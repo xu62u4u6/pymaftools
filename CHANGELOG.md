@@ -7,6 +7,16 @@
 Scientific-validity release adding explicit sample-universe and observation-state
 contracts, auditable mutation analysis, and stricter TCGA specimen alignment.
 
+### 🎨 Plot fixes
+
+* **OncoPlot sample labels (#16):** sample-label gutters now share the heatmap's
+  `(0, n)` data limits, so labels sit on their column centres instead of half a
+  cell to the right (ungrouped and `group_samples` layouts).
+* **Legend spacing (#17):** `LegendManager.plot_legends` floors title/item
+  spacing at the physical text height, so legend titles no longer overlap the
+  first entry on short figures; a `UserWarning` is raised when legends overflow
+  the legend axis.
+
 ### 🧪 Scientific data contracts
 
 * **`SampleManifest`:** declares eligible and excluded samples, patient identity,
@@ -45,6 +55,78 @@ contracts, auditable mutation analysis, and stricter TCGA specimen alignment.
 * Somatic interaction FDR has an explicit undirected hypothesis family: each
   unique gene pair is tested once, with self-pairs and mirrored matrix entries
   excluded.
+* `somatic_interactions()` respects an attached `ObservationMask`: each pair is
+  tested only on jointly observed samples, pairs without any are reported as
+  untested and excluded from FDR, and present events marked unobserved are
+  rejected (#18).
+* `mutation_enrichment_test()` returns an empty result with the full column
+  schema for zero-feature tables instead of raising `KeyError` (#19).
+* With `method="chi2"`, enrichment marks zero-margin contingency tables as
+  untested (`not_tested_reason="degenerate_contingency_table"`) instead of
+  aborting the whole analysis; untested rows are excluded from FDR (#20).
+
+### 🗣️ LLM usability: fail loud, hint the fix
+
+Calls that used to succeed silently or crash with a bare pandas error now say
+what went wrong and how to fix it. Statistical results are unchanged.
+
+* **Large-cohort oncoplots no longer render blank.** Cell gridlines now thin
+  with cell size (capped at 20% of a cell, dropped below 2 pt), so a 958-sample
+  matrix is visible instead of being painted over by 1 pt white lines. Small
+  cohorts keep their previous look.
+* `BasePlot.save()` before a figure exists raises `RuntimeError` (it used to
+  print "Figure is not exist." and write nothing).
+* `PivotTable.add_sample_metadata()` / `add_feature_metadata()` work with the
+  default `fill_value=None` (previously a pandas `ValueError`), accept a named
+  `Series`, warn on unmatched IDs, and raise when no ID matches at all.
+* `OncoPlot.add_freq()` / `plot_freq()` / sample and feature annotations name the
+  missing column, list available ones, and point to `table.add_freq()` /
+  `add_sample_metadata()`.
+* `table.plot.oncoplot()`, `somatic_interactions()` and
+  `somatic_interactions_stats()` have explicit signatures and full docstrings
+  instead of `**kwargs`; `oncoplot(top=...)` explains that gene selection is a
+  table operation.
+* `mutation_enrichment_test()` lists available columns / observed group values
+  on a bad `group_col` or group name; `maf.plot.lollipop()` says when a gene has
+  no mutations in the MAF and lists the most mutated genes.
+* New scientific reminders (warnings only): `to_gene_table()` when synonymous /
+  non-coding events are kept; somatic interactions on fewer than 10 samples, or
+  when most pairs are significant co-occurrences (typical mutation-burden
+  confounding).
+
+### ⚠️ Dependency floors (breaking)
+
+* **NumPy 2 is now required** (`numpy>=2.0`). The bundled example HDF5 table
+  stores NumPy-2 pickles, and the compatible stack raises the other floors:
+  pandas ≥ 2.2.2, matplotlib ≥ 3.8.4, SciPy ≥ 1.13, scikit-learn ≥ 1.4.2,
+  statsmodels ≥ 0.14.2, PyTables ≥ 3.10, typing-extensions ≥ 4.7. CI tests
+  these floors directly.
+
+### 📥 MAF input compatibility
+
+* **Producer-aware `read_maf()`:** GDC, cBioPortal, vcf2maf, Funcotator/Oncotator
+  and maftools-style files load; case variants of standard columns are renamed
+  (`End_position`), a missing `Tumor_Seq_Allele1` is copied from
+  `Reference_Allele`, and identifier columns stay text (sample `"001"`, one
+  `Chromosome` dtype). Coordinates are nullable `Int64`.
+* **`MAF.ingest_report`:** records the producer guess, comment lines skipped,
+  columns renamed or filled, duplicates dropped and every problem found.
+* **Loud input problems (breaking):** blank `Hugo_Symbol`, duplicate events,
+  mixed genome builds or `chr1`/`1` naming and the legacy allele layout raise
+  `MAFValidationError` by default; `validate="warn"`/`"off"` and
+  `deduplicate=True` opt out. `merge_mafs()` rejects mixed builds unless
+  `allow_mixed_builds=True`.
+* **Denominators:** `to_gene_table(samples=...)` takes the full sample list;
+  samples whose events have no gene are kept as all-False columns with a
+  warning. `add_sample_metadata()` raises when no IDs match and warns on
+  partial matches.
+* **Lollipop:** parses cBioPortal bare positions, VEP `?-12/393` ranges and
+  `HGVSp_Short`/`Protein_Change`; a missing protein length is taken from the
+  domain table with a warning.
+* GDC batch readers no longer truncate fields containing `#`.
+* Added a five-minute quickstart (`docs/quickstart.rst`,
+  `examples/quickstart.py`), producer-style regression fixtures, and a CI
+  matrix that installs the declared minimum and the latest dependency versions.
 
 ### 🤖 Reusable AI assets
 

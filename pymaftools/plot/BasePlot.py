@@ -208,8 +208,12 @@ class BasePlot:
             Other save parameters passed to ``fig.savefig``.
         """
         if self.fig is None:
-            print("Figure is not exist.")
-            return
+            raise RuntimeError(
+                f"{type(self).__name__} has no figure to save yet; nothing was "
+                f"written to {os.fspath(filename)!r}. Draw it first, e.g. "
+                "`table.plot.oncoplot().main().render().save(path)` "
+                "(OncoPlot requires .render() before .save())."
+            )
 
         try:
             path = os.fspath(filename)

@@ -8,6 +8,13 @@ MAF
    :members:
    :show-inheritance:
 
+MAF ingestion
+-------------
+
+.. automodule:: pymaftools.core.maf_io
+   :members:
+   :show-inheritance:
+
 VCF
 ---
 

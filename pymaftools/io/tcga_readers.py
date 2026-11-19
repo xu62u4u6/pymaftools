@@ -20,6 +20,7 @@ import requests
 from ..core.CopyNumberVariationTable import CopyNumberVariationTable
 from ..core.ExpressionTable import ExpressionTable
 from ..core.MAF import MAF
+from ..core.maf_io import read_leading_comments
 from ..core.PivotTable import PivotTable
 
 
@@ -517,7 +518,12 @@ def read_maf_files(
 
     maf_frames = []
     for case_id, filepath in case_files:
-        df = pd.read_csv(filepath, sep="	", comment="#", low_memory=False)
+        df = pd.read_csv(
+            filepath,
+            sep="\t",
+            skiprows=len(read_leading_comments(filepath)),
+            low_memory=False,
+        )
         df["sample_ID"] = case_id
         maf_frames.append(df)
 
