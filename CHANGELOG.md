@@ -5,17 +5,23 @@
 ## 🔖 Version 0.6.0 (unreleased)
 
 Scientific-validity release adding explicit sample-universe and observation-state
-contracts, auditable mutation analysis, and stricter TCGA specimen alignment.
+contracts, auditable mutation analysis, stricter TCGA specimen alignment,
+producer-aware MAF input, and errors that say how to fix the call.
 
-### 🎨 Plot fixes
+### ⚠️ Breaking changes
 
-* **OncoPlot sample labels (#16):** sample-label gutters now share the heatmap's
-  `(0, n)` data limits, so labels sit on their column centres instead of half a
-  cell to the right (ungrouped and `group_samples` layouts).
-* **Legend spacing (#17):** `LegendManager.plot_legends` floors title/item
-  spacing at the physical text height, so legend titles no longer overlap the
-  first entry on short figures; a `UserWarning` is raised when legends overflow
-  the legend axis.
+* **NumPy 2 is now required** (`numpy>=2.0`). The bundled example HDF5 table
+  stores NumPy-2 pickles, and the compatible stack raises the other floors:
+  pandas ≥ 2.2.2, matplotlib ≥ 3.8.4, SciPy ≥ 1.13, scikit-learn ≥ 1.4.2,
+  statsmodels ≥ 0.14.2, PyTables ≥ 3.10, typing-extensions ≥ 4.7. CI tests
+  these floors directly.
+* **Strict MAF validation:** blank `Hugo_Symbol`, duplicate events,
+  mixed genome builds or `chr1`/`1` naming and the legacy allele layout raise
+  `MAFValidationError` by default; `validate="warn"`/`"off"` and
+  `deduplicate=True` opt out. `merge_mafs()` rejects mixed builds unless
+  `allow_mixed_builds=True`.
+* `read_maf()` keeps `Entrez_Gene_Id` as text; scripts that compare it numerically
+  must cast it.
 
 ### 🧪 Scientific data contracts
 
@@ -39,6 +45,26 @@ contracts, auditable mutation analysis, and stricter TCGA specimen alignment.
 * Added adversarial regression coverage for sample universes, observation masks,
   TMB event filtering, patient independence, and enrichment denominators.
 * Added a documentation-only clean-wheel user journey for the public quick start.
+
+### 📥 MAF input compatibility
+
+* **Producer-aware `read_maf()`:** GDC, cBioPortal, vcf2maf, Funcotator/Oncotator
+  and maftools-style files load; case variants of standard columns are renamed
+  (`End_position`), a missing `Tumor_Seq_Allele1` is copied from
+  `Reference_Allele`, and identifier columns stay text (sample `"001"`, one
+  `Chromosome` dtype). Coordinates are nullable `Int64`.
+* **`MAF.ingest_report`:** records the producer guess, comment lines skipped,
+  columns renamed or filled, duplicates dropped and every problem found.
+* **Denominators:** `to_gene_table(samples=...)` takes the full sample list;
+  samples whose events have no gene are kept as all-False columns with a
+  warning.
+* **Lollipop:** parses cBioPortal bare positions, VEP `?-12/393` ranges and
+  `HGVSp_Short`/`Protein_Change`; a missing protein length is taken from the
+  domain table with a warning.
+* GDC batch readers no longer truncate fields containing `#`.
+* Added a five-minute quickstart (`docs/quickstart.rst`,
+  `examples/quickstart.py`), producer-style regression fixtures, and a CI
+  matrix that installs the declared minimum and the latest dependency versions.
 
 ### 🐛 Correctness and usability
 
@@ -94,39 +120,15 @@ what went wrong and how to fix it. Statistical results are unchanged.
   when most pairs are significant co-occurrences (typical mutation-burden
   confounding).
 
-### ⚠️ Dependency floors (breaking)
+### 🎨 Plot fixes
 
-* **NumPy 2 is now required** (`numpy>=2.0`). The bundled example HDF5 table
-  stores NumPy-2 pickles, and the compatible stack raises the other floors:
-  pandas ≥ 2.2.2, matplotlib ≥ 3.8.4, SciPy ≥ 1.13, scikit-learn ≥ 1.4.2,
-  statsmodels ≥ 0.14.2, PyTables ≥ 3.10, typing-extensions ≥ 4.7. CI tests
-  these floors directly.
-
-### 📥 MAF input compatibility
-
-* **Producer-aware `read_maf()`:** GDC, cBioPortal, vcf2maf, Funcotator/Oncotator
-  and maftools-style files load; case variants of standard columns are renamed
-  (`End_position`), a missing `Tumor_Seq_Allele1` is copied from
-  `Reference_Allele`, and identifier columns stay text (sample `"001"`, one
-  `Chromosome` dtype). Coordinates are nullable `Int64`.
-* **`MAF.ingest_report`:** records the producer guess, comment lines skipped,
-  columns renamed or filled, duplicates dropped and every problem found.
-* **Loud input problems (breaking):** blank `Hugo_Symbol`, duplicate events,
-  mixed genome builds or `chr1`/`1` naming and the legacy allele layout raise
-  `MAFValidationError` by default; `validate="warn"`/`"off"` and
-  `deduplicate=True` opt out. `merge_mafs()` rejects mixed builds unless
-  `allow_mixed_builds=True`.
-* **Denominators:** `to_gene_table(samples=...)` takes the full sample list;
-  samples whose events have no gene are kept as all-False columns with a
-  warning. `add_sample_metadata()` raises when no IDs match and warns on
-  partial matches.
-* **Lollipop:** parses cBioPortal bare positions, VEP `?-12/393` ranges and
-  `HGVSp_Short`/`Protein_Change`; a missing protein length is taken from the
-  domain table with a warning.
-* GDC batch readers no longer truncate fields containing `#`.
-* Added a five-minute quickstart (`docs/quickstart.rst`,
-  `examples/quickstart.py`), producer-style regression fixtures, and a CI
-  matrix that installs the declared minimum and the latest dependency versions.
+* **OncoPlot sample labels (#16):** sample-label gutters now share the heatmap's
+  `(0, n)` data limits, so labels sit on their column centres instead of half a
+  cell to the right (ungrouped and `group_samples` layouts).
+* **Legend spacing (#17):** `LegendManager.plot_legends` floors title/item
+  spacing at the physical text height, so legend titles no longer overlap the
+  first entry on short figures; a `UserWarning` is raised when legends overflow
+  the legend axis.
 
 ### 🤖 Reusable AI assets
 
@@ -146,8 +148,8 @@ what went wrong and how to fix it. Statistical results are unchanged.
 
 ### ✅ Validation
 
-* The final public-repository suite passed 304 tests, skipped 7, and deselected
-  10, with 68.52% coverage.
+* The `dev` suite after merging #21-#25 passes 409 tests (7 skipped, 10
+  deselected), on the declared minimum and the latest dependency versions.
 * Warning-free Sphinx, Ruff, and wheel/sdist metadata checks are release gates.
 
 ---

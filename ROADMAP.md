@@ -14,7 +14,7 @@ the **Backlog** require a real use case or design decision before implementation
 | Area | Current state | Near-term target |
 | --- | --- | --- |
 | Release | 0.6.0 release candidate on `dev`; 0.5.0 on PyPI | Validate package metadata, merge, tag, and archive 0.6.0 |
-| Test coverage | 70%; CI fails below 60%; `dev` suite has 320 passing tests (2026-11-19, before #21-#23) | Raise coverage in high-risk modules before raising the gate |
+| Test coverage | 70%; CI fails below 60%; `dev` suite has 409 passing tests (2026-11-19, after #21-#25) | Raise coverage in high-risk modules before raising the gate |
 | Python | 3.10-3.12 required; 3.13-3.14 experimental | Review experimental failures on every PR |
 | Persistence | HDF5 canonical; SQLite deprecated | Preserve SQLite read compatibility during the deprecation period |
 | Documentation | Warning-free Sphinx build deployed to GitHub Pages | Add contributor and architecture guidance |
@@ -50,7 +50,7 @@ global threshold until low-coverage, high-risk modules improve.
 ### MAF input decisions (0.6.0)
 
 - `read_maf` harmonizes columns and types only; normalization, liftover and
-  multi-allelic splitting stay with bcftools / vcf2maf / GATK (CLAUDE.md §6).
+  multi-allelic splitting stay with bcftools / vcf2maf / GATK (AGENTS.md §6).
 - Problems that silently change results raise by default; safe changes
   (renames, filled `Tumor_Seq_Allele1`) are made and recorded in
   `ingest_report`. Unknown `Variant_Classification` values are reported, not
@@ -141,9 +141,10 @@ a global percentage.
       pull-request expectations.
 - [ ] Add an architecture page to Sphinx. The README overview image is useful,
       but does not explain module ownership and data flow.
-- [ ] LLM usability, next pass (from the 2026-11-13 agent trial): publish
-      `llms.txt` / `llms-full.txt` from the skill's `api-workflows.md`; expose
-      the same cookbook via `help(pymaftools)` so agents find it without
+- [ ] LLM usability, next pass (from the 2026-11-13 agent trial): `llms.txt` /
+      `llms-full.txt` now ship from Sphinx (0.6.0); still to do: put the
+      skill's `api-workflows.md` cookbook into the docs so it reaches
+      `llms-full.txt`, and expose it via `help(pymaftools)` so agents find it without
       `pymaftools-ai install`; one-call `table.plot.oncoplot(top=, group=)`;
       unify plot return types (`save()` returning a path or self); retire
       duplicate names (`to_MAF`, `vaild_variant_classfication`, top-level

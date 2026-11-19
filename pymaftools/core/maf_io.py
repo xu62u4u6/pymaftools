@@ -8,7 +8,7 @@ turns that variation into one typed event table **and** an
 :class:`IngestReport` that records every change made and every problem found,
 so that nothing is altered silently.
 
-Scope (see CLAUDE.md §6): column/type harmonization and input audits only.
+Scope (see AGENTS.md §6): column/type harmonization and input audits only.
 Variant normalization (left-alignment, multi-allelic splitting, liftover) is
 delegated to ``bcftools`` / ``vcf2maf`` / ``GATK``.
 """
