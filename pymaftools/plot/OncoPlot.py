@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -347,8 +349,37 @@ class OncoPlot(BasePlot):
             raise ValueError(f"Column '{bar_col}' not found in sample metadata.{hint}")
         track = BarTrack(self.sample_metadata[bar_col].values, bar_col, **kwargs)
         track.side = side
+        track.summary_info = self._column_info(
+            self.sample_metadata[bar_col], bar_col, "sample_metadata"
+        )
+        self._warn_uninformative(track.summary_info)
         self.tracks.append(track)
         return self
+
+    @staticmethod
+    def _column_info(series: pd.Series, column: str, source: str) -> dict:
+        """Facts about the data behind one track, for :meth:`summary`."""
+        n_values = int(len(series))
+        n_missing = int(series.isna().sum())
+        return {
+            "column": str(column),
+            "source": source,
+            "n_values": n_values,
+            "n_missing": n_missing,
+            "n_distinct": int(series.nunique(dropna=True)),
+        }
+
+    @staticmethod
+    def _warn_uninformative(info: dict) -> None:
+        """Warn at registration when a track's column cannot show anything."""
+        if info["n_values"] and info["n_missing"] == info["n_values"]:
+            warnings.warn(
+                f"Column {info['column']!r} in {info['source']} is entirely "
+                "missing (NaN) for the plotted items, so its track will be blank. "
+                "Check the metadata mapping (IDs, value spelling) before plotting.",
+                UserWarning,
+                stacklevel=3,
+            )
 
     @staticmethod
     def _require_columns(metadata, columns, where: str, hint: str = "") -> None:
@@ -399,6 +430,7 @@ class OncoPlot(BasePlot):
             self.feature_metadata[freq_columns], line_color=self.line_color, **kwargs
         )
         track.side = side
+        track.summary_info = {"columns": [str(c) for c in freq_columns]}
         self.tracks.append(track)
         return self
 
@@ -463,6 +495,8 @@ class OncoPlot(BasePlot):
                     ytick_fontsize=self.ytick_fontsize,
                     **kwargs,
                 )
+            track.summary_info = self._column_info(series, col, where)
+            self._warn_uninformative(track.summary_info)
             self.tracks.append(track)
         return self
 
@@ -874,7 +908,14 @@ class OncoPlot(BasePlot):
                 {"feature": str(name), "fraction_samples_nonempty": float(value)}
                 for name, value in top.items()
             ],
-            "tracks": [{"side": t.side, "type": type(t).__name__} for t in self.tracks],
+            "tracks": [
+                {
+                    "side": t.side,
+                    "type": type(t).__name__,
+                    **getattr(t, "summary_info", {}),
+                }
+                for t in self.tracks
+            ],
             "feature_groups": list(self._feature_groups)
             if self._feature_groups
             else None,
@@ -891,6 +932,27 @@ class OncoPlot(BasePlot):
                 "main matrix has no non-empty cell: the heatmap is blank "
                 "(check filtering / variant classes)"
             )
+        for track_record in record["tracks"]:
+            column = track_record.get("column")
+            n_values = track_record.get("n_values", 0)
+            if column is None or not n_values:
+                continue
+            n_missing = track_record["n_missing"]
+            if n_missing == n_values:
+                warnings_list.append(
+                    f"{track_record['side']} track {column!r} is entirely missing "
+                    "(NaN): drawn blank"
+                )
+            elif n_missing / n_values > 0.5:
+                warnings_list.append(
+                    f"{track_record['side']} track {column!r} is missing for "
+                    f"{n_missing} of {n_values} items"
+                )
+            elif track_record["n_distinct"] == 1 and n_values > 1:
+                warnings_list.append(
+                    f"{track_record['side']} track {column!r} has a single value: "
+                    "it carries no information"
+                )
         if record.get("sample_labels_auto_hidden"):
             warnings_list.append(
                 f"sample labels auto-hidden ({n_samples} samples > "

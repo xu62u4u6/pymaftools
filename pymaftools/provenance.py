@@ -224,10 +224,16 @@ def _frame_records(frame: pd.DataFrame) -> list[dict[str, Any]]:
 def dataframe_to_dict(frame: pd.DataFrame, *, index: bool | None = None) -> dict:
     """Serialise a DataFrame as ``{"provenance", "columns", "records"}``.
 
-    ``index=None`` keeps the index only when it is not a default RangeIndex.
+    ``index=None`` keeps the index only when it carries labels: a named index
+    or non-integer labels (a positional integer index left by sorting or
+    filtering is dropped).
     """
     if index is None:
-        index = not isinstance(frame.index, pd.RangeIndex)
+        index = (
+            frame.index.name is not None
+            or any(name is not None for name in frame.index.names)
+            or not pd.api.types.is_integer_dtype(frame.index.dtype)
+        )
     plain = pd.DataFrame(frame)
     if index:
         index_name = plain.index.name or "index"

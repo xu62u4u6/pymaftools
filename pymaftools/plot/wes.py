@@ -397,7 +397,23 @@ def plot_somatic_interactions(
     alpha: float = 0.05,
     figsize=(8, 7),
 ):
-    """Draw a signed -log10(FDR) interaction heatmap."""
+    """Draw a signed -log10(FDR) interaction heatmap.
+
+    Each upper-triangle cell is ``sign(log OR) * -log10(BH-FDR)``: red for
+    co-occurrence, blue for mutual exclusivity, and colour strength proportional
+    to the *evidence*, not the effect size. A pair that was never co-mutated in
+    a few samples (odds ratio 0) but is far from significant therefore stays
+    pale instead of looking like the strongest exclusivity in the figure.
+    ``*`` marks FDR < ``alpha``; grey cells were not tested (no jointly
+    observed sample). Odds ratios themselves are in the returned statistics.
+
+    Returns
+    -------
+    tuple of (matplotlib.figure.Figure, pandas.DataFrame)
+        The figure and the statistics from :func:`somatic_interactions`. The
+        figure's :func:`~pymaftools.plot.summary.figure_summary` includes
+        ``n_tested``, ``n_significant`` and ``n_infinite_or_zero_odds_ratio``.
+    """
     import matplotlib.pyplot as plt
     import seaborn as sns
 
@@ -413,25 +429,33 @@ def plot_somatic_interactions(
         .index.tolist()
     )
     mat = pd.DataFrame(np.nan, index=genes, columns=genes)
+    untested = pd.DataFrame(False, index=genes, columns=genes)
     for _, row in stats.iterrows():
         if not row["tested"]:
-            continue  # no jointly observed samples: leave the cell blank
-        if np.isinf(row["odds_ratio"]):
-            value = 6.0
-        elif row["odds_ratio"] == 0:
-            value = -6.0
-        else:
-            value = np.log2(row["odds_ratio"])
+            # no jointly observed samples: drawn grey, never as evidence
+            untested.loc[row["gene1"], row["gene2"]] = True
+            untested.loc[row["gene2"], row["gene1"]] = True
+            continue
+        direction = 1.0 if row["odds_ratio"] >= 1 else -1.0
+        # BH-adjusted p-values are never 0 in practice; floor avoids inf.
+        evidence = -np.log10(max(float(row["adjusted_p_value"]), 1e-300))
+        value = direction * evidence
         mat.loc[row["gene1"], row["gene2"]] = value
         mat.loc[row["gene2"], row["gene1"]] = value
     annotations = pd.DataFrame("", index=genes, columns=genes)
     for _, row in stats.loc[stats["is_significant"]].iterrows():
         annotations.loc[row["gene1"], row["gene2"]] = "*"
         annotations.loc[row["gene2"], row["gene1"]] = "*"
-    vmax = float(np.nanmax(np.abs(mat.values))) if mat.notna().any().any() else 1.0
-    vmax = max(vmax, 1.0)
+    threshold = -np.log10(alpha)
+    observed_max = (
+        float(np.nanmax(np.abs(mat.values))) if mat.notna().any().any() else 0.0
+    )
+    # Keep the significance threshold well inside the scale so "significant"
+    # always reads as a clearly saturated colour.
+    vmax = max(observed_max, 2 * threshold)
     triangle_mask = np.tril(np.ones(mat.shape, dtype=bool))
     fig, ax = plt.subplots(figsize=figsize)
+    ax.set_facecolor("white")
     sns.heatmap(
         mat,
         cmap=style.DIVERGING_CMAP,
@@ -447,11 +471,86 @@ def plot_somatic_interactions(
         linecolor="white",
         cbar=False,
     )
-    ax.set_title("Somatic Interactions  (* FDR < %.2g)" % alpha)
+    if (untested.to_numpy() & ~triangle_mask).any():
+        sns.heatmap(
+            untested.where(untested & ~triangle_mask).astype(float),
+            cmap=["#d9d9d9"],
+            ax=ax,
+            square=True,
+            mask=~(untested.to_numpy() & ~triangle_mask),
+            linewidths=0.5,
+            linecolor="white",
+            cbar=False,
+        )
+    ax.set_title("Somatic interactions  (* FDR < %.2g; grey = not tested)" % alpha)
     ax.tick_params(length=0)
-    style.add_vertical_colorbar(ax, style.DIVERGING_CMAP, -vmax, vmax, label="log2 OR")
+    style.add_vertical_colorbar(
+        ax,
+        style.DIVERGING_CMAP,
+        -vmax,
+        vmax,
+        label="signed -log10(FDR)\n(+ co-occurrence / - exclusivity)",
+    )
     fig.tight_layout()
+    fig.pymaftools_summary = _interaction_figure_summary(stats, alpha)
     return fig, stats
+
+
+def _interaction_figure_summary(stats: pd.DataFrame, alpha: float) -> dict:
+    """Domain facts for ``figure_summary`` of the interaction heatmap."""
+    if stats.empty:
+        return {
+            "plot_type": "somatic_interactions",
+            "n_pairs": 0,
+            "warnings": ["no gene pairs to test: the heatmap is empty"],
+        }
+    tested = stats[stats["tested"]]
+    odds = tested["odds_ratio"].astype(float)
+    extreme = int((np.isinf(odds) | odds.eq(0)).sum())
+    significant = tested[tested["is_significant"]]
+    record = {
+        "plot_type": "somatic_interactions",
+        "color_scale": "sign(log odds ratio) * -log10(BH FDR)",
+        "alpha": alpha,
+        "n_pairs": int(len(stats)),
+        "n_tested": int(len(tested)),
+        "n_significant": int(len(significant)),
+        "n_significant_cooccurrence": int(
+            significant["interaction"].eq("Co-occurrence").sum()
+        ),
+        "n_significant_exclusivity": int(
+            significant["interaction"].eq("Mutual exclusivity").sum()
+        ),
+        "n_infinite_or_zero_odds_ratio": extreme,
+        "significant_pairs": [
+            {
+                "gene1": str(row.gene1),
+                "gene2": str(row.gene2),
+                "interaction": row.interaction,
+                "adjusted_p_value": float(row.adjusted_p_value),
+            }
+            for row in significant.itertuples()
+        ],
+    }
+    warnings_list = []
+    if record["n_significant"] == 0:
+        warnings_list.append(
+            f"no gene pair reaches FDR < {alpha:g}; colours show weak evidence only"
+        )
+    if extreme:
+        warnings_list.append(
+            f"{extreme} of {len(tested)} tested pairs have an odds ratio of 0 or "
+            "infinity (a zero cell, usually sparse counts); do not read them as "
+            "strong effects"
+        )
+    if len(tested) >= 10 and record["n_significant_cooccurrence"] > 0.5 * len(tested):
+        warnings_list.append(
+            f"{record['n_significant_cooccurrence']} of {len(tested)} pairs are "
+            "significant co-occurrences: likely mutation-burden confounding "
+            "(hypermutators, long genes), not gene-gene interaction"
+        )
+    record["warnings"] = warnings_list
+    return record
 
 
 def compare_cohorts(

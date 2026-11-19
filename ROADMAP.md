@@ -60,6 +60,11 @@ global threshold until low-coverage, high-risk modules improve.
   (a forest plot once dropped infinite odds ratios silently).
 - `save(summary=True)` is opt-in so existing pipelines write the same files;
   the CLI always writes the sidecar.
+- The interaction heatmap colours evidence (`sign(log OR) × −log10(FDR)`),
+  not log2 OR: a 2026-11-19 trial showed OR = 0 / ∞ pairs from sparse counts
+  dominating the figure. Odds ratios stay in the statistics table.
+- CLI commands take `--samples` for the full universe and warn without it;
+  the event table alone never defines a denominator silently.
 - CLI first, MCP later: an MCP server should wrap these subcommands and their
   JSON rather than re-implement analyses.
 

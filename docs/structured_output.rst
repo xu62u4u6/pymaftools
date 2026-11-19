@@ -67,6 +67,13 @@ Command line
    pymaftools interactions cohort.maf --top 25 --json -o stats.csv
    pymaftools session-info
 
+Declare the full sample universe with ``--samples clinical_samples.txt`` (one ID
+per line, or a table such as cBioPortal's ``data_clinical_sample.txt`` whose
+``SAMPLE_ID`` column is detected; ``--sample-col`` picks another column).
+Without it the universe is only the samples that have events in the MAF, so
+sequenced samples without mutations are missing from frequencies and test
+denominators; every command warns about this.
+
 ``python -m pymaftools`` is equivalent. With ``--json`` stdout is a single JSON
 document (library messages go to stderr) and Python warnings are returned in
 ``python_warnings``. Exit codes: ``0`` success, ``1`` error (a JSON ``error``

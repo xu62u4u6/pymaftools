@@ -49,6 +49,40 @@ def _coerce_metadata_frame(metadata: Any, arg_name: str) -> pd.DataFrame:
     return metadata
 
 
+def _metadata_mismatch_message(
+    name: str, metadata_index: pd.Index, axis: pd.Index, axis_name: str, fix: str
+) -> str:
+    """Explain how a metadata index differs from the matrix axis it must mirror."""
+    only_metadata = metadata_index.difference(axis)
+    only_axis = axis.difference(metadata_index)
+    if (
+        only_metadata.empty
+        and only_axis.empty
+        and len(metadata_index) == len(axis)
+        and metadata_index.is_unique
+    ):
+        return (
+            f"{name} has the same IDs as the table's {axis_name} but in a different "
+            f"order (first table IDs: {list(axis[:3])}; first metadata IDs: "
+            f"{list(metadata_index[:3])}). Realign it by ID, e.g. `{fix}`; "
+            "add_sample_metadata()/add_feature_metadata() do this automatically."
+        )
+    parts = [f"{name} index does not match the table's {axis_name}"]
+    if not only_axis.empty:
+        parts.append(
+            f"{len(only_axis)} table ID(s) missing from {name}, e.g. "
+            f"{list(only_axis[:3])}"
+        )
+    if not only_metadata.empty:
+        parts.append(
+            f"{len(only_metadata)} {name} ID(s) not in the table, e.g. "
+            f"{list(only_metadata[:3])}"
+        )
+    if not metadata_index.is_unique:
+        parts.append(f"{name} has duplicate IDs")
+    return "; ".join(parts) + f". Realign it by ID, e.g. `{fix}`."
+
+
 def _carry_inputs_attr(source, target) -> None:
     """Copy the source-file fingerprint (``attrs["pymaftools_inputs"]``, see
     :mod:`pymaftools.provenance`) from ``source`` to a derived ``target`` table.
@@ -273,10 +307,28 @@ class PivotTable(pd.DataFrame):
     def _validate_metadata(self) -> None:
         """Validate that metadata indices match DataFrame structure."""
         if not self.feature_metadata.index.equals(self.index):
-            raise ValueError("feature_metadata index does not match PivotTable index.")
+            raise ValueError(
+                _metadata_mismatch_message(
+                    "feature_metadata",
+                    self.feature_metadata.index,
+                    self.index,
+                    "index (features)",
+                    "table.feature_metadata = "
+                    "table.feature_metadata.reindex(table.index)",
+                )
+            )
 
         if not self.sample_metadata.index.equals(self.columns):
-            raise ValueError("sample_metadata index does not match PivotTable columns.")
+            raise ValueError(
+                _metadata_mismatch_message(
+                    "sample_metadata",
+                    self.sample_metadata.index,
+                    self.columns,
+                    "columns (samples)",
+                    "table.sample_metadata = "
+                    "table.sample_metadata.reindex(table.columns)",
+                )
+            )
 
         if self.observation_mask is not None:
             self.observation_mask.validate_for(self)
@@ -2063,7 +2115,11 @@ class PivotTable(pd.DataFrame):
         force: bool = False,
     ) -> "PivotTable":
         """
-        Safely add sample metadata to the PivotTable.
+        Return a new table with sample metadata added (not in place).
+
+        Assign the result: ``table = table.add_sample_metadata(clinical)``.
+        Rows are matched by sample ID, so the table may be sorted or subset
+        before or after this call.
 
         This method ensures that:
         1. Only samples existing in the PivotTable are added
@@ -2136,13 +2192,16 @@ class PivotTable(pd.DataFrame):
                 [col for col in sample_metadata.columns if col not in existing_cols]
             ]
 
-        # Combine metadata
+        # Combine metadata. ``combine_first`` returns the *sorted* union of
+        # both indexes, so realign to the table's sample order (values are
+        # matched by sample ID; only the row order is restored).
         pivot_table.sample_metadata = pivot_table.sample_metadata.combine_first(
             sample_metadata
-        )
+        ).reindex(pivot_table.columns)
         if fill_value is not None:
             pivot_table.sample_metadata = pivot_table.sample_metadata.fillna(fill_value)
 
+        pivot_table._validate_metadata()
         return pivot_table
 
     def add_feature_metadata(
@@ -2152,7 +2211,10 @@ class PivotTable(pd.DataFrame):
         force: bool = False,
     ) -> "PivotTable":
         """
-        Safely add feature metadata to the PivotTable.
+        Return a new table with feature metadata added (not in place).
+
+        Assign the result: ``table = table.add_feature_metadata(annotation)``.
+        Rows are matched by feature ID, whatever the table's row order.
 
         This method ensures that:
         1. Only features existing in the PivotTable are added
@@ -2240,15 +2302,17 @@ class PivotTable(pd.DataFrame):
                 [col for col in feature_metadata.columns if col not in existing_cols]
             ]
 
-        # Combine metadata
+        # Combine metadata; ``combine_first`` sorts the index, so restore the
+        # table's feature order (values stay matched by feature ID).
         pivot_table.feature_metadata = pivot_table.feature_metadata.combine_first(
             feature_metadata
-        )
+        ).reindex(pivot_table.index)
         if fill_value is not None:
             pivot_table.feature_metadata = pivot_table.feature_metadata.fillna(
                 fill_value
             )
 
+        pivot_table._validate_metadata()
         return pivot_table
 
 

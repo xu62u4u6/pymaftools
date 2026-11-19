@@ -306,3 +306,151 @@ def test_cli_missing_file_is_json_error(capsys, tmp_path):
     code, out = _run_cli(capsys, "inspect", str(tmp_path / "nope.maf"), "--json")
     assert code == 1
     assert json.loads(out)["error"] == "FileNotFoundError"
+
+
+# --- fixes from the 92-sample TCGA ACC agent trial -------------------------
+
+
+def test_add_sample_metadata_on_sorted_table_aligns_by_id(table):
+    sorted_table = table.add_freq().sort_features(by="freq").sort_samples_by_mutations()
+    labels = pd.Series(["A", "B"] * 3, index=sorted(sorted_table.columns), name="grp")
+    out = sorted_table.add_sample_metadata(labels)
+    assert list(out.sample_metadata.index) == list(out.columns)
+    for sample in out.columns:
+        assert out.sample_metadata.loc[sample, "grp"] == labels[sample]
+    # downstream statistics accept it (used to raise an index-mismatch error)
+    assert len(out.mutation_enrichment_test("grp", "A", "B")) == len(out)
+
+
+def test_add_feature_metadata_keeps_feature_order(table):
+    sorted_table = table.add_freq().sort_features(by="freq")
+    note = pd.Series("x", index=sorted(sorted_table.index), name="note")
+    out = sorted_table.add_feature_metadata(note)
+    assert list(out.feature_metadata.index) == list(out.index)
+
+
+def test_metadata_order_mismatch_message_names_fix(table):
+    broken = table.copy()
+    broken.sample_metadata = broken.sample_metadata.iloc[::-1]
+    with pytest.raises(ValueError, match="different order.*reindex"):
+        broken._validate_metadata()
+
+
+def test_interaction_heatmap_colours_evidence_not_zero_odds():
+    from pymaftools import PivotTable
+
+    # GENE_A and GENE_B are never co-mutated (odds ratio 0) in a tiny cohort:
+    # far from significant, so the cell must stay near the neutral colour.
+    table = PivotTable(
+        [
+            [True, True, False, False, False, False],
+            [False, False, True, False, False, False],
+            [True, False, True, True, False, False],
+        ],
+        index=["GENE_A", "GENE_B", "GENE_C"],
+        columns=[f"S{i}" for i in range(6)],
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        fig, stats = table.plot.somatic_interactions(top=3)
+    zero = stats[
+        (stats.gene1.isin(["GENE_A", "GENE_B"]))
+        & (stats.gene2.isin(["GENE_A", "GENE_B"]))
+    ]
+    assert float(zero["odds_ratio"].iloc[0]) == 0
+    values = fig.axes[0].collections[0].get_array()
+    assert np.nanmax(np.abs(values)) < -np.log10(0.05)
+    record = figure_summary(fig)
+    assert record["n_significant"] == 0
+    assert record["n_infinite_or_zero_odds_ratio"] >= 1
+    assert any("odds ratio of 0 or infinity" in w for w in record["warnings"])
+    assert any("no gene pair reaches" in w for w in record["warnings"])
+    plt.close(fig)
+
+
+def test_all_missing_annotation_warns_and_is_named_in_summary(table):
+    table = table.head(5).copy()
+    table.sample_metadata["stage_group"] = pd.Series(
+        pd.NA, index=table.columns, dtype="object"
+    )
+    with pytest.warns(UserWarning, match="entirely missing"):
+        oncoplot = (
+            table.plot.oncoplot(figsize=(6, 4))
+            .main()
+            .add_sample_annotation(["stage_group"])
+        )
+    record = oncoplot.render().summary()
+    oncoplot.close()
+    annotation = [t for t in record["tracks"] if t.get("column") == "stage_group"][0]
+    assert annotation["n_missing"] == annotation["n_values"] == 6
+    assert any("'stage_group' is entirely missing" in w for w in record["warnings"])
+
+
+def test_cli_samples_file_includes_zero_event_samples(capsys, tmp_path):
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        maf = MAF.read_maf(example_maf_path())
+    samples = sorted(maf["sample_ID"].unique()) + ["ZERO-EVENT-SAMPLE"]
+    sample_file = tmp_path / "clinical.txt"
+    sample_file.write_text(
+        "#comment line\nPATIENT_ID\tSAMPLE_ID\n"
+        + "".join(f"P{i}\t{s}\n" for i, s in enumerate(samples))
+    )
+    code, out = _run_cli(
+        capsys,
+        "interactions",
+        example_maf_path(),
+        "--top",
+        "5",
+        "--samples",
+        sample_file,
+        "--json",
+    )
+    record = json.loads(out)
+    assert code == EXIT_OK
+    assert record["provenance"]["sample_universe"]["n_samples"] == 7
+    assert record["provenance"]["parameters"]["samples_file"] == str(sample_file)
+    assert "index" not in record["columns"]
+    assert {r["jointly_observed"] for r in record["records"]} == {7}
+    assert not any("--samples" in w for w in record.get("python_warnings", []))
+
+
+def test_cli_without_samples_warns_about_denominator(capsys):
+    code, out = _run_cli(
+        capsys, "interactions", example_maf_path(), "--top", "4", "--json"
+    )
+    record = json.loads(out)
+    assert any("--samples" in w for w in record["python_warnings"])
+
+
+def test_cli_oncoplot_sorts_samples(capsys, tmp_path):
+    target = tmp_path / "onco.png"
+    code, out = _run_cli(
+        capsys,
+        "oncoplot",
+        example_maf_path(),
+        "-o",
+        target,
+        "--top",
+        "8",
+        "--dpi",
+        "50",
+        "--json",
+    )
+    record = json.loads(out)
+    assert code == EXIT_OK
+    assert record["samples_sorted_by"].startswith("sort_samples_by_mutations")
+    assert any("--samples" in w or "no --samples" in w for w in record["warnings"])
+
+
+def test_read_sample_list_plain_and_explicit_column(tmp_path):
+    from pymaftools.cli import read_sample_list
+
+    plain = tmp_path / "plain.txt"
+    plain.write_text("S1\nS2\n\n# note\nS3\n")
+    assert read_sample_list(str(plain)) == ["S1", "S2", "S3"]
+    table = tmp_path / "t.csv"
+    table.write_text("id,barcode\n1,B1\n2,B2\n")
+    assert read_sample_list(str(table), "barcode") == ["B1", "B2"]
+    with pytest.raises(ValueError, match="not in the header"):
+        read_sample_list(str(table), "missing")

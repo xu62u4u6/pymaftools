@@ -36,24 +36,108 @@ def _read_maf(path: str, validate: str, all_classes: bool):
     return maf
 
 
-def _gene_table(maf):
+_SAMPLE_COLUMN_NAMES = (
+    "SAMPLE_ID",
+    "sample_ID",
+    "sample_id",
+    "Sample Identifier",
+    "Tumor_Sample_Barcode",
+    "sample",
+)
+"""Header names recognised as the sample-ID column of a ``--samples`` table."""
+
+
+def read_sample_list(path: str, sample_col: str | None = None) -> list[str]:
+    """Read the full sample universe for ``--samples``.
+
+    Accepts a plain list (one ID per line) or a tab/comma-separated table such
+    as a cBioPortal ``data_clinical_sample.txt``. ``#`` lines are skipped. In a
+    table the ID column is ``sample_col``, or the first header matching
+    :data:`_SAMPLE_COLUMN_NAMES`; otherwise the first field of each line.
+    """
+    import csv
+
+    with open(path, newline="", encoding="utf-8-sig") as handle:
+        lines = [line for line in handle if line.strip() and not line.startswith("#")]
+    if not lines:
+        raise ValueError(f"--samples file {path!r} lists no sample IDs.")
+    delimiter = "\t" if "\t" in lines[0] else ("," if "," in lines[0] else None)
+    rows = (
+        [row for row in csv.reader(lines, delimiter=delimiter)]
+        if delimiter
+        else [[line.strip()] for line in lines]
+    )
+    header = [name.strip() for name in rows[0]]
+    if sample_col is not None:
+        if sample_col not in header:
+            raise ValueError(
+                f"--sample-col {sample_col!r} not in the header of {path!r}: "
+                f"{header[:20]}"
+            )
+        column = header.index(sample_col)
+        rows = rows[1:]
+    else:
+        column = next(
+            (header.index(name) for name in _SAMPLE_COLUMN_NAMES if name in header),
+            None,
+        )
+        if column is None:
+            column = 0
+        else:
+            rows = rows[1:]
+    samples = [row[column].strip() for row in rows if len(row) > column]
+    samples = [sample for sample in samples if sample]
+    if len(set(samples)) != len(samples):
+        raise ValueError(f"--samples file {path!r} contains duplicate sample IDs.")
+    return samples
+
+
+def _gene_table(maf, args):
+    """Gene x sample table over the declared universe (``--samples``) if any."""
+    samples_path = getattr(args, "samples", None)
+    if samples_path:
+        samples = read_sample_list(samples_path, getattr(args, "sample_col", None))
+        return maf.to_gene_table(samples=samples)
+    warnings.warn(
+        "No --samples given: the sample universe is only the samples with at least "
+        "one event in this MAF, so sequenced samples without mutations are missing "
+        "from every frequency and test denominator. Pass --samples <file> with "
+        "the full list of sequenced samples.",
+        UserWarning,
+        stacklevel=2,
+    )
     return maf.to_gene_table()
 
 
-def _top_genes(table, top: int) -> list[dict[str, Any]]:
-    import pandas as pd
+def _cli_parameters(args, **extra) -> dict[str, Any]:
+    """Parameters common to every analysis command, for provenance."""
+    record = {
+        "validate": args.validate,
+        "all_classes": getattr(args, "all_classes", False),
+        "samples_file": getattr(args, "samples", None),
+    }
+    record.update(extra)
+    return record
 
-    binary = pd.DataFrame(table.to_binary_table()).astype(bool)
-    counts = binary.sum(axis=1).sort_values(ascending=False, kind="stable").head(top)
-    n_samples = binary.shape[1]
-    return [
-        {
-            "gene": str(gene),
-            "mutated_samples": int(count),
-            "fraction": (float(count) / n_samples) if n_samples else 0.0,
-        }
-        for gene, count in counts.items()
-    ]
+
+def _top_genes(table, top: int) -> list[dict[str, Any]]:
+    # Same ranking as the oncoplot command (add_freq + sort_features), so the
+    # two commands list tied genes in the same order.
+    ranked = table.add_freq().sort_features(by="freq").head(top)
+    binary = ranked.to_binary_table()
+    n_samples = table.shape[1]
+    return (
+        [
+            {
+                "gene": str(gene),
+                "mutated_samples": int(binary.loc[gene].sum()),
+                "fraction": float(ranked.feature_metadata.loc[gene, "freq"]),
+            }
+            for gene in ranked.index
+        ]
+        if n_samples
+        else []
+    )
 
 
 # --------------------------------------------------------------------------
@@ -69,12 +153,14 @@ def cmd_inspect(args: argparse.Namespace) -> dict[str, Any]:
     report = full.ingest_report
     classes = full["Variant_Classification"].value_counts()
     nonsynonymous = full.filter_maf(MAF.nonsynonymous_types)
-    table = _gene_table(nonsynonymous)
+    table = _gene_table(nonsynonymous, args)
     return {
         "command": "inspect",
         "ingest_report": report.to_dict() if report is not None else None,
         "n_events": int(len(full)),
-        "n_samples": int(full["sample_ID"].nunique()),
+        "n_samples_with_events": int(full["sample_ID"].nunique()),
+        "n_samples": int(table.shape[1]),
+        "sample_universe_source": "samples_file" if args.samples else "maf_events",
         "n_genes": int(full["Hugo_Symbol"].nunique()),
         "n_nonsynonymous_events": int(len(nonsynonymous)),
         "variant_classification_counts": {
@@ -90,7 +176,7 @@ def cmd_oncoplot(args: argparse.Namespace) -> dict[str, Any]:
     from .provenance import Provenance, table_inputs, table_sample_universe
 
     maf = _read_maf(args.maf, args.validate, args.all_classes)
-    table = _gene_table(maf)
+    table = _gene_table(maf, args)
     if table.shape[0] == 0:
         raise ValueError(
             "No genes left to plot after filtering"
@@ -98,19 +184,26 @@ def cmd_oncoplot(args: argparse.Namespace) -> dict[str, Any]:
             + "; pass --all-classes to keep every classification."
         )
     table = table.add_freq().sort_features(by="freq").head(args.top)
+    # Waterfall order: samples sorted by the mutation pattern of the plotted genes.
+    table = table.sort_samples_by_mutations(top=table.shape[0])
     oncoplot = table.plot.oncoplot(figsize=(args.width, args.height)).main()
     oncoplot = oncoplot.add_freq().add_bar("mutations_count", side="top").render()
     oncoplot.save(args.output, dpi=args.dpi)
     record = oncoplot.summary(dpi=args.dpi)
+    record["samples_sorted_by"] = "sort_samples_by_mutations (plotted genes, waterfall)"
+    if not args.samples:
+        record["warnings"].append(
+            "sample universe = samples with events in the MAF (no --samples): "
+            "frequencies omit sequenced samples without mutations"
+        )
     record["provenance"] = Provenance(
         analysis="cli.oncoplot",
-        parameters={
-            "top": args.top,
-            "all_classes": args.all_classes,
-            "validate": args.validate,
-            "figsize": [args.width, args.height],
-            "dpi": args.dpi,
-        },
+        parameters=_cli_parameters(
+            args,
+            top=args.top,
+            figsize=[args.width, args.height],
+            dpi=args.dpi,
+        ),
         inputs=table_inputs(table),
         sample_universe=table_sample_universe(table),
     ).to_dict()
@@ -123,11 +216,12 @@ def cmd_oncoplot(args: argparse.Namespace) -> dict[str, Any]:
 
 def cmd_interactions(args: argparse.Namespace) -> dict[str, Any]:
     from .plot.wes import somatic_interactions
-    from .provenance import dataframe_to_dict
+    from .provenance import PROVENANCE_ATTR, dataframe_to_dict
 
     maf = _read_maf(args.maf, args.validate, args.all_classes)
-    table = _gene_table(maf)
+    table = _gene_table(maf, args)
     stats = somatic_interactions(table, top=args.top, alpha=args.alpha)
+    stats.attrs[PROVENANCE_ATTR]["parameters"].update(_cli_parameters(args))
     if args.output:
         if args.output.endswith(".json"):
             from .provenance import to_json
@@ -139,7 +233,7 @@ def cmd_interactions(args: argparse.Namespace) -> dict[str, Any]:
                 sep="\t" if args.output.endswith(".tsv") else ",",
                 index=False,
             )
-    record = dataframe_to_dict(stats)
+    record = dataframe_to_dict(stats, index=False)
     record["command"] = "interactions"
     record["n_significant"] = (
         int(stats["is_significant"].sum()) if "is_significant" in stats else 0
@@ -224,6 +318,19 @@ def _add_maf_arguments(parser: argparse.ArgumentParser, validate_default: str) -
         choices=("strict", "warn", "off"),
         default=validate_default,
         help=f"read_maf validation mode (default: {validate_default})",
+    )
+    parser.add_argument(
+        "--samples",
+        metavar="FILE",
+        help="full list of sequenced samples (one ID per line, or a table such as "
+        "cBioPortal data_clinical_sample.txt); samples without events count in "
+        "denominators. Without it the universe is the samples present in the MAF.",
+    )
+    parser.add_argument(
+        "--sample-col",
+        metavar="NAME",
+        help="sample-ID column of a --samples table (default: SAMPLE_ID, "
+        "Tumor_Sample_Barcode, ... or the first column)",
     )
 
 

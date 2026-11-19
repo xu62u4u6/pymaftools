@@ -68,13 +68,20 @@ def figure_summary(fig: Figure) -> dict[str, Any]:
         warnings_list.append("no axes contains any drawn data: the figure is blank")
     elif n_empty:
         warnings_list.append(f"{n_empty} visible axes contain no drawn data")
-    return {
+    record = {
         "figsize_in": [round(float(width), 3), round(float(height), 3)],
         "n_axes": len(axes),
         "n_empty_axes": int(n_empty),
         "axes": axes,
         "warnings": warnings_list,
     }
+    # Functions that return a bare Figure (plot/wes.py) attach domain facts here.
+    extra = getattr(fig, "pymaftools_summary", None)
+    if extra:
+        extra = dict(extra)
+        record["warnings"] = warnings_list + list(extra.pop("warnings", []))
+        record.update(extra)
+    return record
 
 
 def summary_path(filename: str | os.PathLike) -> Path:

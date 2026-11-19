@@ -144,6 +144,30 @@ rendered PNG bytes verified identical to the previous `dev`).
   also `python -m pymaftools`.
 * `BasePlot.save()` now raises backend errors instead of printing them and
   returning as if the file had been written.
+* Fixes from a documentation-only agent trial on TCGA ACC (92 samples):
+  * `add_sample_metadata()` / `add_feature_metadata()` realign the metadata to
+    the table's current order (values were always matched by ID, but the
+    *row order* was sorted, so a sorted table failed later with an opaque
+    index error). Index-mismatch errors now say whether the IDs differ or
+    only their order, and give the fixing call. Docstrings state that both
+    return a new table.
+  * **Interaction heatmap colour scale changed** to `sign(log OR) × −log10(FDR)`
+    (what its docstring always claimed). Previously colour was log2 OR, so
+    sparse pairs with OR = 0 / ∞ but no significance were drawn as the
+    strongest effects. Untested pairs are grey. The statistics are unchanged;
+    the figure's `figure_summary()` reports `n_tested`, `n_significant`,
+    `n_infinite_or_zero_odds_ratio` and warns about sparse or
+    burden-confounded results.
+  * Oncoplot annotation / bar tracks record their column, missing count and
+    distinct values in `summary()["tracks"]`; an all-missing column warns at
+    registration and in the summary (also > 50 % missing or a single value).
+  * CLI: `--samples FILE` (plain list or a cBioPortal clinical-sample table;
+    `--sample-col`) declares the full sample universe so zero-event samples
+    count in denominators; without it every command warns. `pymaftools
+    oncoplot` sorts samples into a waterfall; `inspect` ranks genes like
+    `oncoplot`; interaction JSON no longer includes a positional `index`
+    column; CLI provenance records `validate`, `all_classes` and
+    `samples_file` for every command.
 
 ### 🎨 Plot fixes
 
