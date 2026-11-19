@@ -481,6 +481,11 @@ overwritten unless `--force` is supplied. See the
 [AI assistants documentation](https://dionic.xyz/pymaftools/ai_assistants.html)
 for the asset responsibilities and installation model.
 
+Agents can also read the documentation index at
+[`llms.txt`](https://dionic.xyz/pymaftools/llms.txt) without installing
+anything. Contributor agents (Codex, Cursor, Claude Code, ...) follow
+[`AGENTS.md`](AGENTS.md).
+
 ## License
 
 MIT License - see the LICENSE file for details.

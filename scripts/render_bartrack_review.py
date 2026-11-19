@@ -1,4 +1,4 @@
-"""Render BarTrack 4-side composition for human-eye QC (CLAUDE.md s4).
+"""Render BarTrack 4-side composition for human-eye QC (AGENTS.md s4).
 
 Uses the real TCGA lung fixture (62 genes x 958 samples). The stacked TMB frame
 is DERIVED FROM THE MATRIX CELLS here (the fixture predates the sample_metadata

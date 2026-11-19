@@ -44,6 +44,7 @@ docs = [
   "sphinx>=7.0,<10.0",
   "sphinx-rtd-theme>=2.0,<4.0",
   "sphinx-autodoc-typehints>=2.0,<4.0",
+  "sphinx-llms-txt>=0.7,<1.0",
 ]
 anndata = [
   "anndata>=0.10,<1.0",

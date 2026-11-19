@@ -2,7 +2,7 @@
 
 ---
 
-## 🔖 Version 0.6.0 (August 2026)
+## 🔖 Version 0.6.0 (unreleased)
 
 Scientific-validity release adding explicit sample-universe and observation-state
 contracts, auditable mutation analysis, and stricter TCGA specimen alignment.
@@ -53,6 +53,14 @@ contracts, auditable mutation analysis, and stricter TCGA specimen alignment.
   agents plus a Pymaftools skill.
 * Added `pymaftools-ai` installation and dry-run commands for project or user
   scope in Codex and Claude environments.
+* The documentation site now publishes `llms.txt` and `llms-full.txt`
+  (https://llmstxt.org), generated from the Sphinx sources, so coding agents
+  can find the docs without installing anything.
+* `AGENTS.md` is now the single contributor/agent guide for Codex, Cursor,
+  Copilot and similar tools; `CLAUDE.md` imports it instead of keeping a copy.
+* Removed the stale Chinese-language 0.5.0 `AUDIT.md`; release state lives in
+  `RELEASE_AUDIT.md` and this changelog. The AI agent test report is now in
+  English like the rest of the documentation.
 
 ### ✅ Validation
 

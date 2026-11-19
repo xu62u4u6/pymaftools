@@ -47,5 +47,5 @@ network view must not silently compute different tests.
 - For plot work, create a rendered artifact and inspect multiple cohort-size
   regimes when layout or interpretation is scale-dependent.
 
-Read `CLAUDE.md`, `ROADMAP.md`, and `PLOTTING_REVIEW.md` in the repository for
+Read `AGENTS.md`, `ROADMAP.md`, and `PLOTTING_REVIEW.md` in the repository for
 current project decisions before changing source.

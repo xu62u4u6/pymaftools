@@ -7,6 +7,7 @@ description: Use when analyzing MAF or harmonized VCF data with pymaftools, buil
 
 Use the installed package and current source as the API authority. Do not rely on
 remembered signatures when source or generated API documentation is available.
+The published documentation index is <https://dionic.xyz/pymaftools/llms.txt>.
 
 ## Route the task
 
