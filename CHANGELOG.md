@@ -46,6 +46,14 @@ contracts, auditable mutation analysis, and stricter TCGA specimen alignment.
   unique gene pair is tested once, with self-pairs and mirrored matrix entries
   excluded.
 
+### ⚠️ Dependency floors (breaking)
+
+* **NumPy 2 is now required** (`numpy>=2.0`). The bundled example HDF5 table
+  stores NumPy-2 pickles, and the compatible stack raises the other floors:
+  pandas ≥ 2.2.2, matplotlib ≥ 3.8.4, SciPy ≥ 1.13, scikit-learn ≥ 1.4.2,
+  statsmodels ≥ 0.14.2, PyTables ≥ 3.10, typing-extensions ≥ 4.7. CI tests
+  these floors directly.
+
 ### 📥 MAF input compatibility
 
 * **Producer-aware `read_maf()`:** GDC, cBioPortal, vcf2maf, Funcotator/Oncotator

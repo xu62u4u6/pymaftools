@@ -49,9 +49,9 @@ global threshold until low-coverage, high-risk modules improve.
   (renames, filled `Tumor_Seq_Allele1`) are made and recorded in
   `ingest_report`. Unknown `Variant_Classification` values are reported, not
   remapped; a Funcotator-to-GDC vocabulary map is a candidate opt-in.
-- Open: the bundled HDF5 example table pickles object columns with NumPy 2, so
-  it cannot be read under the declared NumPy 1.24 floor. Either re-save it in
-  a NumPy-1-readable form or raise the floor.
+- Decided (2026-11-19): the bundled HDF5 example stores NumPy-2 pickles, so the
+  floor is `numpy>=2.0` (with the matching pandas/matplotlib/SciPy/sklearn/
+  statsmodels/PyTables floors) rather than re-saving the file for NumPy 1.x.
 - Open: panel-aware denominators (GENIE-style targeted panels) are not modelled.
 
 ## Shipped in 0.5.0
