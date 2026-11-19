@@ -62,31 +62,125 @@ class PivotStatsPlot(BasePlot):
         super().__init__()  # Initialize BasePlot
         self.pivot_table = pivot_table
 
-    def oncoplot(self, **kwargs):
+    def oncoplot(
+        self,
+        *,
+        figsize: tuple = (20, 15),
+        cmap: str | dict = "nonsynonymous",
+        line_color: str = "white",
+        ytick_fontsize: int = 10,
+        **kwargs,
+    ):
         """Create an :class:`~pymaftools.plot.OncoPlot.OncoPlot` for this table.
 
-        Unifies the entry point so the composite oncoplot is reachable from the
-        same ``table.plot`` accessor as the statistical plots, e.g.::
+        The returned object is empty until tracks are registered and
+        :meth:`~pymaftools.plot.OncoPlot.OncoPlot.render` is called; ``save()``
+        before ``render()`` raises.
 
-            table.plot.oncoplot(figsize=(15, 10)).main().add_freq().render()
+        Parameters
+        ----------
+        figsize : tuple, default (20, 15)
+            Figure size in inches.
+        cmap : str or dict, default "nonsynonymous"
+            Mutation colour map name from ``ColorManager`` or an explicit
+            ``{category: colour}`` dict.
+        line_color : str, default "white"
+            Cell gridline colour (gridlines thin out automatically for large
+            cohorts so cells stay visible).
+        ytick_fontsize : int, default 10
+            Gene-label font size.
+        **kwargs
+            Further ``OncoPlot.set_config`` options (``width_ratios``,
+            ``height_ratios``, ``wspace``, ``hspace``, ``categorical_columns``,
+            ``numeric_columns``).
 
-        ``**kwargs`` are forwarded to ``OncoPlot`` (e.g. ``figsize``, ``cmap``).
+        Examples
+        --------
+        Gene selection and frequencies are table operations, done before
+        plotting::
+
+            table = table.add_freq().sort_features(by="freq").head(20)
+            (table.plot.oncoplot(figsize=(15, 10))
+                .main()                      # mutation matrix (required)
+                .add_freq()                  # needs table.add_freq() above
+                .add_bar("mutations_count", side="top")
+                .render()                    # required before save()
+                .save("oncoplot.png"))
         """
         from .OncoPlot import OncoPlot
 
-        return OncoPlot(self.pivot_table, **kwargs)
+        if "top" in kwargs or "n_genes" in kwargs:
+            raise TypeError(
+                "oncoplot() does not select genes. Subset the table first, e.g. "
+                "`table.add_freq().sort_features(by='freq').head(20).plot.oncoplot()`."
+            )
+        return OncoPlot(
+            self.pivot_table,
+            figsize=figsize,
+            cmap=cmap,
+            line_color=line_color,
+            ytick_fontsize=ytick_fontsize,
+            **kwargs,
+        )
 
-    def somatic_interactions(self, **kwargs):
-        """Draw co-occurrence / mutual exclusivity heatmap for mutated genes."""
+    def somatic_interactions(
+        self, top: int = 25, alpha: float = 0.05, figsize: tuple = (8, 7)
+    ):
+        """Draw the co-occurrence / mutual-exclusivity heatmap.
+
+        Thin wrapper over :func:`pymaftools.plot.wes.plot_somatic_interactions`;
+        statistics come from :meth:`somatic_interactions_stats`, so the figure and
+        the table never disagree.
+
+        Parameters
+        ----------
+        top : int, default 25
+            Number of most frequently mutated genes to test (all unordered pairs).
+        alpha : float, default 0.05
+            BH-FDR threshold for the ``*`` marks.
+        figsize : tuple, default (8, 7)
+            Figure size in inches.
+
+        Returns
+        -------
+        tuple of (matplotlib.figure.Figure, pandas.DataFrame)
+            The figure and the same statistics table as
+            :meth:`somatic_interactions_stats`.
+        """
         from .wes import plot_somatic_interactions
 
-        return plot_somatic_interactions(self.pivot_table, **kwargs)
+        return plot_somatic_interactions(
+            self.pivot_table, top=top, alpha=alpha, figsize=figsize
+        )
 
-    def somatic_interactions_stats(self, **kwargs):
-        """Return pairwise co-occurrence / mutual exclusivity Fisher tests."""
+    def somatic_interactions_stats(self, top: int = 25, alpha: float = 0.05):
+        """Pairwise Fisher tests for co-occurrence / mutual exclusivity.
+
+        Thin wrapper over :func:`pymaftools.plot.wes.somatic_interactions`.
+        Each unordered pair among the ``top`` most mutated genes is tested once;
+        BH-FDR covers that unique-pair family. Warns (without changing results)
+        on fewer than 10 samples or when most pairs are significant
+        co-occurrences, a typical sign of mutation-burden confounding.
+
+        Parameters
+        ----------
+        top : int, default 25
+            Number of most frequently mutated genes to include.
+        alpha : float, default 0.05
+            BH-FDR threshold for ``is_significant``.
+
+        Returns
+        -------
+        pandas.DataFrame
+            One row per gene pair with ``gene1``, ``gene2``, ``odds_ratio``,
+            ``p_value``, the 2x2 counts (``both_mutated``, ``gene1_only``,
+            ``gene2_only``, ``neither_mutated``), ``adjusted_p_value``,
+            ``interaction`` ("Co-occurrence" / "Mutual exclusivity") and
+            ``is_significant``, sorted by ``adjusted_p_value``.
+        """
         from .wes import somatic_interactions
 
-        return somatic_interactions(self.pivot_table, **kwargs)
+        return somatic_interactions(self.pivot_table, top=top, alpha=alpha)
 
     def plot_boxplot_with_annot(
         self,

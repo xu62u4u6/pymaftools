@@ -32,6 +32,23 @@ if TYPE_CHECKING:
     from .SampleManifest import SampleManifest
 
 
+def _coerce_metadata_frame(metadata: Any, arg_name: str) -> pd.DataFrame:
+    """Accept a DataFrame or a *named* Series as metadata; fail loudly otherwise."""
+    if isinstance(metadata, pd.Series):
+        if metadata.name is None:
+            raise ValueError(
+                f"{arg_name} is an unnamed Series; give it a column name, e.g. "
+                "series.rename('subtype'), or pass series.to_frame('subtype')."
+            )
+        return metadata.to_frame()
+    if not isinstance(metadata, pd.DataFrame):
+        raise TypeError(
+            f"{arg_name} must be a pandas DataFrame or named Series, "
+            f"got {type(metadata).__name__}."
+        )
+    return metadata
+
+
 class PivotTable(pd.DataFrame):
     """
     Enhanced pandas DataFrame for bioinformatics analysis.
@@ -2028,7 +2045,7 @@ class PivotTable(pd.DataFrame):
 
     def add_sample_metadata(
         self,
-        sample_metadata: pd.DataFrame,
+        sample_metadata: pd.DataFrame | pd.Series,
         fill_value: Optional[Union[str, float]] = None,
         force: bool = False,
     ) -> "PivotTable":
@@ -2042,10 +2059,12 @@ class PivotTable(pd.DataFrame):
 
         Parameters
         ----------
-        sample_metadata : pd.DataFrame
-            New metadata to add, indexed by sample names.
+        sample_metadata : pd.DataFrame or pd.Series
+            New metadata to add, indexed by sample names (the table's
+            ``columns``). A named ``Series`` is treated as one column.
         fill_value : Optional[Union[str, float]], default None
-            Value to use for missing data.
+            Value used for samples absent from ``sample_metadata``. ``None``
+            leaves them as missing (NaN).
         force : bool, default False
             If True, allow overwriting existing columns.
 
@@ -2069,15 +2088,25 @@ class PivotTable(pd.DataFrame):
         >>> table_with_meta = table.add_sample_metadata(new_meta)
         """
         pivot_table = self.copy()
+        sample_metadata = _coerce_metadata_frame(sample_metadata, "sample_metadata")
 
         # Check for samples not in the PivotTable
         missing_samples = set(sample_metadata.index) - set(self.columns)
-        if missing_samples:
-            print(
-                f"Warning: {len(missing_samples)} samples not found in PivotTable and will be ignored:"
+        if len(missing_samples) == len(sample_metadata.index) and len(missing_samples):
+            raise ValueError(
+                f"None of the {len(sample_metadata.index)} sample_metadata index "
+                f"values match this table's samples (columns). "
+                f"Metadata index examples: {list(sample_metadata.index[:3])}; "
+                f"table samples examples: {list(self.columns[:3])}. "
+                "Re-index the metadata by the table's sample IDs first."
             )
-            print(
-                f"  {list(missing_samples)[:5]}{'...' if len(missing_samples) > 5 else ''}"
+        if missing_samples:
+            warnings.warn(
+                f"{len(missing_samples)} samples in sample_metadata are not in the "
+                f"table and will be ignored: {sorted(map(str, missing_samples))[:5]}"
+                f"{'...' if len(missing_samples) > 5 else ''}",
+                UserWarning,
+                stacklevel=2,
             )
             sample_metadata = sample_metadata.loc[
                 sample_metadata.index.isin(self.columns)
@@ -2110,13 +2139,15 @@ class PivotTable(pd.DataFrame):
         # Combine metadata
         pivot_table.sample_metadata = pivot_table.sample_metadata.combine_first(
             sample_metadata
-        ).fillna(fill_value)
+        )
+        if fill_value is not None:
+            pivot_table.sample_metadata = pivot_table.sample_metadata.fillna(fill_value)
 
         return pivot_table
 
     def add_feature_metadata(
         self,
-        feature_metadata: pd.DataFrame,
+        feature_metadata: pd.DataFrame | pd.Series,
         fill_value: Optional[Union[str, float]] = None,
         force: bool = False,
     ) -> "PivotTable":
@@ -2130,10 +2161,12 @@ class PivotTable(pd.DataFrame):
 
         Parameters
         ----------
-        feature_metadata : pd.DataFrame
-            New metadata to add, indexed by feature names.
+        feature_metadata : pd.DataFrame or pd.Series
+            New metadata to add, indexed by feature names (the table's
+            ``index``). A named ``Series`` is treated as one column.
         fill_value : Optional[Union[str, float]], default None
-            Value to use for missing data.
+            Value used for features absent from ``feature_metadata``. ``None``
+            leaves them as missing (NaN).
         force : bool, default False
             If True, allow overwriting existing columns.
 
@@ -2157,15 +2190,27 @@ class PivotTable(pd.DataFrame):
         >>> table_with_anno = table.add_feature_metadata(gene_anno)
         """
         pivot_table = self.copy()
+        feature_metadata = _coerce_metadata_frame(feature_metadata, "feature_metadata")
 
         # Check for features not in the PivotTable
         missing_features = set(feature_metadata.index) - set(self.index)
-        if missing_features:
-            print(
-                f"Warning: {len(missing_features)} features not found in PivotTable and will be ignored:"
+        if len(missing_features) == len(feature_metadata.index) and len(
+            missing_features
+        ):
+            raise ValueError(
+                f"None of the {len(feature_metadata.index)} feature_metadata index "
+                f"values match this table's features (index). "
+                f"Metadata index examples: {list(feature_metadata.index[:3])}; "
+                f"table features examples: {list(self.index[:3])}. "
+                "Re-index the metadata by the table's feature IDs first."
             )
-            print(
-                f"  {list(missing_features)[:5]}{'...' if len(missing_features) > 5 else ''}"
+        if missing_features:
+            warnings.warn(
+                f"{len(missing_features)} features in feature_metadata are not in the "
+                f"table and will be ignored: {sorted(map(str, missing_features))[:5]}"
+                f"{'...' if len(missing_features) > 5 else ''}",
+                UserWarning,
+                stacklevel=2,
             )
             feature_metadata = feature_metadata.loc[
                 feature_metadata.index.isin(self.index)
@@ -2198,7 +2243,11 @@ class PivotTable(pd.DataFrame):
         # Combine metadata
         pivot_table.feature_metadata = pivot_table.feature_metadata.combine_first(
             feature_metadata
-        ).fillna(fill_value)
+        )
+        if fill_value is not None:
+            pivot_table.feature_metadata = pivot_table.feature_metadata.fillna(
+                fill_value
+            )
 
         return pivot_table
 
