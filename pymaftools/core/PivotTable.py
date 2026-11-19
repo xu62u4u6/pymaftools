@@ -2090,24 +2090,11 @@ class PivotTable(pd.DataFrame):
         pivot_table = self.copy()
         sample_metadata = _coerce_metadata_frame(sample_metadata, "sample_metadata")
 
-        # Check for samples not in the PivotTable
-        missing_samples = set(sample_metadata.index) - set(self.columns)
-        if len(missing_samples) == len(sample_metadata.index) and len(missing_samples):
-            raise ValueError(
-                f"None of the {len(sample_metadata.index)} sample_metadata index "
-                f"values match this table's samples (columns). "
-                f"Metadata index examples: {list(sample_metadata.index[:3])}; "
-                f"table samples examples: {list(self.columns[:3])}. "
-                "Re-index the metadata by the table's sample IDs first."
-            )
-        if missing_samples:
-            warnings.warn(
-                f"{len(missing_samples)} samples in sample_metadata are not in the "
-                f"table and will be ignored: {sorted(map(str, missing_samples))[:5]}"
-                f"{'...' if len(missing_samples) > 5 else ''}",
-                UserWarning,
-                stacklevel=2,
-            )
+        # ID mismatches between a MAF and clinical tables are usually a
+        # barcode-level mismatch (aliquot vs sample vs patient); make them loud.
+        _check_sample_id_overlap(self.columns, sample_metadata.index)
+        missing_samples = sample_metadata.index.difference(self.columns)
+        if not missing_samples.empty:
             sample_metadata = sample_metadata.loc[
                 sample_metadata.index.isin(self.columns)
             ]
@@ -2274,3 +2261,29 @@ def capture_size(bed_path: str) -> float:
     bed.columns = ["chrom", "start", "end"]
     capture_length = bed.end - bed.start
     return capture_length.sum() / 1e6  # in MB
+
+
+def _check_sample_id_overlap(table_samples: Any, metadata_samples: Any) -> None:
+    """Raise when no IDs match; warn (with examples) when only some do."""
+    table_ids = pd.Index(table_samples)
+    metadata_ids = pd.Index(metadata_samples)
+    matched = table_ids.intersection(metadata_ids)
+    if len(table_ids) and len(metadata_ids) and matched.empty:
+        raise ValueError(
+            f"None of the {len(metadata_ids)} sample IDs in the metadata match the table "
+            f"(table e.g. {table_ids[:3].tolist()}, metadata e.g. "
+            f"{metadata_ids[:3].tolist()}). Check that both use the same "
+            "barcode level, e.g. TCGA aliquot vs sample vs patient, and "
+            "re-index the metadata by the table's sample IDs."
+        )
+    only_metadata = metadata_ids.difference(table_ids)
+    only_table = table_ids.difference(metadata_ids)
+    if not only_metadata.empty or not only_table.empty:
+        warnings.warn(
+            f"Sample ID mismatch: {len(matched)} matched, "
+            f"{len(only_metadata)} only in metadata (ignored, e.g. "
+            f"{only_metadata[:3].tolist()}), {len(only_table)} only in the "
+            f"table (left missing, e.g. {only_table[:3].tolist()}).",
+            UserWarning,
+            stacklevel=3,
+        )

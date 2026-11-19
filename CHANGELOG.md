@@ -94,6 +94,40 @@ what went wrong and how to fix it. Statistical results are unchanged.
   when most pairs are significant co-occurrences (typical mutation-burden
   confounding).
 
+### ⚠️ Dependency floors (breaking)
+
+* **NumPy 2 is now required** (`numpy>=2.0`). The bundled example HDF5 table
+  stores NumPy-2 pickles, and the compatible stack raises the other floors:
+  pandas ≥ 2.2.2, matplotlib ≥ 3.8.4, SciPy ≥ 1.13, scikit-learn ≥ 1.4.2,
+  statsmodels ≥ 0.14.2, PyTables ≥ 3.10, typing-extensions ≥ 4.7. CI tests
+  these floors directly.
+
+### 📥 MAF input compatibility
+
+* **Producer-aware `read_maf()`:** GDC, cBioPortal, vcf2maf, Funcotator/Oncotator
+  and maftools-style files load; case variants of standard columns are renamed
+  (`End_position`), a missing `Tumor_Seq_Allele1` is copied from
+  `Reference_Allele`, and identifier columns stay text (sample `"001"`, one
+  `Chromosome` dtype). Coordinates are nullable `Int64`.
+* **`MAF.ingest_report`:** records the producer guess, comment lines skipped,
+  columns renamed or filled, duplicates dropped and every problem found.
+* **Loud input problems (breaking):** blank `Hugo_Symbol`, duplicate events,
+  mixed genome builds or `chr1`/`1` naming and the legacy allele layout raise
+  `MAFValidationError` by default; `validate="warn"`/`"off"` and
+  `deduplicate=True` opt out. `merge_mafs()` rejects mixed builds unless
+  `allow_mixed_builds=True`.
+* **Denominators:** `to_gene_table(samples=...)` takes the full sample list;
+  samples whose events have no gene are kept as all-False columns with a
+  warning. `add_sample_metadata()` raises when no IDs match and warns on
+  partial matches.
+* **Lollipop:** parses cBioPortal bare positions, VEP `?-12/393` ranges and
+  `HGVSp_Short`/`Protein_Change`; a missing protein length is taken from the
+  domain table with a warning.
+* GDC batch readers no longer truncate fields containing `#`.
+* Added a five-minute quickstart (`docs/quickstart.rst`,
+  `examples/quickstart.py`), producer-style regression fixtures, and a CI
+  matrix that installs the declared minimum and the latest dependency versions.
+
 ### 🤖 Reusable AI assets
 
 * Added package-distributed researcher, user-tester, biostatistics-reviewer,

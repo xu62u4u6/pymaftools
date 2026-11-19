@@ -5,6 +5,7 @@ from __future__ import annotations
 import pandas as pd
 
 from ...core.MAF import MAF
+from ...core.maf_io import read_leading_comments
 from .base import TCGATableBuilder
 
 
@@ -35,7 +36,12 @@ class TCGAMutationBuilder(TCGATableBuilder):
         for f in files:
             if tumor_only and f.get("sample_type") != "Primary Tumor":
                 continue
-            df = pd.read_csv(f["filepath"], sep="\t", comment="#", low_memory=False)
+            df = pd.read_csv(
+                f["filepath"],
+                sep="\t",
+                skiprows=len(read_leading_comments(f["filepath"])),
+                low_memory=False,
+            )
             df["sample_ID"] = self.sample_identifier(f)
             df["sample_type"] = f["sample_type"]
             frames.append(df)

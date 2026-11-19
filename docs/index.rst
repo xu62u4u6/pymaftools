@@ -8,6 +8,7 @@ Python package for handling and analyzing Mutation Annotation Format (MAF) files
    :caption: User Guide
 
    getting_started
+   quickstart
    pivottable
    oncoplot
    ai_assistants

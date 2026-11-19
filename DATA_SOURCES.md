@@ -14,6 +14,14 @@ source archive.
 | `example_single_sample.maf` | Derived single-aliquot subset of the same GDC mutation source. | `850ff09e13ab05fbb9afcc76aa22866e69b636d88e4e150fd36a85f6b59c0165` |
 | `example_tcga_lung_mutation_grouped.h5` | Derived TCGA lung mutation table used by documentation and plot tests. Built from GDC mutation data and package metadata operations. | `3518d7c63b2306238ca325234975bc34648a703f87453499e62803ac00ae7fa5` |
 
+## Test Fixtures (source archive only)
+
+`tests/data/maf_sources/` holds small slices of public cBioPortal datahub
+(TCGA open-access) and Bioconductor maftools example MAFs, plus files derived
+from them in the GDC and Funcotator layouts. They are not installed with the
+wheel. Provenance and rebuild steps: `tests/data/maf_sources/README.md` and
+`scripts/build_maf_source_fixtures.py`.
+
 ## Upstream References
 
 - NCI Genomic Data Commons: <https://portal.gdc.cancer.gov/>
@@ -21,6 +29,7 @@ source archive.
 - Ensembl BioMart: <https://www.ensembl.org/biomart/martview>
 - UCSC hg38 database downloads: <https://hgdownload.soe.ucsc.edu/goldenPath/hg38/database/>
 - Bioconductor maftools: <https://bioconductor.org/packages/maftools>
+- cBioPortal datahub: <https://github.com/cBioPortal/datahub>
 
 ## Runtime Caches
 
