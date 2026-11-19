@@ -144,6 +144,42 @@ class IngestReport:
     """Problems that change results if ignored (raised under ``strict``)."""
     notes: list[str] = field(default_factory=list)
     """Changes made and observations that do not block reading."""
+    bytes: int | None = None
+    """Input file size in bytes (``None`` if not read from a file)."""
+    sha256: str | None = None
+    """SHA-256 of the input file, for provenance."""
+    pymaftools_version: str | None = None
+    """Package version that read the file."""
+
+    def record_fingerprint(self) -> None:
+        """Fill :attr:`bytes`, :attr:`sha256` and :attr:`pymaftools_version`."""
+        from ..provenance import _package_version, file_fingerprint
+
+        fingerprint = file_fingerprint(self.path)
+        self.bytes = fingerprint["bytes"]
+        self.sha256 = fingerprint["sha256"]
+        self.pymaftools_version = _package_version("pymaftools")
+
+    @property
+    def ok(self) -> bool:
+        """``True`` when no result-changing issue was found."""
+        return not self.issues
+
+    def to_dict(self) -> dict:
+        """Return a JSON-serialisable dict of every field (plus ``ok``)."""
+        from dataclasses import asdict
+
+        from ..provenance import to_jsonable
+
+        record = to_jsonable(asdict(self))
+        record["ok"] = self.ok
+        return record
+
+    def to_json(self, path=None, *, indent: int | None = 2) -> str:
+        """Serialise with :func:`pymaftools.to_json`; write to ``path`` if given."""
+        from ..provenance import to_json
+
+        return to_json(self.to_dict(), path, indent=indent)
 
     def __str__(self) -> str:
         sep_name = "tab" if self.delimiter == "\t" else "comma"

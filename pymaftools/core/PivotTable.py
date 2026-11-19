@@ -49,6 +49,15 @@ def _coerce_metadata_frame(metadata: Any, arg_name: str) -> pd.DataFrame:
     return metadata
 
 
+def _carry_inputs_attr(source, target) -> None:
+    """Copy the source-file fingerprint (``attrs["pymaftools_inputs"]``, see
+    :mod:`pymaftools.provenance`) from ``source`` to a derived ``target`` table.
+    Metadata only; values are never touched."""
+    source_attrs = getattr(source, "attrs", None)
+    if source_attrs and "pymaftools_inputs" in source_attrs:
+        target.attrs.setdefault("pymaftools_inputs", source_attrs["pymaftools_inputs"])
+
+
 class PivotTable(pd.DataFrame):
     """
     Enhanced pandas DataFrame for bioinformatics analysis.
@@ -106,6 +115,7 @@ class PivotTable(pd.DataFrame):
             Additional arguments passed to pandas DataFrame constructor.
         """
         super().__init__(data, *args, **kwargs)
+        _carry_inputs_attr(data, self)
 
         # Check if data is a PivotTable with existing metadata
         if hasattr(data, "feature_metadata") and hasattr(data, "sample_metadata"):
@@ -186,6 +196,7 @@ class PivotTable(pd.DataFrame):
 
     def _copy_metadata(self, source):
         """Safely copy metadata attributes from another object."""
+        _carry_inputs_attr(source, self)
         for attr in self._metadata:
             if hasattr(source, attr):
                 source_val = getattr(source, attr)
@@ -752,13 +763,15 @@ class PivotTable(pd.DataFrame):
                 result = result.to_frame().T
 
         # Always wrap as PivotTable with metadata
-        return self._from_dataframe(
+        new = self._from_dataframe(
             result,
             self.feature_metadata,
             self.sample_metadata,
             observation_mask=self.observation_mask,
             sample_manifest=self.sample_manifest,
         )
+        _carry_inputs_attr(self, new)
+        return new
 
     def subset(
         self,

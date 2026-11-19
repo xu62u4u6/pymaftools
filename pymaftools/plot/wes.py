@@ -9,6 +9,8 @@ import pandas as pd
 from scipy.stats import fisher_exact
 from statsmodels.stats.multitest import multipletests
 
+from ..provenance import attach_provenance, provenance_for_table
+
 
 BASE_CHANGE_ORDER = [
     "C>A",
@@ -330,8 +332,11 @@ def somatic_interactions(table, top: int = 25, alpha: float = 0.05) -> pd.DataFr
             }
         )
     result = pd.DataFrame(rows)
+    provenance = provenance_for_table(
+        "somatic_interactions", table, {"top": top, "alpha": alpha}
+    )
     if result.empty:
-        return result
+        return attach_provenance(result, provenance)
     tested_pairs = result["tested"].to_numpy(dtype=bool)
     result["adjusted_p_value"] = np.nan
     if tested_pairs.any():
@@ -347,7 +352,8 @@ def somatic_interactions(table, top: int = 25, alpha: float = 0.05) -> pd.DataFr
     )
     result["is_significant"] = tested_pairs & (result["adjusted_p_value"] < alpha)
     _warn_interaction_pitfalls(result, n_samples=binary.shape[1])
-    return result.sort_values("adjusted_p_value", na_position="last")
+    result = result.sort_values("adjusted_p_value", na_position="last")
+    return attach_provenance(result, provenance)
 
 
 def _warn_interaction_pitfalls(result: pd.DataFrame, n_samples: int) -> None:

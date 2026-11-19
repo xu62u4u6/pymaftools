@@ -95,6 +95,40 @@ this is an intentional semantic difference from the matrix-cell correction in
 `maftools::somaticInteractions`, so adjusted p-values are not expected to be
 numerically identical between the two tools.
 
+## Machine-readable results and CLI
+
+Serialise results instead of printing them; the JSON keeps provenance
+(analysis, parameters, input SHA-256, sample universe, package version):
+
+```python
+import pymaftools as pm
+
+stats = table.plot.somatic_interactions_stats(top=25)
+pm.to_json(stats, "interactions.json")
+pm.get_provenance(stats)  # also on mutation_enrichment_test() results
+maf.ingest_report.to_json("ingest.json")
+audit.to_json("tmb.json")  # TMBAudit; include_events=True for the ledger
+pm.session_info()  # versions for the methods section
+```
+
+`NaN` is written as `null` and `±inf` as `"inf"`/`"-inf"`.
+
+Check a figure without looking at it: `plot.save("x.png", summary=True)` writes
+`x.json` (or call `plot.summary()`); read its `warnings`, `n_empty_axes`, and for
+oncoplots `fill_fraction`, `n_features`, `n_samples`, `top_features`,
+`sample_labels_auto_hidden` and `cell_size_px`. `pm.figure_summary(fig)` works on
+any matplotlib figure.
+
+Shell / MCP-friendly commands (stdout is one JSON document with `--json`;
+exit code 2 means `--validate strict` rejected the input):
+
+```bash
+pymaftools inspect cohort.maf --json
+pymaftools oncoplot cohort.maf -o oncoplot.png --top 20   # + oncoplot.json
+pymaftools interactions cohort.maf --top 25 --json -o stats.csv
+pymaftools session-info --json
+```
+
 ## Matrix metadata
 
 `PivotTable` and its specialized subclasses contain:

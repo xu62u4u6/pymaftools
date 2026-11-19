@@ -236,4 +236,36 @@ def mutation_enrichment_test(
     df["tested_family_size"] = int(valid.sum())
     df["adjustment_method"] = "fdr_bh"
 
-    return df
+    from ..provenance import (
+        Provenance,
+        attach_provenance,
+        sample_universe,
+        table_inputs,
+    )
+
+    compared_samples = group1_samples.append(group2_samples)
+    provenance = Provenance(
+        analysis="mutation_enrichment_test",
+        parameters={
+            "group_col": group_col,
+            "group1": group1,
+            "group2": group2,
+            "group1_sample_count": int(len(group1_samples)),
+            "group2_sample_count": int(len(group2_samples)),
+            "alpha": alpha,
+            "minimum_mutations": minimum_mutations,
+            "method": method,
+            "analysis_unit": analysis_unit,
+            "confidence_level": confidence_level,
+        },
+        inputs=table_inputs(table),
+        sample_universe=sample_universe(
+            compared_samples,
+            source=(
+                "sample_manifest"
+                if table.sample_manifest is not None
+                else "table_columns"
+            ),
+        ),
+    )
+    return attach_provenance(df, provenance)

@@ -1,6 +1,12 @@
 Plot Modules
 ============
 
+Figure summaries
+----------------
+
+.. automodule:: pymaftools.plot.summary
+   :members:
+
 OncoPlot
 --------
 

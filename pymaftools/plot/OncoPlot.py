@@ -749,6 +749,7 @@ class OncoPlot(BasePlot):
 
         # Sample (column) tick labels are unreadable for large cohorts; auto-hide
         # them past _SAMPLE_LABEL_LIMIT unless the caller forces show_sample_labels.
+        sample_labels_auto = show_sample_labels is None
         if show_sample_labels is None:
             show_sample_labels = self.pivot_table.shape[1] <= self._SAMPLE_LABEL_LIMIT
 
@@ -763,6 +764,13 @@ class OncoPlot(BasePlot):
         )
         show_feature_labels = bool(getattr(main_track, "yticklabels", False))
         main_track.yticklabels = False
+        self._render_info = {
+            "show_sample_labels": bool(show_sample_labels),
+            "sample_labels_auto_hidden": bool(
+                sample_labels_auto and not show_sample_labels
+            ),
+            "show_feature_labels": show_feature_labels,
+        }
         self._sample_gutter_axes = []  # collected by the layout, restyled by add_xticklabel
 
         # Size the feature gutter to roughly the longest gene name so names hug
@@ -831,6 +839,83 @@ class OncoPlot(BasePlot):
                 )
             self.plot_all_legends(colorbar_width=colorbar_width)
         return self
+
+    _SUMMARY_TOP_FEATURES = 20
+
+    def _plot_summary(self, dpi: float) -> dict:
+        """OncoPlot facts for :meth:`BasePlot.summary`: matrix shape, fill,
+        top features, hidden labels, tracks and estimated cell size."""
+        table = self.pivot_table
+        n_features, n_samples = table.shape
+        main_track = next((t for t in self.tracks if t.side == "main"), None)
+        numeric_main = isinstance(main_track, NumericMatrixTrack)
+        values = pd.DataFrame(table)
+        if numeric_main:
+            numeric = values.apply(pd.to_numeric, errors="coerce")
+            drawn = numeric.notna() & numeric.ne(0)
+        else:
+            drawn = pd.DataFrame(table.to_binary_table()).astype(bool)
+        n_cells = int(drawn.size)
+        n_drawn = int(drawn.to_numpy().sum())
+        feature_fraction = (
+            drawn.mean(axis=1) if n_samples else pd.Series(0.0, index=drawn.index)
+        )
+        top = feature_fraction.sort_values(ascending=False, kind="stable").head(
+            self._SUMMARY_TOP_FEATURES
+        )
+        record: dict = {
+            "matrix_kind": "numeric" if numeric_main else "mutation",
+            "n_features": int(n_features),
+            "n_samples": int(n_samples),
+            "n_nonempty_cells": n_drawn,
+            "fill_fraction": (n_drawn / n_cells) if n_cells else 0.0,
+            "features": [str(f) for f in table.index[: self._SUMMARY_TOP_FEATURES]],
+            "top_features": [
+                {"feature": str(name), "fraction_samples_nonempty": float(value)}
+                for name, value in top.items()
+            ],
+            "tracks": [{"side": t.side, "type": type(t).__name__} for t in self.tracks],
+            "feature_groups": list(self._feature_groups)
+            if self._feature_groups
+            else None,
+            "sample_groups": list(self._sample_groups) if self._sample_groups else None,
+        }
+        record.update(getattr(self, "_render_info", {}))
+        warnings_list = []
+        if n_features == 0 or n_samples == 0:
+            warnings_list.append(
+                f"main matrix is {n_features} x {n_samples}: nothing to show"
+            )
+        elif n_drawn == 0:
+            warnings_list.append(
+                "main matrix has no non-empty cell: the heatmap is blank "
+                "(check filtering / variant classes)"
+            )
+        if record.get("sample_labels_auto_hidden"):
+            warnings_list.append(
+                f"sample labels auto-hidden ({n_samples} samples > "
+                f"{self._SAMPLE_LABEL_LIMIT}); pass render(show_sample_labels=True) "
+                "to force them"
+            )
+        ax = getattr(self, "ax_heatmap", None)
+        sectioned = bool(self._feature_groups or self._sample_groups)
+        # Sectioned layouts split the matrix over several axes, so the first
+        # axes alone cannot give a per-cell size; only estimate the simple case.
+        if ax is not None and n_samples and n_features and not sectioned:
+            bbox = ax.get_window_extent().transformed(
+                self.fig.dpi_scale_trans.inverted()
+            )
+            cell_w = bbox.width * dpi / n_samples
+            cell_h = bbox.height * dpi / n_features
+            record["cell_size_px"] = [round(cell_w, 2), round(cell_h, 2)]
+            if cell_w < 1:
+                warnings_list.append(
+                    f"each sample column is ~{cell_w:.2f} px wide at {dpi:g} dpi; "
+                    "cells may not be individually visible (raise figsize/dpi "
+                    "or plot fewer samples)"
+                )
+        record["warnings"] = warnings_list
+        return record
 
     @staticmethod
     def _resolve_labels(override, default, kind: str) -> list:
