@@ -611,6 +611,11 @@ class MAF(pd.DataFrame):
         the direct path is essential for cohort-scale MAFs. Multiple events in
         one gene and sample are represented as ``"Multi_Hit"``.
 
+        Every variant classification present is kept. If the MAF still holds
+        non-coding or synonymous events (``Silent``, ``Intron``, UTR, ...) a
+        ``UserWarning`` is emitted, because oncoplots and recurrence statistics
+        usually expect ``maf.filter_maf(MAF.nonsynonymous_types)`` first.
+
         **Denominators.** An event table cannot list samples that were
         sequenced but have no called events, so mutation frequencies computed
         from it are only correct when the full sample universe is supplied,
@@ -652,6 +657,22 @@ class MAF(pd.DataFrame):
                     f"from samples: {unknown[:5].tolist()}"
                     f"{' ...' if len(unknown) > 5 else ''}. Check that the IDs "
                     "use the same barcode level (aliquot / sample / patient)."
+                )
+
+        if "Variant_Classification" in self.columns:
+            other_classes = sorted(
+                set(self["Variant_Classification"].dropna().astype(str))
+                - set(self.nonsynonymous_types)
+            )
+            if other_classes:
+                warnings.warn(
+                    "to_gene_table() is keeping non-nonsynonymous events "
+                    f"{other_classes[:6]}{'...' if len(other_classes) > 6 else ''}. "
+                    "For a typical driver-focused oncoplot or frequency analysis, "
+                    "call maf.filter_maf(MAF.nonsynonymous_types) first; ignore "
+                    "this warning if keeping them is intended.",
+                    UserWarning,
+                    stacklevel=2,
                 )
 
         if sample_manifest is not None:

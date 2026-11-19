@@ -122,6 +122,13 @@ class MafPlot:
                 protein_domains_path,
             )
         if AA_length is None:
+            genes = self.maf["Hugo_Symbol"] if "Hugo_Symbol" in self.maf else None
+            if genes is not None and not genes.eq(gene).any():
+                top = genes.value_counts().index[:10].tolist()
+                raise ValueError(
+                    f"Gene {gene!r} has no mutations in this MAF. Most mutated "
+                    f"genes here: {top}."
+                )
             raise ValueError(
                 f"No protein-position data for {gene!r} in this MAF "
                 "(needs Protein_position, HGVSp_Short or Protein_Change, and "

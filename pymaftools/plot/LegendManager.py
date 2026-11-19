@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import warnings
+
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 from matplotlib import colormaps
@@ -181,6 +183,20 @@ class LegendManager:
         target_ax.set_xlim(0, 1)
         target_ax.set_ylim(0, 1)
 
+        # Spacing arguments are axes fractions, but glyphs are sized in points:
+        # on a short legend axis a fixed fraction shrinks below the text height
+        # and the title collides with the first item (issue #17). Floor each
+        # vertical step at the physical size its text needs; tall axes keep the
+        # caller's fractions unchanged.
+        title_offset_y, item_offset_y = self._physical_spacing_floor(
+            target_ax,
+            fontsize=fontsize,
+            title_fontsize=title_fontsize,
+            rect_height=rect_height,
+            title_offset_y=title_offset_y,
+            item_offset_y=item_offset_y,
+        )
+
         # Plot legends from top to bottom
         y_position = start_y
 
@@ -252,7 +268,48 @@ class LegendManager:
             # leave room for the colorbar and its tick labels below
             y_position -= colorbar_height + item_offset_y + legend_gap
 
+        if y_position < 0:
+            warnings.warn(
+                "Legend content does not fit in the legend axis and is clipped "
+                "at the bottom; enlarge the figure height or reduce the number "
+                "of legend entries / font sizes.",
+                UserWarning,
+                stacklevel=2,
+            )
         return self
+
+    @staticmethod
+    def _physical_spacing_floor(
+        ax: Axes.Axes,
+        *,
+        fontsize: float,
+        title_fontsize: float,
+        rect_height: float,
+        title_offset_y: float,
+        item_offset_y: float,
+    ) -> tuple[float, float]:
+        """Raise vertical steps (axes fractions) to the minimum their text needs.
+
+        ``title_offset_y`` separates a top-aligned title from the first item's
+        centre line, so it must clear the title glyph height plus half of the
+        item (text or swatch, whichever is taller). ``item_offset_y`` separates
+        two centre-aligned items. Sizes in points are converted to the axis'
+        current physical height; returns the inputs unchanged when the axis is
+        tall enough (or its height is unknown).
+        """
+        axis_height_pt = ax.get_position().height * ax.figure.get_figheight() * 72
+        if axis_height_pt <= 0:
+            return title_offset_y, item_offset_y
+        pad_pt = 2.0
+        line_factor = 1.25  # glyph box incl. ascender/descender, per point
+        swatch_height_pt = rect_height * axis_height_pt
+        item_height_pt = max(fontsize * line_factor, swatch_height_pt)
+        min_title_step_pt = title_fontsize * line_factor + item_height_pt / 2 + pad_pt
+        min_item_step_pt = item_height_pt + pad_pt
+        return (
+            max(title_offset_y, min_title_step_pt / axis_height_pt),
+            max(item_offset_y, min_item_step_pt / axis_height_pt),
+        )
 
     def plot_horizontal_legend(
         self,

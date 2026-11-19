@@ -40,6 +40,32 @@ def _normalize_colorbar(value: str | bool) -> str:
     return value
 
 
+def _fit_linewidths(ax: Axes, linewidths: float, shape: tuple[int, int]) -> float:
+    """Shrink cell gridlines so they cannot hide the cells they separate.
+
+    ``linewidths`` is in points and is drawn on every cell edge. With many
+    samples a cell can be narrower than the gridline itself; a fixed 1 pt white
+    line then paints over every cell and the matrix renders **blank** without any
+    error (958-sample bundled cohort). The width is capped at 20% of the smaller
+    cell side and dropped to 0 once cells are under 2 pt, so small cohorts keep
+    their exact look and large cohorts stay visible.
+    """
+    if not linewidths:
+        return linewidths
+    nrows, ncols = max(int(shape[0]), 1), max(int(shape[1]), 1)
+    fig = ax.get_figure()
+    if fig is None:
+        return linewidths
+    bbox = ax.get_position()
+    fig_w_in, fig_h_in = fig.get_size_inches()
+    cell_pt = min(
+        bbox.width * fig_w_in * 72 / ncols, bbox.height * fig_h_in * 72 / nrows
+    )
+    if cell_pt < 2:
+        return 0.0
+    return min(float(linewidths), 0.2 * cell_pt)
+
+
 def draw_categorical_heatmap(
     table,
     category_cmap,
@@ -67,6 +93,9 @@ def draw_categorical_heatmap(
     if has_unknown:
         color_list.append(unknown_color)
     cmap = ListedColormap(color_list)
+
+    if "linewidths" in kwargs:
+        kwargs["linewidths"] = _fit_linewidths(ax, kwargs["linewidths"], table.shape)
 
     # plot heatmap
     sns.heatmap(
@@ -280,7 +309,7 @@ class NumericMatrixTrack(Track):
             yticklabels=self.yticklabels,
             annot=self.annot,
             fmt=self.fmt,
-            linewidths=self.linewidths,
+            linewidths=_fit_linewidths(ax, self.linewidths, table.shape),
         )
         ax.set_xticks([])
         ax.set_xlabel("")
@@ -531,7 +560,7 @@ class FreqTrack(Track):
         sns.heatmap(
             self.freq_data,
             cbar=False,
-            linewidths=self.linewidths,
+            linewidths=_fit_linewidths(ax, self.linewidths, self.freq_data.shape),
             linecolor=self.line_color,
             ax=ax,
             xticklabels=self.freq_data.columns,
@@ -741,7 +770,7 @@ class NumericTrack(Track):
             self.data,
             cmap=self.cmap,
             cbar=False,
-            linewidths=self.linewidths,
+            linewidths=_fit_linewidths(ax, self.linewidths, self.data.shape),
             linecolor=self.line_color,
             ax=ax,
             xticklabels=False,
