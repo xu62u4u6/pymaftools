@@ -254,31 +254,67 @@ def plot_vaf(
     return fig
 
 
+def _interaction_observation_frame(binary) -> pd.DataFrame:
+    """Return the validated observed-cell frame for an interaction analysis.
+
+    Without an attached :class:`ObservationMask` every cell is observed. With
+    one, the mask must align exactly with the table and must not mark a present
+    event as unobserved (the same contract as observed-denominator frequency).
+    """
+    observation_mask = getattr(binary, "observation_mask", None)
+    if observation_mask is None:
+        return pd.DataFrame(True, index=binary.index, columns=binary.columns)
+    # Validates alignment and rejects present events marked unobserved.
+    observation_mask.calculate_feature_frequency(binary)
+    return observation_mask.to_frame().astype(bool)
+
+
 def somatic_interactions(table, top: int = 25, alpha: float = 0.05) -> pd.DataFrame:
     """Pairwise Fisher tests for co-occurrence / mutual exclusivity.
 
     The interaction hypothesis is undirected, so each selected gene pair is
     tested once. The Benjamini-Hochberg correction is applied to the unique
-    unordered-pair family (``n * (n - 1) / 2`` tests); self-pairs and mirrored
-    matrix entries are not included. This is intentional and differs from
-    the matrix-cell correction used by ``maftools::somaticInteractions``.
+    unordered-pair family of *testable* pairs; self-pairs and mirrored matrix
+    entries are not included. This is intentional and differs from the
+    matrix-cell correction used by ``maftools::somaticInteractions``.
+
+    When the table carries an :class:`~pymaftools.core.ObservationMask`, each
+    pair's 2 x 2 table is built only from samples observed for *both* genes
+    (reported as ``jointly_observed``); an unobserved cell is never counted as
+    mutation absence. A pair with no jointly observed sample is reported with
+    ``tested=False`` and missing statistics, and is excluded from the BH family.
+    ``tested_family_size`` records the number of pairs in that family.
     """
     binary = table.to_binary_table().astype(bool)
-    genes = binary.astype(int).sum(axis=1).sort_values(ascending=False).head(top).index
-    binary = binary.loc[genes]
+    observed = _interaction_observation_frame(binary)
+    present = pd.DataFrame(binary).astype(bool) & observed
+    genes = present.sum(axis=1).sort_values(ascending=False).head(top).index
+    present = present.loc[genes]
+    observed = observed.loc[genes]
     rows = []
     # ``combinations`` enumerates each biological (unordered) pair exactly once.
-    for gene1, gene2 in combinations(binary.index, 2):
-        both_mutated = int((binary.loc[gene1] & binary.loc[gene2]).sum())
-        gene2_only = int((~binary.loc[gene1] & binary.loc[gene2]).sum())
-        gene1_only = int((binary.loc[gene1] & ~binary.loc[gene2]).sum())
-        neither_mutated = int((~binary.loc[gene1] & ~binary.loc[gene2]).sum())
-        odds_ratio, p_value = fisher_exact(
-            [
-                [both_mutated, gene2_only],
-                [gene1_only, neither_mutated],
-            ]
-        )
+    for gene1, gene2 in combinations(genes, 2):
+        jointly_observed = observed.loc[gene1] & observed.loc[gene2]
+        gene1_mutated = present.loc[gene1] & jointly_observed
+        gene2_mutated = present.loc[gene2] & jointly_observed
+        gene1_absent = ~present.loc[gene1] & jointly_observed
+        gene2_absent = ~present.loc[gene2] & jointly_observed
+        both_mutated = int((gene1_mutated & gene2_mutated).sum())
+        gene2_only = int((gene1_absent & gene2_mutated).sum())
+        gene1_only = int((gene1_mutated & gene2_absent).sum())
+        neither_mutated = int((gene1_absent & gene2_absent).sum())
+        jointly_observed_count = int(jointly_observed.sum())
+        tested = jointly_observed_count > 0
+        if tested:
+            odds_ratio, p_value = fisher_exact(
+                [
+                    [both_mutated, gene2_only],
+                    [gene1_only, neither_mutated],
+                ]
+            )
+        else:
+            # No sample informs this pair; do not fabricate evidence.
+            odds_ratio, p_value = np.nan, np.nan
         rows.append(
             {
                 "gene1": gene1,
@@ -289,21 +325,29 @@ def somatic_interactions(table, top: int = 25, alpha: float = 0.05) -> pd.DataFr
                 "gene2_only": gene2_only,
                 "gene1_only": gene1_only,
                 "neither_mutated": neither_mutated,
+                "jointly_observed": jointly_observed_count,
+                "tested": tested,
             }
         )
     result = pd.DataFrame(rows)
     if result.empty:
         return result
-    # Correct only the distinct interaction hypotheses represented in ``result``.
-    result["adjusted_p_value"] = multipletests(result["p_value"], method="fdr_bh")[1]
-    result["interaction"] = np.where(
-        result["odds_ratio"] >= 1,
-        "Co-occurrence",
-        "Mutual exclusivity",
+    tested_pairs = result["tested"].to_numpy(dtype=bool)
+    result["adjusted_p_value"] = np.nan
+    if tested_pairs.any():
+        # Correct only the distinct, testable interaction hypotheses.
+        result.loc[tested_pairs, "adjusted_p_value"] = multipletests(
+            result.loc[tested_pairs, "p_value"], method="fdr_bh"
+        )[1]
+    result["tested_family_size"] = int(tested_pairs.sum())
+    result["interaction"] = np.select(
+        [~tested_pairs, result["odds_ratio"] >= 1],
+        ["Not tested", "Co-occurrence"],
+        default="Mutual exclusivity",
     )
-    result["is_significant"] = result["adjusted_p_value"] < alpha
+    result["is_significant"] = tested_pairs & (result["adjusted_p_value"] < alpha)
     _warn_interaction_pitfalls(result, n_samples=binary.shape[1])
-    return result.sort_values("adjusted_p_value")
+    return result.sort_values("adjusted_p_value", na_position="last")
 
 
 def _warn_interaction_pitfalls(result: pd.DataFrame, n_samples: int) -> None:
@@ -322,9 +366,11 @@ def _warn_interaction_pitfalls(result: pd.DataFrame, n_samples: int) -> None:
             UserWarning,
             stacklevel=3,
         )
-    n_pairs = len(result)
+    # Untested pairs (no jointly observed sample) are outside the tested family.
+    tested = result[result["tested"]] if "tested" in result else result
+    n_pairs = len(tested)
     if n_pairs >= 10:
-        cooccur = result["is_significant"] & result["interaction"].eq("Co-occurrence")
+        cooccur = tested["is_significant"] & tested["interaction"].eq("Co-occurrence")
         share = float(cooccur.mean())
         if share > 0.5:
             warnings.warn(
@@ -362,6 +408,8 @@ def plot_somatic_interactions(
     )
     mat = pd.DataFrame(np.nan, index=genes, columns=genes)
     for _, row in stats.iterrows():
+        if not row["tested"]:
+            continue  # no jointly observed samples: leave the cell blank
         if np.isinf(row["odds_ratio"]):
             value = 6.0
         elif row["odds_ratio"] == 0:

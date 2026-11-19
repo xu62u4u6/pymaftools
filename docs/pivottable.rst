@@ -217,6 +217,13 @@ deduplicating the displayed pairs. Raw contingency counts and Fisher
 ``q``-values are not numerically equivalent because the multiple-testing
 families differ.
 
+When the table carries an ``ObservationMask``, each pair's contingency table
+uses only samples observed for **both** genes (``jointly_observed``); an
+unobserved cell is never counted as wild type. A pair with no jointly observed
+sample is reported with ``tested=False``, missing ``odds_ratio`` / ``p_value``,
+and ``interaction="Not tested"``; it is excluded from the BH family, whose size
+is recorded in ``tested_family_size``, and left blank in the heatmap.
+
 Multi-omics integration
 ------------------------
 

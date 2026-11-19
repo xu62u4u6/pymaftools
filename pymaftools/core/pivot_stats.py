@@ -21,7 +21,25 @@ def mutation_enrichment_test(
     analysis_unit: Literal["sample", "patient"] = "sample",
     confidence_level: float = 0.95,
 ) -> pd.DataFrame:
-    """Perform denominator-aware mutation enrichment between two groups."""
+    """Perform denominator-aware mutation enrichment between two groups.
+
+    Each feature receives a ``tested`` flag and a ``not_tested_reason``:
+
+    * ``"below_minimum_mutations"`` -- fewer than ``minimum_mutations`` events
+      across both groups;
+    * ``"no_observed_samples"`` -- a group has no observed sample for the
+      feature;
+    * ``"degenerate_contingency_table"`` -- ``method="chi2"`` only: the 2 x 2
+      table has a zero margin (e.g. the feature is mutated in every observed
+      sample, or in none), so expected frequencies contain a zero and the
+      chi-squared test is undefined. No p-value is fabricated and the method is
+      not silently switched; use ``method="fisher"`` to test such features.
+
+    Untested features carry missing statistics and are excluded from the BH
+    family recorded in ``tested_family_size``. A table with zero features (for
+    example after upstream filtering) returns an empty frame with the same
+    columns; group and parameter validation still applies.
+    """
     if method not in {"chi2", "fisher"}:
         raise ValueError(f"Unsupported method: {method}")
     if not 0 < alpha < 1:
@@ -116,11 +134,27 @@ def mutation_enrichment_test(
     df[f"{group2}_False"] = group2_denominator - group2_true
     df[f"{group1}_denominator"] = group1_denominator
     df[f"{group2}_denominator"] = group2_denominator
-    df["tested"] = (
-        (df[f"{group1}_True"] + df[f"{group2}_True"] >= minimum_mutations)
-        & df[f"{group1}_denominator"].gt(0)
-        & df[f"{group2}_denominator"].gt(0)
-    )
+    total_mutated = df[f"{group1}_True"] + df[f"{group2}_True"]
+    total_absent = df[f"{group1}_False"] + df[f"{group2}_False"]
+    below_minimum = total_mutated < minimum_mutations
+    no_observed = df[f"{group1}_denominator"].eq(0) | df[f"{group2}_denominator"].eq(0)
+    # A zero row margin is covered by ``no_observed``; a zero column margin
+    # (all mutated or all absent) makes chi-squared expected counts zero.
+    degenerate = (total_mutated.eq(0) | total_absent.eq(0)) & (method == "chi2")
+    df["not_tested_reason"] = pd.Series(
+        np.select(
+            [no_observed, below_minimum, degenerate],
+            [
+                "no_observed_samples",
+                "below_minimum_mutations",
+                "degenerate_contingency_table",
+            ],
+            default="",
+        ),
+        index=df.index,
+        dtype=object,
+    ).replace("", None)
+    df["tested"] = df["not_tested_reason"].isna()
 
     z_value = norm.ppf(0.5 + confidence_level / 2)
 
@@ -171,8 +205,21 @@ def mutation_enrichment_test(
             }
         )
 
-    statistics = df.apply(calculate_row, axis=1)
-    df[statistics.columns] = statistics
+    statistic_columns = [
+        "odds_ratio",
+        "log2_odds_ratio",
+        "ci_low",
+        "ci_high",
+        "p_value",
+    ]
+    if df.empty:
+        # No features: no tests to run, but keep the documented schema.
+        statistics = pd.DataFrame(
+            index=df.index, columns=statistic_columns, dtype=float
+        )
+    else:
+        statistics = df.apply(calculate_row, axis=1)
+    df[statistic_columns] = statistics[statistic_columns]
     df["adjusted_p_value"] = np.nan
     df["is_significant"] = False
     valid = df["tested"] & df["p_value"].notna()
