@@ -139,6 +139,14 @@ them. Record decisions there.
   valid options, and give the fixing call. Scientific pitfalls (synonymous
   events kept, underpowered or burden-confounded interaction tests) warn but
   never change computed numbers. Pinned in `tests/test_llm_usability.py`.
+- **Results are machine-readable (LLM usability).** A new result type gets
+  `to_dict()`/`to_json()` (or serialises through `pymaftools.to_json`) and a
+  provenance record (`pymaftools.provenance.Provenance`: parameters, input
+  checksum, sample universe). Statistics keep returning plain DataFrames with
+  provenance in `df.attrs`; never wrap them in a new class or change values to
+  add metadata. New plot classes override `BasePlot._plot_summary()` so
+  `save(summary=True)` can report a blank or unreadable figure. Pinned in
+  `tests/test_structured_output.py`.
 
 ## Dev basics
 

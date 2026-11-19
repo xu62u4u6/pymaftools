@@ -265,6 +265,7 @@ class MAF(pd.DataFrame):
             comment_lines=skiprows,
             renamed_columns=maf_io.resolve_column_aliases(header_columns),
         )
+        report.record_fingerprint()
         maf = cls(
             maf_io.read_typed_table(
                 maf_path, skiprows=skiprows, sep=sep, header_columns=header_columns
@@ -560,7 +561,32 @@ class MAF(pd.DataFrame):
         )
         summary["tmb_genome_build"] = expected_genome_build
         summary["tmb_deduplicated"] = deduplicate
-        return TMBAudit(events=events, summary=summary)
+        from ..provenance import Provenance, sample_universe
+
+        report = self.ingest_report
+        provenance = Provenance(
+            analysis="MAF.calculate_tmb_audit",
+            parameters={
+                "callable_mb_col": callable_mb_col,
+                "pass_col": pass_col,
+                "pass_values": list(pass_values),
+                "somatic_col": somatic_col,
+                "somatic_values": list(somatic_values),
+                "variant_classifications": variant_classifications,
+                "genome_build_col": genome_build_col,
+                "expected_genome_build": expected_genome_build,
+                "deduplicate": deduplicate,
+            },
+            inputs=(
+                [{"path": report.path, "bytes": report.bytes, "sha256": report.sha256}]
+                if report is not None and report.sha256 is not None
+                else []
+            ),
+            sample_universe=sample_universe(
+                sample_manifest.eligible_samples, source="sample_manifest"
+            ),
+        )
+        return TMBAudit(events=events, summary=summary, provenance=provenance)
 
     @staticmethod
     def merge_mutations(column: pd.Series) -> str | bool:
@@ -768,7 +794,19 @@ class MAF(pd.DataFrame):
         if sample_manifest is not None:
             result = result.with_scientific_context(sample_manifest=sample_manifest)
         result._validate_metadata()
+        self._carry_input_fingerprint(result)
         return result
+
+    def _carry_input_fingerprint(self, table) -> None:
+        """Record the source file's checksum on a derived table (``attrs``) so
+        statistics computed from it can report their inputs in provenance."""
+        from ..provenance import INPUTS_ATTR
+
+        report = self.ingest_report
+        if report is not None and report.sha256 is not None:
+            table.attrs[INPUTS_ATTR] = [
+                {"path": report.path, "bytes": report.bytes, "sha256": report.sha256}
+            ]
 
     def to_pivot_table(
         self,

@@ -84,6 +84,10 @@ stats = table.plot.somatic_interactions_stats(top=25)
 figure, stats = table.plot.somatic_interactions(top=25)
 ```
 
+The heatmap colours `sign(log OR) × −log10(FDR)` (evidence, not effect size),
+so pairs with OR 0/∞ from sparse counts stay pale unless significant; read
+`pm.figure_summary(fig)` for `n_significant` and warnings.
+
 Each unordered gene pair is tested once and the BH-FDR correction covers only
 that unique pair family. With an attached `ObservationMask`, each pair's 2x2
 table uses only jointly observed samples (`jointly_observed`); pairs with none
@@ -95,6 +99,44 @@ this is an intentional semantic difference from the matrix-cell correction in
 `maftools::somaticInteractions`, so adjusted p-values are not expected to be
 numerically identical between the two tools.
 
+## Machine-readable results and CLI
+
+Serialise results instead of printing them; the JSON keeps provenance
+(analysis, parameters, input SHA-256, sample universe, package version):
+
+```python
+import pymaftools as pm
+
+stats = table.plot.somatic_interactions_stats(top=25)
+pm.to_json(stats, "interactions.json")
+pm.get_provenance(stats)  # also on mutation_enrichment_test() results
+maf.ingest_report.to_json("ingest.json")
+audit.to_json("tmb.json")  # TMBAudit; include_events=True for the ledger
+pm.session_info()  # versions for the methods section
+```
+
+`NaN` is written as `null` and `±inf` as `"inf"`/`"-inf"`.
+
+Check a figure without looking at it: `plot.save("x.png", summary=True)` writes
+`x.json` (or call `plot.summary()`); read its `warnings`, `n_empty_axes`, and for
+oncoplots `fill_fraction`, `n_features`, `n_samples`, `top_features`,
+`sample_labels_auto_hidden` and `cell_size_px`. `pm.figure_summary(fig)` works on
+any matplotlib figure.
+
+Shell / MCP-friendly commands (stdout is one JSON document with `--json`;
+exit code 2 means `--validate strict` rejected the input):
+
+Always pass the full list of sequenced samples with `--samples` (a plain list
+or a cBioPortal `data_clinical_sample.txt`); otherwise samples without events
+are left out of every denominator.
+
+```bash
+pymaftools inspect cohort.maf --samples samples.txt --json
+pymaftools oncoplot cohort.maf -o oncoplot.png --top 20   # + oncoplot.json
+pymaftools interactions cohort.maf --top 25 --json -o stats.csv
+pymaftools session-info --json
+```
+
 ## Matrix metadata
 
 `PivotTable` and its specialized subclasses contain:
@@ -104,7 +146,9 @@ numerically identical between the two tools.
 - `sample_metadata`, indexed like the matrix columns.
 
 Use table methods such as `subset()` when changing samples or features so the
-metadata remains aligned.
+metadata remains aligned. `add_sample_metadata()` / `add_feature_metadata()`
+return a new table (assign it: `table = table.add_sample_metadata(clinical)`)
+and match rows by ID, so they work before or after sorting.
 
 ## Oncoplot
 

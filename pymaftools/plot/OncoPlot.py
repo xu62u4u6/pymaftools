@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -347,8 +349,37 @@ class OncoPlot(BasePlot):
             raise ValueError(f"Column '{bar_col}' not found in sample metadata.{hint}")
         track = BarTrack(self.sample_metadata[bar_col].values, bar_col, **kwargs)
         track.side = side
+        track.summary_info = self._column_info(
+            self.sample_metadata[bar_col], bar_col, "sample_metadata"
+        )
+        self._warn_uninformative(track.summary_info)
         self.tracks.append(track)
         return self
+
+    @staticmethod
+    def _column_info(series: pd.Series, column: str, source: str) -> dict:
+        """Facts about the data behind one track, for :meth:`summary`."""
+        n_values = int(len(series))
+        n_missing = int(series.isna().sum())
+        return {
+            "column": str(column),
+            "source": source,
+            "n_values": n_values,
+            "n_missing": n_missing,
+            "n_distinct": int(series.nunique(dropna=True)),
+        }
+
+    @staticmethod
+    def _warn_uninformative(info: dict) -> None:
+        """Warn at registration when a track's column cannot show anything."""
+        if info["n_values"] and info["n_missing"] == info["n_values"]:
+            warnings.warn(
+                f"Column {info['column']!r} in {info['source']} is entirely "
+                "missing (NaN) for the plotted items, so its track will be blank. "
+                "Check the metadata mapping (IDs, value spelling) before plotting.",
+                UserWarning,
+                stacklevel=3,
+            )
 
     @staticmethod
     def _require_columns(metadata, columns, where: str, hint: str = "") -> None:
@@ -399,6 +430,7 @@ class OncoPlot(BasePlot):
             self.feature_metadata[freq_columns], line_color=self.line_color, **kwargs
         )
         track.side = side
+        track.summary_info = {"columns": [str(c) for c in freq_columns]}
         self.tracks.append(track)
         return self
 
@@ -463,6 +495,8 @@ class OncoPlot(BasePlot):
                     ytick_fontsize=self.ytick_fontsize,
                     **kwargs,
                 )
+            track.summary_info = self._column_info(series, col, where)
+            self._warn_uninformative(track.summary_info)
             self.tracks.append(track)
         return self
 
@@ -749,6 +783,7 @@ class OncoPlot(BasePlot):
 
         # Sample (column) tick labels are unreadable for large cohorts; auto-hide
         # them past _SAMPLE_LABEL_LIMIT unless the caller forces show_sample_labels.
+        sample_labels_auto = show_sample_labels is None
         if show_sample_labels is None:
             show_sample_labels = self.pivot_table.shape[1] <= self._SAMPLE_LABEL_LIMIT
 
@@ -763,6 +798,13 @@ class OncoPlot(BasePlot):
         )
         show_feature_labels = bool(getattr(main_track, "yticklabels", False))
         main_track.yticklabels = False
+        self._render_info = {
+            "show_sample_labels": bool(show_sample_labels),
+            "sample_labels_auto_hidden": bool(
+                sample_labels_auto and not show_sample_labels
+            ),
+            "show_feature_labels": show_feature_labels,
+        }
         self._sample_gutter_axes = []  # collected by the layout, restyled by add_xticklabel
 
         # Size the feature gutter to roughly the longest gene name so names hug
@@ -831,6 +873,111 @@ class OncoPlot(BasePlot):
                 )
             self.plot_all_legends(colorbar_width=colorbar_width)
         return self
+
+    _SUMMARY_TOP_FEATURES = 20
+
+    def _plot_summary(self, dpi: float) -> dict:
+        """OncoPlot facts for :meth:`BasePlot.summary`: matrix shape, fill,
+        top features, hidden labels, tracks and estimated cell size."""
+        table = self.pivot_table
+        n_features, n_samples = table.shape
+        main_track = next((t for t in self.tracks if t.side == "main"), None)
+        numeric_main = isinstance(main_track, NumericMatrixTrack)
+        values = pd.DataFrame(table)
+        if numeric_main:
+            numeric = values.apply(pd.to_numeric, errors="coerce")
+            drawn = numeric.notna() & numeric.ne(0)
+        else:
+            drawn = pd.DataFrame(table.to_binary_table()).astype(bool)
+        n_cells = int(drawn.size)
+        n_drawn = int(drawn.to_numpy().sum())
+        feature_fraction = (
+            drawn.mean(axis=1) if n_samples else pd.Series(0.0, index=drawn.index)
+        )
+        top = feature_fraction.sort_values(ascending=False, kind="stable").head(
+            self._SUMMARY_TOP_FEATURES
+        )
+        record: dict = {
+            "matrix_kind": "numeric" if numeric_main else "mutation",
+            "n_features": int(n_features),
+            "n_samples": int(n_samples),
+            "n_nonempty_cells": n_drawn,
+            "fill_fraction": (n_drawn / n_cells) if n_cells else 0.0,
+            "features": [str(f) for f in table.index[: self._SUMMARY_TOP_FEATURES]],
+            "top_features": [
+                {"feature": str(name), "fraction_samples_nonempty": float(value)}
+                for name, value in top.items()
+            ],
+            "tracks": [
+                {
+                    "side": t.side,
+                    "type": type(t).__name__,
+                    **getattr(t, "summary_info", {}),
+                }
+                for t in self.tracks
+            ],
+            "feature_groups": list(self._feature_groups)
+            if self._feature_groups
+            else None,
+            "sample_groups": list(self._sample_groups) if self._sample_groups else None,
+        }
+        record.update(getattr(self, "_render_info", {}))
+        warnings_list = []
+        if n_features == 0 or n_samples == 0:
+            warnings_list.append(
+                f"main matrix is {n_features} x {n_samples}: nothing to show"
+            )
+        elif n_drawn == 0:
+            warnings_list.append(
+                "main matrix has no non-empty cell: the heatmap is blank "
+                "(check filtering / variant classes)"
+            )
+        for track_record in record["tracks"]:
+            column = track_record.get("column")
+            n_values = track_record.get("n_values", 0)
+            if column is None or not n_values:
+                continue
+            n_missing = track_record["n_missing"]
+            if n_missing == n_values:
+                warnings_list.append(
+                    f"{track_record['side']} track {column!r} is entirely missing "
+                    "(NaN): drawn blank"
+                )
+            elif n_missing / n_values > 0.5:
+                warnings_list.append(
+                    f"{track_record['side']} track {column!r} is missing for "
+                    f"{n_missing} of {n_values} items"
+                )
+            elif track_record["n_distinct"] == 1 and n_values > 1:
+                warnings_list.append(
+                    f"{track_record['side']} track {column!r} has a single value: "
+                    "it carries no information"
+                )
+        if record.get("sample_labels_auto_hidden"):
+            warnings_list.append(
+                f"sample labels auto-hidden ({n_samples} samples > "
+                f"{self._SAMPLE_LABEL_LIMIT}); pass render(show_sample_labels=True) "
+                "to force them"
+            )
+        ax = getattr(self, "ax_heatmap", None)
+        sectioned = bool(self._feature_groups or self._sample_groups)
+        # Sectioned layouts split the matrix over several axes, so the first
+        # axes alone cannot give a per-cell size; only estimate the simple case.
+        if ax is not None and n_samples and n_features and not sectioned:
+            bbox = ax.get_window_extent().transformed(
+                self.fig.dpi_scale_trans.inverted()
+            )
+            cell_w = bbox.width * dpi / n_samples
+            cell_h = bbox.height * dpi / n_features
+            record["cell_size_px"] = [round(cell_w, 2), round(cell_h, 2)]
+            if cell_w < 1:
+                warnings_list.append(
+                    f"each sample column is ~{cell_w:.2f} px wide at {dpi:g} dpi; "
+                    "cells may not be individually visible (raise figsize/dpi "
+                    "or plot fewer samples)"
+                )
+        record["warnings"] = warnings_list
+        return record
 
     @staticmethod
     def _resolve_labels(override, default, kind: str) -> list:

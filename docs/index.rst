@@ -11,6 +11,7 @@ Python package for handling and analyzing Mutation Annotation Format (MAF) files
    quickstart
    pivottable
    oncoplot
+   structured_output
    ai_assistants
    agent_test_report
 

@@ -1,6 +1,20 @@
 Utility Modules
 ===============
 
+provenance
+----------
+
+.. automodule:: pymaftools.provenance
+   :members:
+   :show-inheritance:
+
+cli
+---
+
+.. automodule:: pymaftools.cli
+   :members: main, build_parser
+
+
 geneset
 -------
 

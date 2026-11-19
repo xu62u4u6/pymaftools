@@ -66,6 +66,7 @@ Homepage = "https://github.com/xu62u4u6/pymaftools"
 Documentation = "https://dionic.xyz/pymaftools/"
 
 [project.scripts]
+pymaftools = "pymaftools.cli:main"
 pymaftools-ai = "pymaftools.ai_install:main"
 
 [tool.ruff]
