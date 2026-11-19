@@ -25,7 +25,7 @@ becoming "一鍋粥".
 The accessor pattern is the right abstraction — it makes this a *library*, not a
 grab-bag of `pymaftools.plot_xxx(df)` free functions:
 
-- `maf.plot.summary()` / `maf.plot.lollipop("TP53")` — raw MAF-level
+- `maf.plot.overview()` / `maf.plot.lollipop("TTN")` — raw MAF-level
 - `pivot_table.plot.somatic_interactions()` / `.oncoplot()` — matrix-level
 - (future) `similarity_matrix.plot.panel()` — relationship-level
 
@@ -129,6 +129,12 @@ them. Record decisions there.
   dataset they claim to run on; the bundled example MAF lacks `subtype` /
   `pathway` and the genes `TP53`/`KRAS`/`EGFR`. Re-run the `doc-only-user` agent
   after API changes.
+- **Fail loud; hint the fix (LLM usability).** Agents cannot see a figure, so a
+  call that "succeeds" with no output, or a blank plot, is a real failure for
+  them. Raise instead of printing; error messages name the missing thing, list
+  valid options, and give the fixing call. Scientific pitfalls (synonymous
+  events kept, underpowered or burden-confounded interaction tests) warn but
+  never change computed numbers. Pinned in `tests/test_llm_usability.py`.
 
 ## Dev basics
 
