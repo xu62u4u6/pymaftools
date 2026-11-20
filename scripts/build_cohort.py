@@ -171,7 +171,7 @@ def main():
         cohort.add_table(table, name)
 
     # Save
-    cohort.to_hdf5(args.output)
+    cohort.to_h5(args.output)
     print(f"\nCohort saved: {args.output}")
     print(f"  Tables: {list(cohort.tables.keys())}")
     for name, t in cohort.tables.items():

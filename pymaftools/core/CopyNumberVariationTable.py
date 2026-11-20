@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+from .._deprecation import deprecated_alias, warn_deprecated
 import os
 import re
-import warnings
 from typing import TYPE_CHECKING
 from .PivotTable import PivotTable
 
@@ -508,10 +508,9 @@ class CopyNumberVariationTable(PivotTable):
 
     def plot_cnv_band_ratio(self, *args, **kwargs) -> pd.DataFrame:
         """Deprecated alias for ``.plot.band_ratio()``."""
-        warnings.warn(
-            "plot_cnv_band_ratio is deprecated; use .plot.band_ratio() instead.",
-            DeprecationWarning,
-            stacklevel=2,
+        warn_deprecated(
+            "CopyNumberVariationTable.plot_cnv_band_ratio()",
+            "CopyNumberVariationTable.plot.band_ratio()",
         )
         return self._cnv_band_ratio(*args, **kwargs)
 
@@ -765,7 +764,7 @@ def read_sample_cutoff_file(sample_cutoff_file: str) -> pd.DataFrame:
     return sample_cutoffs_df
 
 
-def TCGA_sample_type(TCGA_barcode: str) -> str:
+def tcga_sample_type(TCGA_barcode: str) -> str:
     """
     Determine the sample type from a TCGA barcode suffix.
 
@@ -805,7 +804,7 @@ def TCGA_sample_type(TCGA_barcode: str) -> str:
         raise ValueError(f"Sample type code {sample_type} is not recognized.")
 
 
-def get_target_sample_ID(paired_sample_IDs: str, target_sample_type: str) -> str:
+def get_target_sample_id(paired_sample_IDs: str, target_sample_type: str) -> str:
     """
     Extract the sample ID matching a target type from a comma-separated list.
 
@@ -830,13 +829,13 @@ def get_target_sample_ID(paired_sample_IDs: str, target_sample_type: str) -> str
     paired_sample_IDs_list = paired_sample_IDs.split(",")
     for sample_ID in paired_sample_IDs_list:
         sample_ID = sample_ID.strip()
-        sample_type = TCGA_sample_type(sample_ID)
+        sample_type = tcga_sample_type(sample_ID)
         if sample_type == target_sample_type:
             return sample_ID
     raise ValueError("No matching sample type found.")
 
 
-def read_TCGA_ASCAT3_CNV_file_sheet(
+def read_tcga_ascat3_cnv_file_sheet(
     file_path: str,
     file_suffix: str = "ascat3.gene_level_copy_number.v36.tsv",
 ) -> pd.DataFrame:
@@ -865,10 +864,10 @@ def read_TCGA_ASCAT3_CNV_file_sheet(
         file_sheet["File Name"].str.contains(file_suffix, regex=True)
     ].copy()
     file_sheet["tumor_sample_ID"] = file_sheet["Sample ID"].apply(
-        lambda x: get_target_sample_ID(x, "T")
+        lambda x: get_target_sample_id(x, "T")
     )
     file_sheet["normal_sample_ID"] = file_sheet["Sample ID"].apply(
-        lambda x: get_target_sample_ID(x, "N")
+        lambda x: get_target_sample_id(x, "N")
     )
     return file_sheet
 
@@ -888,7 +887,7 @@ def read_cnv_files(base_dir: str, file_sheet: pd.DataFrame) -> pd.DataFrame:
             Directory containing the individual CNV files.
     file_sheet : pd.DataFrame
             DataFrame with at least ``File Name`` and ``tumor_sample_ID``
-            columns (as produced by :func:`read_TCGA_ASCAT3_CNV_file_sheet`).
+            columns (as produced by :func:`read_tcga_ascat3_cnv_file_sheet`).
 
     Returns
     -------
@@ -906,3 +905,16 @@ def read_cnv_files(base_dir: str, file_sheet: pd.DataFrame) -> pd.DataFrame:
         all_samples.append(cnv_df)
     all_sample_df = pd.concat(all_samples, axis=0)
     return all_sample_df
+
+
+TCGA_sample_type = deprecated_alias(
+    tcga_sample_type, "TCGA_sample_type()", "tcga_sample_type()"
+)
+get_target_sample_ID = deprecated_alias(
+    get_target_sample_id, "get_target_sample_ID()", "get_target_sample_id()"
+)
+read_TCGA_ASCAT3_CNV_file_sheet = deprecated_alias(
+    read_tcga_ascat3_cnv_file_sheet,
+    "read_TCGA_ASCAT3_CNV_file_sheet()",
+    "read_tcga_ascat3_cnv_file_sheet()",
+)

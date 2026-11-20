@@ -1,6 +1,6 @@
 # pymaftools Roadmap
 
-> Last reviewed: 2026-11-19
+> Last reviewed: 2026-11-20
 
 This file describes work that is still relevant after 0.6.0. Completed release
 details belong in `CHANGELOG.md`; release operations and risks belong in
@@ -67,6 +67,18 @@ global threshold until low-coverage, high-risk modules improve.
   the event table alone never defines a denominator silently.
 - CLI first, MCP later: an MCP server should wrap these subcommands and their
   JSON rather than re-implement analyses.
+
+### Naming decisions (0.6.0)
+
+- Public names are snake_case; HDF5 I/O is `to_h5`/`read_h5` on every class;
+  project-specific helpers (`ASCStackingModel`, `PCA_CCA`) live in their
+  submodule, not the package root.
+- Renames only add an alias that warns through `pymaftools._deprecation`
+  (message names the replacement and the removal release). Removal release
+  for everything deprecated so far: **1.0**, so readers of the 0.6.0 paper can
+  run old scripts unchanged through 0.x.
+- JSON output carries `schema_version` (`provenance.SCHEMA_VERSION`, "1.0"):
+  minor bump for added fields, major bump for renamed/removed/changed fields.
 
 ### MAF input decisions (0.6.0)
 
@@ -167,9 +179,9 @@ a global percentage.
       skill's `api-workflows.md` cookbook into the docs so it reaches
       `llms-full.txt`, and expose it via `help(pymaftools)` so agents find it without
       `pymaftools-ai install`; one-call `table.plot.oncoplot(top=, group=)`;
-      unify plot return types (`save()` returning a path or self); retire
-      duplicate names (`to_MAF`, `vaild_variant_classfication`, top-level
-      project-specific exports); thin CLI shipped in 0.6.0, an MCP server
+      unify plot return types (`save()` returning a path or self); duplicate
+      names are deprecated in 0.6.0 and removed in 1.0 (see "Naming
+      decisions"); thin CLI shipped in 0.6.0, an MCP server
       wrapping it is next; figure summaries for `plot/wes.py` functions and
       `LollipopPlot` domain fields; keep a fixed
       fresh-agent task benchmark (load MAF, oncoplot, interactions, enrichment,
@@ -180,6 +192,30 @@ a global percentage.
       process.
 - [ ] Reduce duplicate Tests runs caused by simultaneous `dev` push and pull
       request events if runner usage becomes material.
+
+## Bioinformatics Gap Analysis (2026-11-20)
+
+Reviewed from a cancer-genomics user's point of view, not from the current
+code. Decision: 0.6.0 adds no new analyses (paper release); these are the
+targets after it. Driver calling (dN/dS, OncodriveCLUSTL, MutSigCV), clinical
+actionability (OncoKB, CIViC), liftover (CrossMap) and germline calling stay
+with dedicated tools: pymaftools reads their outputs.
+
+| Theme | Gap | Target |
+|---|---|---|
+| Input | cBioPortal study directory (mutations, CNA, clinical, mRNA, SV) in one call | 0.7 |
+| Input | Annotated VCF (VEP `CSQ`, SnpEff `ANN`) to gene/consequence; Strelka2 | 0.7 |
+| Input | Generic segment files (CNVkit, FACETS, PURPLE, Sequenza) with purity/ploidy | 0.7 |
+| Data model | HGNC symbol/alias harmonisation when merging cohorts | 0.7 |
+| Mutational processes | SBS96/DBS/ID matrices (reference FASTA) and COSMIC signature fitting | 0.7 |
+| Clinical | Survival (KM/Cox) by mutation status; pathway-level aggregation (e.g. 10 oncogenic pathways) | 0.8 |
+| Annotation | Import oncokb-annotator / CIViC output as feature metadata | 0.8 |
+| CNV | Fraction genome altered, arm-level summaries, LOH/WGD, CNV layer on oncoplot | 0.8 |
+| Clonality | Purity-corrected VAF, clonal/subclonal calls, MATH score | 0.8 |
+| Panels | GENIE-style multi-panel BED ingestion into `SampleManifest`/`ObservationMask` | 0.8 |
+| Multi-omics | CNV→expression cis effects, mutation→expression tests | later |
+| SV / fusion | BEDPE, Manta/GRIDSS/Delly VCF, STAR-Fusion, Arriba | later |
+| Performance | `pyarrow` CSV engine for `read_maf` (needs dtype parity tests) | later |
 
 ## Feature Backlog
 

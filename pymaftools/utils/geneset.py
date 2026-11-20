@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import pandas as pd
+
+from .._deprecation import deprecated_alias
 from bs4 import BeautifulSoup
 import requests
 
 
-def read_GMT(filepath: str) -> pd.DataFrame:
+def read_gmt(filepath: str) -> pd.DataFrame:
     """
     Read a GMT (Gene Matrix Transposed) file into a DataFrame.
 
@@ -77,3 +79,6 @@ def fetch_msigdb_geneset(geneset_name: str, species: str = "human") -> pd.DataFr
 
     df = pd.DataFrame(data)
     return df
+
+
+read_GMT = deprecated_alias(read_gmt, "read_GMT()", "read_gmt()")

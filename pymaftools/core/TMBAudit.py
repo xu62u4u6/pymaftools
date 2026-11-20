@@ -67,9 +67,10 @@ class TMBAudit:
             Also include the full event ledger (can be large). By default
             only per-reason exclusion counts are included.
         """
-        from ..provenance import dataframe_to_dict, get_provenance
+        from ..provenance import SCHEMA_VERSION, dataframe_to_dict, get_provenance
 
         record: dict = {
+            "schema_version": SCHEMA_VERSION,
             "provenance": get_provenance(self),
             "n_events": int(len(self.events)),
             "n_included_events": int(self.events["included"].sum()),

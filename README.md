@@ -56,7 +56,7 @@
 - **Model utilities** — Evaluation, cross-validation, RFECV feature selection, importance heatmaps
 
 ### Utilities
-- **PCA_CCA** — Dimensionality reduction utilities
+- **PCA + CCA** — Dimensionality reduction (`pymaftools.utils.reduction.PCA_CCA`)
 - **Gene set tools** — Read GMT files, fetch MSigDB gene sets
 - **Gene info** — NCBI gene ID lookup; Ensembl BioMart exon/transcript size lookup (`get_exon_size`, `load_gene_sizes`) for size-based gene grouping
 
@@ -331,8 +331,8 @@ cohort.add_table(expr_table, "expression")
 cohort.add_sample_metadata(clinical_df)
 
 # Save/load with HDF5. Unlike SQLite, this supports high-dimensional tables.
-cohort.to_hdf5("cohort.h5")
-cohort = Cohort.read_hdf5("cohort.h5")
+cohort.to_h5("cohort.h5")
+cohort = Cohort.read_h5("cohort.h5")
 ```
 
 ### Machine Learning
@@ -408,8 +408,8 @@ op = (pivot_table.plot.oncoplot()
 pivot_table.to_h5("results.h5")
 loaded = PivotTable.read_h5("results.h5")
 
-cohort.to_hdf5("cohort.h5")
-loaded = Cohort.read_hdf5("cohort.h5")
+cohort.to_h5("cohort.h5")
+loaded = Cohort.read_h5("cohort.h5")
 
 # Save figures
 oncoplot.save("oncoplot.png", dpi=300)

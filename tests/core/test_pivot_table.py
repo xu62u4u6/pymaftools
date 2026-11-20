@@ -360,7 +360,7 @@ class TestPivotTableStatistics:
         table = sample_pivot_table
         
         # Test with binary conversion
-        pca_df, explained_var, pca_obj = table.PCA(to_binary=True)
+        pca_df, explained_var, pca_obj = table.pca(to_binary=True)
         
         assert isinstance(pca_df, pd.DataFrame)
         assert pca_df.shape == (table.shape[1], 2)  # n_samples x 2 components

@@ -22,14 +22,14 @@ def test_get_ncbi_gene_id_success_and_failure(monkeypatch):
         return MockResponse({"esearchresult": {"idlist": ["7157"]}})
 
     monkeypatch.setattr(geneinfo.requests, "get", mock_get_success)
-    assert geneinfo.get_ncbi_gene_ID("TP53") == "7157"
+    assert geneinfo.get_ncbi_gene_id("TP53") == "7157"
 
     def mock_get_fail(url, params=None, timeout=None):
         assert timeout == 30
         return MockResponse({}, raise_error=True)
 
     monkeypatch.setattr(geneinfo.requests, "get", mock_get_fail)
-    assert geneinfo.get_ncbi_gene_ID("TP53") is None
+    assert geneinfo.get_ncbi_gene_id("TP53") is None
 
 
 def test_get_gene_info_json_and_parse(monkeypatch):
@@ -55,7 +55,7 @@ def test_get_gene_info_json_and_parse(monkeypatch):
 
 
 def test_get_gene_description_df(monkeypatch):
-    monkeypatch.setattr(geneinfo, "get_ncbi_gene_IDs", lambda genes: {"TP53": "7157", "KRAS": "3845"})
+    monkeypatch.setattr(geneinfo, "get_ncbi_gene_ids", lambda genes: {"TP53": "7157", "KRAS": "3845"})
     monkeypatch.setattr(
         geneinfo,
         "get_gene_info_json",

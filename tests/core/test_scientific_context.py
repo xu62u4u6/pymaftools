@@ -201,9 +201,9 @@ def test_context_round_trips_through_cohort_hdf5(tmp_path):
     path = tmp_path / "cohort-context.h5"
     cohort = Cohort("context")
     cohort.add_table(_context_table(), "mutation")
-    cohort.to_hdf5(path)
+    cohort.to_h5(path)
 
-    restored = Cohort.read_hdf5(path).mutation
+    restored = Cohort.read_h5(path).mutation
 
     assert restored.observation_mask.to_frame().equals(
         _context_table().observation_mask.to_frame()

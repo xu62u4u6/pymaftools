@@ -1,6 +1,6 @@
 import pandas as pd
 
-from pymaftools.utils.geneset import read_GMT, fetch_msigdb_geneset
+from pymaftools.utils.geneset import read_gmt, fetch_msigdb_geneset
 
 
 def test_read_gmt_parses_pathway_and_genes(tmp_path):
@@ -10,7 +10,7 @@ def test_read_gmt_parses_pathway_and_genes(tmp_path):
         encoding="utf-8",
     )
 
-    df = read_GMT(str(gmt_path))
+    df = read_gmt(str(gmt_path))
 
     assert isinstance(df, pd.DataFrame)
     assert list(df.index) == ["PATHWAY_A", "PATHWAY_B"]

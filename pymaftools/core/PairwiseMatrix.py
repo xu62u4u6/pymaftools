@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import networkx as nx
 import pandas as pd
+from .._deprecation import warn_deprecated
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -9,7 +10,6 @@ from matplotlib.patches import Rectangle
 from typing import Any
 import matplotlib.gridspec as gridspec
 import os
-import warnings
 
 
 def _resolve_group_cmap(
@@ -430,10 +430,9 @@ class SimilarityMatrix(PairwiseMatrix):
         ...     groups, ('A', 'B'), ('A', 'C')
         ... )
         """
-        warnings.warn(
-            "compare_group_pairs is deprecated; use paired_similarity_permutation_test",
-            DeprecationWarning,
-            stacklevel=2,
+        warn_deprecated(
+            "SimilarityMatrix.compare_group_pairs()",
+            "SimilarityMatrix.paired_similarity_permutation_test()",
         )
         return self.paired_similarity_permutation_test(groups, pair1, pair2)
 
@@ -1094,11 +1093,9 @@ class SimilarityMatrix(PairwiseMatrix):
         p : float
             Two-sided p-value.
         """
-        warnings.warn(
-            "paired_similarity_utest is deprecated; use "
-            "paired_similarity_permutation_test",
-            DeprecationWarning,
-            stacklevel=2,
+        warn_deprecated(
+            "SimilarityMatrix.paired_similarity_utest()",
+            "SimilarityMatrix.paired_similarity_permutation_test()",
         )
         return self.paired_similarity_permutation_test(groups, pair1, pair2)
 

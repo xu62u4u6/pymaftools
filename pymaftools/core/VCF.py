@@ -3,10 +3,11 @@ from __future__ import annotations
 import gzip
 import os
 import re
-import warnings
 from typing import Any
 
 import pandas as pd
+
+from pymaftools._deprecation import warn_deprecated
 
 from pymaftools.io.vcf import parse_vcf_rows
 from pymaftools.io.vcf.parsers import _resolve_samples
@@ -62,11 +63,10 @@ class VCF(pd.DataFrame):
     @classmethod
     def from_file(cls, vcf_path: str, caller: str) -> VCF:
         """Deprecated alias for :meth:`read_vcf` (reads from a file path)."""
-        warnings.warn(
-            "VCF.from_file is deprecated; use VCF.read_vcf() instead "
+        warn_deprecated(
+            "VCF.from_file()",
+            "VCF.read_vcf()",
             "(read_* is the convention for file readers).",
-            DeprecationWarning,
-            stacklevel=2,
         )
         return cls.read_vcf(vcf_path, caller)
 
