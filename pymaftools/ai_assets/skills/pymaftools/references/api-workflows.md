@@ -137,6 +137,11 @@ pymaftools interactions cohort.maf --top 25 --json -o stats.csv
 pymaftools session-info --json
 ```
 
+Every JSON record carries `schema_version` (currently `"1.0"`); check it before
+parsing. `pymaftools --version` prints the installed version. Use the current
+names (`Cohort.to_h5`/`read_h5`, `PivotTable.pca`, `read_gmt`); the old ones
+still work until 1.0 but emit `DeprecationWarning`.
+
 ## Matrix metadata
 
 `PivotTable` and its specialized subclasses contain:
@@ -176,7 +181,7 @@ cohort = Cohort(name="example")
 cohort.add_sample_metadata(clinical)
 cohort.add_table(mutation_table, "mutations")
 cohort.add_table(expression_table, "expression")
-cohort.to_hdf5("cohort.h5")
+cohort.to_h5("cohort.h5")
 ```
 
 Set cohort sample metadata before adding omics tables. New high-dimensional

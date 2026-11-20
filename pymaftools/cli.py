@@ -9,6 +9,10 @@ MCP server or agent can wrap these commands without parsing prose::
     pymaftools interactions cohort.maf --top 25 --json
     pymaftools session-info
 
+Every JSON record starts with ``schema_version`` (see
+:data:`pymaftools.provenance.SCHEMA_VERSION`) and ``pymaftools_version``;
+``pymaftools --version`` prints the installed version.
+
 Exit codes: 0 success; 1 error (message on stderr, or a JSON ``error`` object
 with ``--json``); 2 input rejected by ``--validate strict``.
 """
@@ -340,6 +344,9 @@ def build_parser() -> argparse.ArgumentParser:
         description="Inspect MAF files and draw/compute standard results.",
     )
     parser.add_argument(
+        "--version", action="version", version=f"pymaftools {_installed_version()}"
+    )
+    parser.add_argument(
         "--json", action="store_true", help="print machine-readable JSON on stdout"
     )
     sub = parser.add_subparsers(dest="command", required=True)
@@ -395,6 +402,26 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _installed_version() -> str:
+    from importlib.metadata import PackageNotFoundError, version
+
+    try:
+        return version("pymaftools")
+    except PackageNotFoundError:  # running from a source tree without metadata
+        return "unknown"
+
+
+def _envelope(record: dict[str, Any]) -> dict[str, Any]:
+    """Put the schema and package versions first in every JSON record."""
+    from .provenance import SCHEMA_VERSION
+
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "pymaftools_version": _installed_version(),
+        **record,
+    }
+
+
 def _run(func: Callable[[argparse.Namespace], dict], args) -> tuple[int, dict]:
     from .core.maf_io import MAFValidationError
 
@@ -425,7 +452,7 @@ def _run(func: Callable[[argparse.Namespace], dict], args) -> tuple[int, dict]:
     messages = list(dict.fromkeys(str(w.message) for w in caught))
     if messages:
         record["python_warnings"] = messages
-    return code, record
+    return code, _envelope(record)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

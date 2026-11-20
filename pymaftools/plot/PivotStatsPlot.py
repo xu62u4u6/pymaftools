@@ -546,7 +546,7 @@ class PivotStatsPlot(BasePlot):
         from .ColorManager import ColorManager
 
         # Calculate PCA result
-        pca_result_df, explained_variance, pca = self.pivot_table.PCA(
+        pca_result_df, explained_variance, pca = self.pivot_table.pca(
             to_binary=to_binary
         )
 

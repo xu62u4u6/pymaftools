@@ -93,12 +93,13 @@ def write_figure_summary(
     summary: dict[str, Any], filename: str | os.PathLike, *, figure_path=None
 ) -> Path:
     """Write ``summary`` as JSON to the sidecar of ``filename``; return its path."""
-    from ..provenance import session_info, to_json
+    from ..provenance import SCHEMA_VERSION, session_info, to_json
 
     record = dict(summary)
     if figure_path is not None:
         record.setdefault("figure_path", os.fspath(figure_path))
     record.setdefault("pymaftools_version", session_info()["pymaftools"])
+    record.setdefault("schema_version", SCHEMA_VERSION)
     path = summary_path(filename)
     to_json(record, path)
     return path

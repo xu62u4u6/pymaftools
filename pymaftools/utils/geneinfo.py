@@ -7,10 +7,12 @@ from pathlib import Path
 import requests
 import pandas as pd
 
+from .._deprecation import deprecated_alias
+
 _NCBI_TIMEOUT_SECONDS = 30
 
 
-def get_ncbi_gene_ID(gene_symbol: str) -> str | None:
+def get_ncbi_gene_id(gene_symbol: str) -> str | None:
     """
     Query the NCBI Entrez API for a gene symbol and return its Gene ID.
 
@@ -41,7 +43,7 @@ def get_ncbi_gene_ID(gene_symbol: str) -> str | None:
         return None
 
 
-def get_ncbi_gene_IDs(gene_symbols: list[str]) -> dict[str, str | None]:
+def get_ncbi_gene_ids(gene_symbols: list[str]) -> dict[str, str | None]:
     """
     Batch-query gene symbols and return their corresponding Gene IDs.
 
@@ -57,7 +59,7 @@ def get_ncbi_gene_IDs(gene_symbols: list[str]) -> dict[str, str | None]:
     """
     gene_ids = {}
     for symbol in gene_symbols:
-        gene_id = get_ncbi_gene_ID(symbol)
+        gene_id = get_ncbi_gene_id(symbol)
         gene_ids[symbol] = gene_id
         print(f"Retrieved Gene ID for {symbol}: {gene_id}")
     return gene_ids
@@ -138,7 +140,7 @@ def get_gene_description_df(gene_symbols: list[str]) -> pd.DataFrame:
     """
     Look up gene descriptions from NCBI for a list of gene symbols.
 
-    Combines ``get_ncbi_gene_IDs``, ``get_gene_info_json``, and
+    Combines ``get_ncbi_gene_ids``, ``get_gene_info_json``, and
     ``parse_gene_info`` into a single convenience function.
 
     Parameters
@@ -151,7 +153,7 @@ def get_gene_description_df(gene_symbols: list[str]) -> pd.DataFrame:
     pd.DataFrame
         DataFrame with columns ``Gene`` and ``Description``.
     """
-    IDs = get_ncbi_gene_IDs(gene_symbols)
+    IDs = get_ncbi_gene_ids(gene_symbols)
     gene_info = get_gene_info_json(IDs)
     parsed_info = parse_gene_info(gene_info)
     gene_description_df = pd.DataFrame.from_dict(
@@ -481,3 +483,11 @@ def get_exon_size(
         .set_index("hugo_symbol")[metric]
     )
     return pd.Series([mapping.get(g) for g in genes], index=genes, name=metric)
+
+
+get_ncbi_gene_ID = deprecated_alias(
+    get_ncbi_gene_id, "get_ncbi_gene_ID()", "get_ncbi_gene_id()"
+)
+get_ncbi_gene_IDs = deprecated_alias(
+    get_ncbi_gene_ids, "get_ncbi_gene_IDs()", "get_ncbi_gene_ids()"
+)

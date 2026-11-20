@@ -56,8 +56,8 @@ and metadata without SQLite's practical limit of roughly 2,000 columns.
    table.to_h5("mutation_table.h5")
    table = PivotTable.read_h5("mutation_table.h5")
 
-   cohort.to_hdf5("cohort.h5")
-   cohort = Cohort.read_hdf5("cohort.h5")
+   cohort.to_h5("cohort.h5")
+   cohort = Cohort.read_h5("cohort.h5")
 
 .. note::
 

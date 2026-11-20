@@ -57,6 +57,17 @@ is opt-in so existing scripts produce exactly the same files.
 ``pymaftools.figure_summary(fig)`` works on any matplotlib figure (for example
 the one returned by ``table.plot.somatic_interactions()``).
 
+JSON schema version
+-------------------
+
+Every JSON record pymaftools writes -- provenance records, ``IngestReport``,
+``TMBAudit``, figure-summary sidecars and CLI output -- carries
+``"schema_version"`` (currently ``"1.0"``, see
+``pymaftools.provenance.SCHEMA_VERSION``). The minor part grows when fields are
+only added; the major part changes when a field is renamed, removed or changes
+meaning, so a consumer can refuse output it does not understand. CLI records
+also start with ``"pymaftools_version"``.
+
 Command line
 ------------
 
@@ -78,6 +89,8 @@ denominators; every command warns about this.
 document (library messages go to stderr) and Python warnings are returned in
 ``python_warnings``. Exit codes: ``0`` success, ``1`` error (a JSON ``error``
 object with ``--json``), ``2`` input rejected by ``--validate strict``.
+``pymaftools --version`` prints the installed version.
+
 ``inspect`` defaults to ``--validate warn`` so it can report problems;
 ``oncoplot`` and ``interactions`` default to ``strict``, and plot or test only
 nonsynonymous classes unless ``--all-classes`` is given.
