@@ -66,6 +66,38 @@ class SimilarityMatrix(PairwiseMatrix):
     def _constructor(self) -> type[SimilarityMatrix]:
         return SimilarityMatrix
 
+    def _group_values(self, groups: pd.Series | np.ndarray) -> np.ndarray:
+        """Return group labels in matrix row order.
+
+        A Series indexed by sample IDs is aligned by its index, so metadata in
+        a different order cannot silently mislabel samples; extra samples not
+        in the matrix are ignored. Arrays, and Series with a default 0..n-1
+        index (no sample identity, e.g. after ``reset_index(drop=True)``), are
+        positional and must already be in matrix row order.
+        """
+        is_positional_series = isinstance(groups, pd.Series) and groups.index.equals(
+            pd.RangeIndex(len(groups))
+        )
+        if isinstance(groups, pd.Series) and not is_positional_series:
+            duplicated = groups.index[groups.index.duplicated()].unique()
+            if len(duplicated):
+                raise ValueError(
+                    f"groups Series has duplicate sample IDs {list(duplicated[:5])}; "
+                    "keep one label per sample."
+                )
+            missing = self.index.difference(groups.index)
+            if len(missing):
+                raise ValueError(
+                    "groups Series is missing labels for matrix samples "
+                    f"{list(missing[:5])}; index it by sample ID, or pass "
+                    "groups.to_numpy() for labels already in matrix row order."
+                )
+            return groups.reindex(self.index).to_numpy()
+        values = np.asarray(groups)
+        if len(values) != len(self):
+            raise ValueError("groups must contain one label per matrix row")
+        return values
+
     def get_mean_group_similarity(
         self,
         groups: pd.Series | np.ndarray,
@@ -77,7 +109,9 @@ class SimilarityMatrix(PairwiseMatrix):
         Parameters
         ----------
         groups : pd.Series or np.ndarray
-            Group label for each sample, aligned with the matrix indices.
+            Group label for each sample. A Series indexed by sample IDs is
+            aligned to the matrix rows; an array (or a Series with a default
+            0..n-1 index) must already be in matrix row order.
         group_order : array-like of str, optional
             Ordered list of unique group labels. If ``None``, derived from
             ``groups.unique()``.
@@ -88,9 +122,7 @@ class SimilarityMatrix(PairwiseMatrix):
             Square DataFrame of shape ``(n_groups, n_groups)`` containing the
             mean pairwise similarity between each pair of groups.
         """
-        groups = np.asarray(groups)
-        if len(groups) != len(self):
-            raise ValueError("groups must contain one label per matrix row")
+        groups = self._group_values(groups)
         if group_order is None:
             group_order = pd.unique(groups)
 
@@ -111,9 +143,7 @@ class SimilarityMatrix(PairwiseMatrix):
         pair: tuple[str, str],
     ) -> np.ndarray:
         """Return unique, non-self similarity values for a group pair."""
-        groups = np.asarray(groups)
-        if len(groups) != len(self):
-            raise ValueError("groups must contain one label per matrix row")
+        groups = self._group_values(groups)
         indices1 = np.flatnonzero(groups == pair[0])
         indices2 = np.flatnonzero(groups == pair[1])
         subset = self.iloc[indices1, indices2].to_numpy(dtype=float)
@@ -149,7 +179,7 @@ class SimilarityMatrix(PairwiseMatrix):
             random permutation of the group labels.
         """
         rng = np.random.default_rng(random_state)
-        group_values = np.asarray(groups)
+        group_values = self._group_values(groups)
         permutation_list = []
         for _ in range(n_permutations):
             shuffled_groups = rng.permutation(group_values)
@@ -186,6 +216,8 @@ class SimilarityMatrix(PairwiseMatrix):
         -------
         pd.DataFrame
             Matrix of p-values with the same shape as *true_group_similarity*.
+            NaN where the observed value is undefined (e.g. a one-sample
+            group); non-finite permutations are excluded from the denominator.
 
         Raises
         ------
@@ -194,14 +226,23 @@ class SimilarityMatrix(PairwiseMatrix):
         """
         if not permutation_list:
             raise ValueError("permutation_list must not be empty")
+        if tail not in ("right", "left", "two"):
+            raise ValueError("tail must be 'right', 'left', or 'two'")
         pvalues_df = pd.DataFrame(index=group_order, columns=group_order, dtype=float)
 
         for g1 in group_order:
             for g2 in group_order:
                 true_val = true_group_similarity.loc[g1, g2]
                 permuted_vals = np.array(
-                    [perm.loc[g1, g2] for perm in permutation_list]
+                    [perm.loc[g1, g2] for perm in permutation_list], dtype=float
                 )
+                # NaN compares False everywhere: without this, an undefined
+                # observed value (e.g. a one-sample group) or NaN permutations
+                # would yield the minimum p-value 1 / (N + 1).
+                permuted_vals = permuted_vals[np.isfinite(permuted_vals)]
+                if not np.isfinite(true_val) or permuted_vals.size == 0:
+                    pvalues_df.loc[g1, g2] = np.nan
+                    continue
 
                 if tail == "right":
                     extreme = np.count_nonzero(permuted_vals >= true_val)
@@ -378,7 +419,8 @@ class SimilarityMatrix(PairwiseMatrix):
             alpha=0,
         )
 
-        color = groups.map(group_cmap).values
+        aligned_groups = pd.Series(self._group_values(groups), index=self.index)
+        color = aligned_groups.map(group_cmap).values
         for i, c in enumerate(color):
             ax_groupbar.add_patch(
                 Rectangle(
@@ -668,7 +710,8 @@ class SimilarityMatrix(PairwiseMatrix):
             alpha=0,
         )
 
-        color = groups.map(group_cmap).values
+        aligned_groups = pd.Series(self._group_values(groups), index=self.index)
+        color = aligned_groups.map(group_cmap).values
         for i, c in enumerate(color):
             ax_groupbar.add_patch(
                 Rectangle(
@@ -883,7 +926,9 @@ class SimilarityMatrix(PairwiseMatrix):
         filename_base = title.replace(" ", "_")
 
         similarity_matrix = table.compute_similarity(method=method)
-        groups = pd.Series(np.asarray(groups), index=similarity_matrix.index)
+        groups = pd.Series(
+            similarity_matrix._group_values(groups), index=similarity_matrix.index
+        )
         group_cmap = _resolve_group_cmap(groups, group_cmap)
         true_group_similarity = similarity_matrix.get_mean_group_similarity(
             groups, group_order=group_order
@@ -1051,6 +1096,7 @@ class SimilarityMatrix(PairwiseMatrix):
         pair2_subset : pd.DataFrame
             Sub-matrix of similarities between the groups in *pair2*.
         """
+        groups = self._group_values(groups)
         pair1_indices1, pair1_indices2 = (
             np.where(groups == pair1[0])[0],
             np.where(groups == pair1[1])[0],
@@ -1110,7 +1156,7 @@ class SimilarityMatrix(PairwiseMatrix):
         """Compare two group-pair means by permuting sample labels."""
         if n_permutations < 1:
             raise ValueError("n_permutations must be at least 1")
-        group_values = np.asarray(groups)
+        group_values = self._group_values(groups)
 
         def difference(labels: np.ndarray) -> float:
             pair1_values = self.get_pair_values(labels, pair1)

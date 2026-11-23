@@ -169,12 +169,26 @@ def align_clusters(
     numpy.ndarray
         Remapped target labels aligned to the reference labeling.
     """
+    mapping = _cluster_label_mapping(ref_labels, target_labels, n_clusters)
+    aligned = np.vectorize(lambda x: mapping.get(x, x))(target_labels)
+    return aligned
+
+
+def _cluster_label_mapping(
+    ref_labels: np.ndarray, target_labels: np.ndarray, n_clusters: int
+) -> dict:
+    """Hungarian target-to-reference label mapping covering all ``n_clusters``."""
+    valid = set(range(n_clusters))
+    outside = (set(np.unique(ref_labels)) | set(np.unique(target_labels))) - valid
+    if outside:
+        raise ValueError(
+            f"cluster labels must be 0..{n_clusters - 1} for k={n_clusters}; "
+            f"got {sorted(outside)}. Relabel clusters (e.g. labels - 1) first."
+        )
     cm = confusion_matrix(ref_labels, target_labels, labels=range(n_clusters))
     cost_matrix = -cm  # Hungarian algorithm finds *minimum* cost
     row_ind, col_ind = linear_sum_assignment(cost_matrix)
-    mapping = dict(zip(col_ind, row_ind))
-    aligned = np.vectorize(lambda x: mapping.get(x, x))(target_labels)
-    return aligned
+    return dict(zip(col_ind, row_ind))
 
 
 def align_cluster_label_dict(
@@ -219,12 +233,20 @@ def align_cluster_label_dict(
                 raise ValueError(
                     f"Folds {reference_fold!r} and {fold!r} have no samples in common"
                 )
-            common_aligned = align_clusters(
+            # Use the full k x k assignment: a mapping built only from labels
+            # seen on common samples left absent clusters unmapped, so they
+            # could collide with (silently merge into) a remapped cluster.
+            outside = set(target.dropna().unique()) - set(range(int(k)))
+            if outside:
+                raise ValueError(
+                    f"fold {fold!r} has cluster labels {sorted(outside)} outside "
+                    f"0..{int(k) - 1} for k={k}."
+                )
+            mapping = _cluster_label_mapping(
                 reference.loc[common_samples].to_numpy(),
                 target.loc[common_samples].to_numpy(),
                 n_clusters=int(k),
             )
-            mapping = dict(zip(target.loc[common_samples].to_numpy(), common_aligned))
             aligned[fold] = target.map(lambda label: mapping.get(label, label))
 
         aligned_df = pd.concat(aligned, axis=1)
