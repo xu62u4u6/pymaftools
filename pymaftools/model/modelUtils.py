@@ -76,11 +76,24 @@ def evaluate_model(
     """
     y_pred = model.predict(X_test)
     prob = model.predict_proba(X_test)
+    # predict_proba columns follow the model's own class order
+    # (OmicsStackingModel.class_order, sklearn's classes_); roc_auc_score
+    # would otherwise assume sorted labels and score the wrong columns.
+    class_order = np.asarray(
+        list(getattr(model, "class_order", None) or model.classes_)
+    )
 
     if prob.shape[1] == 2:
-        auc = roc_auc_score(y_test, prob[:, 1])
+        auc = roc_auc_score(np.asarray(y_test) == class_order[1], prob[:, 1])
     else:
-        auc = roc_auc_score(y_test, prob, multi_class="ovr")
+        # sklearn requires ``labels`` sorted, so sort the columns to match.
+        sorted_columns = np.argsort(class_order)
+        auc = roc_auc_score(
+            y_test,
+            prob[:, sorted_columns],
+            multi_class="ovr",
+            labels=class_order[sorted_columns],
+        )
 
     return {
         "acc": accuracy_score(y_test, y_pred),

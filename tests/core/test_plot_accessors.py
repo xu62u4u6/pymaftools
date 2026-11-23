@@ -72,3 +72,31 @@ def test_plot_cnv_band_ratio_is_deprecated_alias():
         # Missing required feature_metadata columns -> raises after warning fires.
         with pytest.raises(ValueError):
             cnv.plot_cnv_band_ratio(cluster_id="C1")
+
+
+def test_band_ratio_default_shows_cohort_subtypes_not_lung_names():
+    # The default used to be ["LUAD", "ASC", "LUSC"], which dropped every
+    # column of a non-lung cohort.
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    samples = ["s1", "s2", "s3", "s4"]
+    cnv = CopyNumberVariationTable(
+        pd.DataFrame(
+            [[0.5, 0.0, 0.4, 0.0], [0.3, 0.2, 0.0, 0.0]],
+            index=["g1", "g2"],
+            columns=samples,
+        )
+    )
+    cnv.feature_metadata["cluster"] = ["C1", "C1"]
+    cnv.feature_metadata["Band"] = ["1p36", "1p35"]
+    cnv.sample_metadata["sample_type"] = "T"
+    cnv.sample_metadata["subtype"] = ["Basal", "Basal", "LumA", "LumA"]
+
+    freq = cnv.plot.band_ratio(cluster_id="C1", show=False)
+    plt.close("all")
+
+    assert list(freq.columns) == ["Basal", "LumA"]
+    assert freq.loc["1p36", "Basal"] == 0.5

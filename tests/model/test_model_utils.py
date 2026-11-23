@@ -81,3 +81,36 @@ def test_cross_validate_importance_accepts_array_groups():
     assert not importance.empty
     assert metrics is not None
     assert len(metrics) == 3
+
+
+class _PerfectClassifier:
+    """predict_proba columns follow ``class_order``, like OmicsStackingModel."""
+
+    def __init__(self, class_order, y):
+        self.class_order = class_order
+        self.y = np.asarray(y)
+
+    def predict(self, X):
+        return self.y
+
+    def predict_proba(self, X):
+        return np.array(
+            [[float(label == truth) for label in self.class_order] for truth in self.y]
+        )
+
+
+def test_evaluate_model_auc_follows_model_class_order_multiclass():
+    # Non-alphabetical order: sklearn's default (sorted) mapping would score
+    # P(LUAD) as ASC and report 0.5 for a perfect model (audit ISS-001).
+    y = np.array(["LUAD", "ASC", "LUSC"] * 10)
+    model = _PerfectClassifier(["LUAD", "ASC", "LUSC"], y)
+
+    assert evaluate_model(model, None, y)["auc"] == 1.0
+
+
+def test_evaluate_model_auc_follows_model_class_order_binary():
+    # Reversed order used to invert the binary AUC to 1 - AUC.
+    y = np.array(["LUAD", "LUSC"] * 10)
+    model = _PerfectClassifier(["LUSC", "LUAD"], y)
+
+    assert evaluate_model(model, None, y)["auc"] == 1.0

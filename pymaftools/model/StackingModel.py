@@ -514,9 +514,9 @@ class OmicsStackingModel:
         plot_df = df.drop(columns=["abs_mean", "abs_ratio"])
 
         table = PivotTable(plot_df.T)
-        table.sample_metadata = pd.DataFrame({"omic": df.index})
-        table.sample_metadata.set_index(table.sample_metadata.index, inplace=True)
-        table.sample_metadata["abs_mean"] = df["abs_mean"]
+        table.sample_metadata = pd.DataFrame(
+            {"omic": df.index, "abs_mean": df["abs_mean"]}, index=df.index
+        )
 
         (
             OncoPlot(table)

@@ -540,7 +540,8 @@ class CopyNumberVariationTable(PivotTable):
         sample_type : str
             Sample type to subset (default: "T").
         subtype_order : list of str, optional
-            Order of subtypes to show in columns. If None, uses ["LUAD", "ASC", "LUSC"].
+            Order of subtypes to show in columns. If None, all subtypes present
+            are shown in sorted order.
         ax : matplotlib Axes, optional
             If provided, plot on this Axes object.
         cmap : str, optional
@@ -563,10 +564,6 @@ class CopyNumberVariationTable(PivotTable):
                 f"Required plotting libraries not available: {e}. "
                 "Please install matplotlib and seaborn."
             )
-
-        # Set default values
-        if subtype_order is None:
-            subtype_order = ["LUAD", "ASC", "LUSC"]
 
         # Select default colormap
         if cmap is None:

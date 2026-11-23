@@ -94,6 +94,18 @@ removal release.
 
 ### 🐛 Correctness and usability
 
+* **ROC-AUC follows the model's class order.** `evaluate_model()` (and so
+  `cross_validate_importance` / `run_model_evaluation`) scored
+  `predict_proba` columns as if they were in sorted label order. With a
+  non-alphabetical `OmicsStackingModel.class_order` a perfect multiclass model
+  scored 0.5, and a reversed binary order reported 1 - AUC. Benchmarks run with
+  such class orders should be re-run.
+* `OmicsStackingModel.plot_final_coefficients()` draws the per-omic `abs_mean`
+  track; it was all-NaN.
+* Lung-project defaults removed: `CopyNumberVariationTable.plot.band_ratio()`
+  shows the cohort's own subtypes (it showed nothing for non-LUAD/ASC/LUSC
+  cohorts) and `ModelPlot.plot_metric_comparison_with_annotation()` orders
+  groups from the data instead of `SNV/CNV-gene/CNV-cluster/STACK`.
 * `MAF.read_maf()` now detects comma- and tab-delimited inputs and reports
   incompatible columns without exposing user-specific paths.
 * `MAF.read_csv()` preserves a leading `Hugo_Symbol` as event data and can copy

@@ -299,3 +299,23 @@ class TestPlotPerformance:
         
         assert pca_df.shape[0] == 100
         plt.close('all')
+
+
+@pytest.mark.plot
+def test_metric_comparison_default_order_uses_data_groups():
+    # The default order used to be the ASC project's omics names.
+    import pandas as pd
+
+    rng = np.random.default_rng(0)
+    data = pd.DataFrame(
+        {
+            "model": ["RNA"] * 8 + ["Methylation"] * 8,
+            "acc": rng.normal(0.7, 0.05, 16),
+        }
+    )
+    plot = ModelPlot()
+    plot.plot_metric_comparison_with_annotation(data=data, metrics=["acc"])
+
+    labels = [tick.get_text() for tick in plot.fig.axes[0].get_xticklabels()]
+    plt.close("all")
+    assert labels == ["Methylation", "RNA"]
