@@ -70,13 +70,21 @@ class SimilarityMatrix(PairwiseMatrix):
         """Return group labels in matrix row order.
 
         A Series indexed by sample IDs is aligned by its index, so metadata in
-        a different order cannot silently mislabel samples. Arrays, and Series
-        with a default 0..n-1 index (no sample identity), are positional.
+        a different order cannot silently mislabel samples; extra samples not
+        in the matrix are ignored. Arrays, and Series with a default 0..n-1
+        index (no sample identity, e.g. after ``reset_index(drop=True)``), are
+        positional and must already be in matrix row order.
         """
         is_positional_series = isinstance(groups, pd.Series) and groups.index.equals(
             pd.RangeIndex(len(groups))
         )
         if isinstance(groups, pd.Series) and not is_positional_series:
+            duplicated = groups.index[groups.index.duplicated()].unique()
+            if len(duplicated):
+                raise ValueError(
+                    f"groups Series has duplicate sample IDs {list(duplicated[:5])}; "
+                    "keep one label per sample."
+                )
             missing = self.index.difference(groups.index)
             if len(missing):
                 raise ValueError(
@@ -101,7 +109,9 @@ class SimilarityMatrix(PairwiseMatrix):
         Parameters
         ----------
         groups : pd.Series or np.ndarray
-            Group label for each sample, aligned with the matrix indices.
+            Group label for each sample. A Series indexed by sample IDs is
+            aligned to the matrix rows; an array (or a Series with a default
+            0..n-1 index) must already be in matrix row order.
         group_order : array-like of str, optional
             Ordered list of unique group labels. If ``None``, derived from
             ``groups.unique()``.
@@ -409,7 +419,8 @@ class SimilarityMatrix(PairwiseMatrix):
             alpha=0,
         )
 
-        color = groups.map(group_cmap).values
+        aligned_groups = pd.Series(self._group_values(groups), index=self.index)
+        color = aligned_groups.map(group_cmap).values
         for i, c in enumerate(color):
             ax_groupbar.add_patch(
                 Rectangle(
@@ -699,7 +710,8 @@ class SimilarityMatrix(PairwiseMatrix):
             alpha=0,
         )
 
-        color = groups.map(group_cmap).values
+        aligned_groups = pd.Series(self._group_values(groups), index=self.index)
+        color = aligned_groups.map(group_cmap).values
         for i, c in enumerate(color):
             ax_groupbar.add_patch(
                 Rectangle(
@@ -1084,6 +1096,7 @@ class SimilarityMatrix(PairwiseMatrix):
         pair2_subset : pd.DataFrame
             Sub-matrix of similarities between the groups in *pair2*.
         """
+        groups = self._group_values(groups)
         pair1_indices1, pair1_indices2 = (
             np.where(groups == pair1[0])[0],
             np.where(groups == pair1[1])[0],

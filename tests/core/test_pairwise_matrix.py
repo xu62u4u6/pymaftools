@@ -193,3 +193,61 @@ def test_group_series_missing_samples_raises_with_hint():
 
     with pytest.raises(ValueError, match="to_numpy"):
         matrix.get_mean_group_similarity(pd.Series(["A", "B"], index=["s1", "x"]))
+
+
+@pytest.mark.parametrize(
+    ("tail", "expected"),
+    [("right", (1 + 1) / (2 + 1)), ("left", (1 + 1) / (2 + 1))],
+)
+def test_group_pvalues_one_sided_tails_ignore_nan_permutations(tail, expected):
+    groups = ["A"]
+    observed = pd.DataFrame([[0.5]], index=groups, columns=groups)
+    permutations = [
+        pd.DataFrame([[v]], index=groups, columns=groups)
+        for v in [0.9, np.nan, 0.1, np.nan]
+    ]
+
+    pvalues = SimilarityMatrix.calculate_group_similarity_pvalues(
+        observed, permutations, groups, tail=tail
+    )
+
+    assert pvalues.loc["A", "A"] == pytest.approx(expected)
+
+
+def test_group_pvalues_all_nan_permutations_give_nan_and_bad_tail_raises():
+    groups = ["A"]
+    observed = pd.DataFrame([[np.nan]], index=groups, columns=groups)
+    permutations = [pd.DataFrame([[np.nan]], index=groups, columns=groups)] * 3
+    finite_observed = pd.DataFrame([[0.5]], index=groups, columns=groups)
+
+    pvalues = SimilarityMatrix.calculate_group_similarity_pvalues(
+        finite_observed, permutations, groups
+    )
+    assert np.isnan(pvalues.loc["A", "A"])
+    with pytest.raises(ValueError, match="tail"):
+        SimilarityMatrix.calculate_group_similarity_pvalues(
+            observed, permutations, groups, tail="both"
+        )
+
+
+def test_get_pairs_subset_aligns_group_series_by_sample_id():
+    samples = ["s1", "s2", "s3", "s4"]
+    matrix = SimilarityMatrix(
+        np.arange(16, dtype=float).reshape(4, 4), index=samples, columns=samples
+    )
+    groups = pd.Series(["A", "A", "B", "B"], index=samples).loc[["s4", "s2", "s3", "s1"]]
+
+    pair1, _ = matrix.get_pairs_subset(groups, ("A", "B"), ("A", "A"))
+
+    assert list(pair1.index) == ["s1", "s2"]
+    assert list(pair1.columns) == ["s3", "s4"]
+
+
+def test_group_series_with_duplicate_sample_ids_raises():
+    samples = ["s1", "s2"]
+    matrix = SimilarityMatrix(np.eye(2), index=samples, columns=samples)
+
+    with pytest.raises(ValueError, match="duplicate sample IDs"):
+        matrix.get_mean_group_similarity(
+            pd.Series(["A", "B", "B"], index=["s1", "s2", "s2"])
+        )

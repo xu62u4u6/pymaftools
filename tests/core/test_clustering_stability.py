@@ -106,4 +106,17 @@ def test_align_cluster_labels_keeps_cluster_absent_from_common_samples_distinct(
 
     assert aligned.loc[["a", "b"]].tolist() == [0, 0]
     assert aligned.loc[["c", "d"]].tolist() == [2, 2]
-    assert aligned.loc["e"] not in {0, 2}
+    assert aligned.loc["e"] == 1
+    assert set(aligned) == {0, 1, 2}
+
+
+def test_align_cluster_labels_rejects_labels_outside_zero_to_k_minus_one():
+    import pytest
+
+    from pymaftools.core.Clustering import align_cluster_label_dict
+
+    reference = pd.Series([1, 1, 2, 2], index=list("abcd"))  # 1-indexed
+    target = pd.Series([1, 1, 2, 2], index=list("abcd"))
+
+    with pytest.raises(ValueError, match="0..1"):
+        align_cluster_label_dict({2: {1: reference, 2: target}})
