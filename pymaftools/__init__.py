@@ -19,6 +19,13 @@ from .core.SampleManifest import SampleManifest
 from .core.SignatureTable import SignatureTable
 from .core.SmallVariationTable import SmallVariationTable
 from .core.TMBAudit import TMBAudit
+from .provenance import (
+    Provenance,
+    get_provenance,
+    session_info,
+    to_json,
+    to_jsonable,
+)
 from .datasets import (
     example_maf_path,
     example_table_path,
@@ -54,6 +61,7 @@ _LAZY_EXPORTS = {
     "ColorManager": ".plot.ColorManager",
     "FontManager": ".plot.FontManager",
     "ModelPlot": ".plot.ModelPlot",
+    "figure_summary": ".plot.summary",
     "compare_cohorts": ".plot.wes",
     "infer_vaf": ".plot.wes",
     "mutation_burden_by_class": ".plot.wes",
@@ -116,6 +124,11 @@ __all__ = [
     "load_example_table",
     "example_table_path",
     "read_h5",
+    "Provenance",
+    "get_provenance",
+    "session_info",
+    "to_json",
+    "to_jsonable",
     *_LAZY_EXPORTS,
 ]
 

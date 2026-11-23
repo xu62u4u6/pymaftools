@@ -30,7 +30,12 @@ The published documentation index is <https://dionic.xyz/pymaftools/llms.txt>.
    observable cells differ by feature or sample.
 5. Keep statistical computation separate from visualization.
 6. Use the smallest public workflow that answers the question.
-7. Save reusable tables and figures, and record versions and filtering choices.
+7. Save reusable tables and figures, and record versions and filtering choices:
+   `pymaftools.to_json(result, path)` keeps each result's provenance,
+   `pymaftools.session_info()` records versions, and
+   `plot.save(path, summary=True)` writes a JSON summary to check that a figure
+   is not blank without viewing it. For quick checks from a shell, use
+   `pymaftools inspect file.maf --json`.
 8. Validate behavior with focused tests or a rerunnable example.
 
 ## Repository commands

@@ -46,6 +46,27 @@ global threshold until low-coverage, high-risk modules improve.
   oncoplot, `save()` before `render()`, metadata crashes) and errors name the fix
   and the valid options; scientific pitfalls emit warnings without changing
   numbers.
+- Machine-readable results: `to_json`, provenance (parameters, input SHA-256,
+  sample universe), `session_info()`, figure-summary JSON sidecars, and a small
+  `pymaftools` CLI (`inspect`, `oncoplot`, `interactions`, `session-info`).
+
+### Structured-output decisions (0.6.0)
+
+- Statistics keep returning plain `DataFrame`s; provenance lives in
+  `df.attrs["pymaftools_provenance"]` instead of a wrapper class, so existing
+  scripts and published numbers are untouched. `attrs` is metadata: pandas may
+  drop it on some operations, so serialise straight from the returned object.
+- Infinite values serialise as the strings `"inf"`/`"-inf"`, never `null`
+  (a forest plot once dropped infinite odds ratios silently).
+- `save(summary=True)` is opt-in so existing pipelines write the same files;
+  the CLI always writes the sidecar.
+- The interaction heatmap colours evidence (`sign(log OR) × −log10(FDR)`),
+  not log2 OR: a 2026-11-19 trial showed OR = 0 / ∞ pairs from sparse counts
+  dominating the figure. Odds ratios stay in the statistics table.
+- CLI commands take `--samples` for the full universe and warn without it;
+  the event table alone never defines a denominator silently.
+- CLI first, MCP later: an MCP server should wrap these subcommands and their
+  JSON rather than re-implement analyses.
 
 ### MAF input decisions (0.6.0)
 
@@ -148,7 +169,9 @@ a global percentage.
       `pymaftools-ai install`; one-call `table.plot.oncoplot(top=, group=)`;
       unify plot return types (`save()` returning a path or self); retire
       duplicate names (`to_MAF`, `vaild_variant_classfication`, top-level
-      project-specific exports); thin CLI before any MCP server; keep a fixed
+      project-specific exports); thin CLI shipped in 0.6.0, an MCP server
+      wrapping it is next; figure summaries for `plot/wes.py` functions and
+      `LollipopPlot` domain fields; keep a fixed
       fresh-agent task benchmark (load MAF, oncoplot, interactions, enrichment,
       lollipop) and re-run it each release.
 - [ ] Decide whether to add mypy and `py.typed`. Do not enable a non-blocking type

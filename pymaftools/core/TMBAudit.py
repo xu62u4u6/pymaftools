@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 import pandas as pd
 
@@ -11,16 +12,16 @@ import pandas as pd
 class TMBAudit:
     """Event-level audit and per-sample TMB summary.
 
-    Attributes
-    ----------
-    events : pandas.DataFrame
-        One row per input event with ``included`` and ``exclusion_reason``.
-    summary : pandas.DataFrame
-        Per-sample numerator, callable territory, TMB, and policy metadata.
+    Serialise with :meth:`to_dict` / :meth:`to_json`.
     """
 
     events: pd.DataFrame
+    """One row per input event with ``included`` and ``exclusion_reason``."""
     summary: pd.DataFrame
+    """Per-sample numerator, callable territory, TMB, and policy metadata."""
+    provenance: Any = None
+    """:class:`pymaftools.provenance.Provenance` of the run (parameters, input
+    checksum, sample universe), or ``None`` for a hand-built audit."""
 
     def __post_init__(self) -> None:
         required_event_columns = {"included", "exclusion_reason"}
@@ -56,3 +57,36 @@ class TMBAudit:
             .value_counts()
             .sort_index()
         )
+
+    def to_dict(self, include_events: bool = False) -> dict:
+        """Return a JSON-serialisable dict.
+
+        Parameters
+        ----------
+        include_events : bool, default False
+            Also include the full event ledger (can be large). By default
+            only per-reason exclusion counts are included.
+        """
+        from ..provenance import dataframe_to_dict, get_provenance
+
+        record: dict = {
+            "provenance": get_provenance(self),
+            "n_events": int(len(self.events)),
+            "n_included_events": int(self.events["included"].sum()),
+            "exclusion_counts": {
+                str(reason): int(count)
+                for reason, count in self.exclusion_counts().items()
+            },
+            "summary": dataframe_to_dict(self.summary, index=True),
+        }
+        if include_events:
+            record["events"] = dataframe_to_dict(self.events)
+        return record
+
+    def to_json(
+        self, path=None, *, include_events: bool = False, indent: int | None = 2
+    ) -> str:
+        """Serialise :meth:`to_dict` to JSON; write to ``path`` if given."""
+        from ..provenance import to_json
+
+        return to_json(self.to_dict(include_events=include_events), path, indent=indent)

@@ -120,6 +120,55 @@ what went wrong and how to fix it. Statistical results are unchanged.
   when most pairs are significant co-occurrences (typical mutation-burden
   confounding).
 
+### 🧾 Machine-readable results, provenance and CLI
+
+Additive only: no return type or computed number changes (statistics and
+rendered PNG bytes verified identical to the previous `dev`).
+
+* **`pymaftools.to_json()` / `to_jsonable()`** serialise any result to strict
+  JSON (`NaN` → `null`, `±inf` → `"inf"`/`"-inf"`). `IngestReport`,
+  `TMBAudit` gain `to_dict()` / `to_json()`.
+* **Provenance:** `somatic_interactions()`, `mutation_enrichment_test()` and
+  `calculate_tmb_audit()` attach analysis name, parameters, input-file SHA-256
+  and the sample universe (`pymaftools.get_provenance(result)`; DataFrames carry
+  it in `df.attrs`). `read_maf()` records the input's size and SHA-256 in
+  `ingest_report`, and derived tables keep that fingerprint.
+* **`pymaftools.session_info()`** returns package / Python / dependency versions.
+* **Figure summaries:** `plot.summary()` and `plot.save(path, summary=True)`
+  (writes `path` as `.json`) describe what was drawn: empty axes, and for
+  `OncoPlot` the matrix shape, fill fraction, top features, auto-hidden sample
+  labels and cell size in pixels, with warnings for a blank matrix.
+  `pymaftools.figure_summary(fig)` works on any matplotlib figure.
+* **CLI:** `pymaftools inspect | oncoplot | interactions | session-info`
+  (`--json` for machine output, exit code 2 for strict-validation failures);
+  also `python -m pymaftools`.
+* `BasePlot.save()` now raises backend errors instead of printing them and
+  returning as if the file had been written.
+* Fixes from a documentation-only agent trial on TCGA ACC (92 samples):
+  * `add_sample_metadata()` / `add_feature_metadata()` realign the metadata to
+    the table's current order (values were always matched by ID, but the
+    *row order* was sorted, so a sorted table failed later with an opaque
+    index error). Index-mismatch errors now say whether the IDs differ or
+    only their order, and give the fixing call. Docstrings state that both
+    return a new table.
+  * **Interaction heatmap colour scale changed** to `sign(log OR) × −log10(FDR)`
+    (what its docstring always claimed). Previously colour was log2 OR, so
+    sparse pairs with OR = 0 / ∞ but no significance were drawn as the
+    strongest effects. Untested pairs are grey. The statistics are unchanged;
+    the figure's `figure_summary()` reports `n_tested`, `n_significant`,
+    `n_infinite_or_zero_odds_ratio` and warns about sparse or
+    burden-confounded results.
+  * Oncoplot annotation / bar tracks record their column, missing count and
+    distinct values in `summary()["tracks"]`; an all-missing column warns at
+    registration and in the summary (also > 50 % missing or a single value).
+  * CLI: `--samples FILE` (plain list or a cBioPortal clinical-sample table;
+    `--sample-col`) declares the full sample universe so zero-event samples
+    count in denominators; without it every command warns. `pymaftools
+    oncoplot` sorts samples into a waterfall; `inspect` ranks genes like
+    `oncoplot`; interaction JSON no longer includes a positional `index`
+    column; CLI provenance records `validate`, `all_classes` and
+    `samples_file` for every command.
+
 ### 🎨 Plot fixes
 
 * **OncoPlot sample labels (#16):** sample-label gutters now share the heatmap's
