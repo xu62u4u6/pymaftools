@@ -224,6 +224,7 @@ class LegendManager:
                     edgecolor="none",
                     linewidth=0,
                 )
+                rect.set_clip_on(False)  # label text is never clipped either
                 target_ax.add_patch(rect)
 
                 # Plot label text
@@ -391,6 +392,7 @@ class LegendManager:
                         facecolor=color,
                         edgecolor="none",
                     )
+                    rect.set_clip_on(False)  # label text is never clipped either
                     target_ax.add_patch(rect)
 
                     # Plot label
@@ -710,6 +712,7 @@ class LegendManager:
                     facecolor=color,
                     transform=target_ax.transAxes,
                 )
+                rect.set_clip_on(False)  # label text is never clipped either
                 target_ax.add_patch(rect)
                 # Color label
                 target_ax.text(

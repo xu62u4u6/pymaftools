@@ -31,8 +31,14 @@ class ColorManager:
         "In_Frame_Del": "#ADDBEA",  # Light blue
         "Nonsense_Mutation": "#98E28F",  # Low-saturation green
         "Splice_Site": "#D0875D",  # Low-saturation brown
+        "Translation_Start_Site": "#9467BD",  # Purple
+        "Nonstop_Mutation": "#E5C14B",  # Amber
         "Multi_Hit": "#222222",  # Black (multiple mutations)
     }
+
+    NOT_ASSESSED_COLOR = "#D3D3D3"
+    """Fill for gene-sample cells an ObservationMask marks unobserved (not
+    sequenced), so they are not drawn white like observed wild-type."""
 
     ALL_MUTATION_CMAP = NONSYNONYMOUS_CMAP | {
         "Silent": "#eeeeee",

@@ -23,6 +23,8 @@ from matplotlib.axes import Axes
 from matplotlib.colors import ListedColormap, Normalize
 from matplotlib.patches import Rectangle
 
+from .ColorManager import ColorManager
+
 
 def _normalize_colorbar(value: str | bool) -> str:
     """Coerce a colorbar placement to ``"inset"`` / ``"legend"`` / ``"off"``.
@@ -169,6 +171,8 @@ class MainMatrixTrack(Track):
         self.ytick_fontsize = ytick_fontsize
         self.show_ylabel = show_ylabel
         self.show_all_categories = show_all_categories
+        mask = getattr(table, "observation_mask", None)
+        self.observed = None if mask is None else mask.to_frame()
 
     def render(self, ax: Axes) -> Axes:
         _fig, ax, _legend_info = draw_categorical_heatmap(
@@ -180,6 +184,7 @@ class MainMatrixTrack(Track):
             vmin=0,  # ensure mapping uses full range
             vmax=len(self.cmap_dict),
         )
+        self._draw_not_assessed(ax)
 
         ax.set_xticks([])
         ax.set_xlabel("")
@@ -207,6 +212,30 @@ class MainMatrixTrack(Track):
                 ax.add_patch(rect)
         return ax
 
+    def _unobserved_cells(self) -> np.ndarray:
+        if self.observed is None:
+            return np.zeros(self.table.shape, dtype=bool)
+        observed = self.observed.reindex(
+            index=self.table.index, columns=self.table.columns, fill_value=True
+        )
+        return ~observed.to_numpy(dtype=bool)
+
+    def _draw_not_assessed(self, ax: Axes) -> None:
+        """Grey out cells the ObservationMask marks unobserved (not sequenced),
+        which would otherwise look exactly like observed wild-type."""
+        rows, cols = np.nonzero(self._unobserved_cells())
+        for row, col in zip(rows, cols):
+            ax.add_patch(
+                Rectangle(
+                    (col, row),
+                    1,
+                    1,
+                    facecolor=ColorManager.NOT_ASSESSED_COLOR,
+                    edgecolor=self.linecolor,
+                    linewidth=_fit_linewidths(ax, self.linewidths, self.table.shape),
+                )
+            )
+
     # wild-type / no-mutation sentinels never worth a legend entry. Note the
     # matrix stores boolean ``False`` for wild-type while the cmap keys it as the
     # string ``"False"`` — exclude both. (PLOTTING_REVIEW P1#4)
@@ -227,6 +256,8 @@ class MainMatrixTrack(Track):
             for k, v in self.cmap_dict.items()
             if k != "Unknown" and k in present and k not in self._WILDTYPE
         }
+        if self._unobserved_cells().any():
+            legend["Not assessed"] = ColorManager.NOT_ASSESSED_COLOR
         return {"Mutation": legend}
 
     def subset(self, feat=None, samp=None) -> "MainMatrixTrack":
@@ -237,6 +268,10 @@ class MainMatrixTrack(Track):
         if samp is not None:
             table = table.iloc[:, samp]
         new.table = table
+        if self.observed is not None:
+            new.observed = self.observed.reindex(
+                index=table.index, columns=table.columns
+            )
         return new
 
 
@@ -288,15 +323,16 @@ class NumericMatrixTrack(Track):
         if vmin is None and vmax is None:
             if self.symmetric:
                 vextreme = max(abs(table.min().min()), abs(table.max().max()))
-                vmin, vmax, center = -vextreme, vextreme, 0
+                vmin, vmax = -vextreme, vextreme
             else:
                 vmin = table.min().min()
                 vmax = table.max().max()
-                center = (vmin + vmax) / 2
         elif vmin is None or vmax is None:
             raise ValueError("Both vmin and vmax must be specified.")
-        else:
-            center = 0
+        # No seaborn ``center``: with an asymmetric vmin/vmax it squeezes the
+        # data into half of the colormap while the colorbar (plain Normalize)
+        # shows the full range, so cell colours disagreed with the colorbar.
+        center = None
 
         sns.heatmap(
             table,
