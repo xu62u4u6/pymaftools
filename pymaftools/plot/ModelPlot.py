@@ -57,8 +57,7 @@ class ModelPlot(BasePlot):
         group_col : str, optional
             Column name for grouping. Default is ``'model'``.
         order : list[str] or None, optional
-            Order of groups. Defaults to
-            ``["SNV", "CNV-gene", "CNV-cluster", "STACK"]``.
+            Order of groups. Defaults to the sorted values of ``group_col``.
         palette : str, optional
             Color palette. Default is ``"Set2"``.
         test : str, optional
@@ -92,8 +91,6 @@ class ModelPlot(BasePlot):
         """
         if metrics is None:
             metrics = ["acc", "f1", "auc"]
-        if order is None:
-            order = ["SNV", "CNV-gene", "CNV-cluster", "STACK"]
 
         # 設定字體大小層次
         if title_fontsize is None:
@@ -111,7 +108,7 @@ class ModelPlot(BasePlot):
             axes = [axes]  # Make it iterable for single metric
 
         if order is None:
-            order = sorted(data[group_col].unique())
+            order = sorted(data[group_col].dropna().unique())
 
         for i, metric in enumerate(metrics):
             ax = axes[i]

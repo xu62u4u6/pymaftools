@@ -200,3 +200,32 @@ def test_custom_estimators_do_not_require_random_forest_constructor_kwargs():
 
     model.fit(X, y)
     assert len(model.predict(X)) == len(y)
+
+
+def test_plot_final_coefficients_attaches_abs_mean_per_omic(monkeypatch):
+    # abs_mean used to be assigned onto a RangeIndex and became all-NaN.
+    import pymaftools.model.StackingModel as stacking_module
+
+    captured = {}
+
+    class _CapturingOncoPlot:
+        def __init__(self, table):
+            captured["table"] = table
+
+        def __getattr__(self, name):
+            return lambda *args, **kwargs: self
+
+    monkeypatch.setattr(stacking_module, "OncoPlot", _CapturingOncoPlot)
+    omics_dict, X, y = _build_model_inputs()
+    model = OmicsStackingModel(omics_dict=omics_dict, class_order=["LUAD", "LUSC"])
+    model.fit(X, y)
+
+    model.plot_final_coefficients()
+
+    metadata = captured["table"].sample_metadata
+    expected = model.get_omics_weights()["abs_mean"]
+    assert list(metadata.index) == list(expected.index)
+    assert metadata["abs_mean"].notna().all()
+    pd.testing.assert_series_equal(
+        metadata["abs_mean"], expected, check_names=False
+    )
