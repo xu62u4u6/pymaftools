@@ -71,8 +71,9 @@ global threshold until low-coverage, high-risk modules improve.
 ### Naming decisions (0.6.0)
 
 - Public names are snake_case; HDF5 I/O is `to_h5`/`read_h5` on every class;
-  project-specific helpers (`ASCStackingModel`, `PCA_CCA`) live in their
-  submodule, not the package root.
+  project-specific helpers (`PCA_CCA`) live in their submodule, not the
+  package root. `ASCStackingModel` and `utils.geneset` were removed instead
+  (unused, superseded by `predict_proba` and gseapy).
 - Renames only add an alias that warns through `pymaftools._deprecation`
   (message names the replacement and the removal release). Removal release
   for everything deprecated so far: **1.0**, so readers of the 0.6.0 paper can

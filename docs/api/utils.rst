@@ -15,13 +15,6 @@ cli
    :members: main, build_parser
 
 
-geneset
--------
-
-.. automodule:: pymaftools.utils.geneset
-   :members:
-   :show-inheritance:
-
 reduction
 ---------
 
