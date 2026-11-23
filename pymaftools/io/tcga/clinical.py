@@ -10,6 +10,21 @@ import pandas as pd
 from .mapping import load_file_mapping, resolve_files
 
 
+def _deduplicate_clinical(clinical: pd.DataFrame, file_type: str) -> pd.DataFrame:
+    """One row per patient for ``patient``; keep every event row otherwise.
+
+    drug, radiation, follow_up and nte hold several rows per patient
+    (regimens, courses, follow-up updates, new tumor events). Keeping only
+    the first row per patient silently lost later treatments and deaths, so
+    those tables drop only exact duplicate rows (overlapping files) and keep a
+    RangeIndex with ``bcr_patient_barcode`` as a column.
+    """
+    if file_type == "patient":
+        clinical = clinical.drop_duplicates(subset="bcr_patient_barcode", keep="first")
+        return clinical.set_index("bcr_patient_barcode", drop=False)
+    return clinical.drop_duplicates().reset_index(drop=True)
+
+
 class TCGAClinicalBuilder:
     """
     Build a clinical DataFrame from TCGA BCR clinical TXT files.
@@ -47,7 +62,9 @@ class TCGAClinicalBuilder:
         Returns
         -------
         pd.DataFrame
-            Clinical table indexed by bcr_patient_barcode.
+            ``patient``: one row per patient, indexed by bcr_patient_barcode.
+            Other file types: every event row (several per patient) with a
+            RangeIndex and a bcr_patient_barcode column.
         """
         pattern = f"*_clinical_{self.file_type}_*.txt"
         files = resolve_files(self.data_dir, pattern, self.mapping_df)
@@ -63,12 +80,12 @@ class TCGAClinicalBuilder:
             df = pd.read_csv(f["filepath"], sep="\t", skiprows=[1, 2], dtype=str)
             frames.append(df)
 
-        clinical = pd.concat(frames, ignore_index=True)
-        clinical = clinical.drop_duplicates(subset="bcr_patient_barcode", keep="first")
-        clinical = clinical.set_index("bcr_patient_barcode", drop=False)
+        clinical = _deduplicate_clinical(
+            pd.concat(frames, ignore_index=True), self.file_type
+        )
 
         print(
             f"[{self.__class__.__name__}] "
-            f"{len(clinical)} patients from {len(files)} {self.file_type} files"
+            f"{len(clinical)} rows from {len(files)} {self.file_type} files"
         )
         return clinical
