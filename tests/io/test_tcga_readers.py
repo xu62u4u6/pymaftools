@@ -570,3 +570,45 @@ class TestReadClinicalIntegration:
         df = read_clinical(SAMPLE_DATA / "clinical")
         assert len(df) > 500
         assert "bcr_patient_barcode" in df.columns
+
+
+def _write_clinical(directory, file_type, rows):
+    header = "bcr_patient_barcode\tagent\tvital_status"
+    directory.mkdir()
+    (directory / f"nationwidechildrens.org_clinical_{file_type}_luad.txt").write_text(
+        "\n".join([header, header, "CDE_ID:1\tCDE_ID:2\tCDE_ID:3", *rows])
+    )
+
+
+class TestReadClinicalEventTables:
+    def test_drug_keeps_every_regimen_and_drops_exact_file_duplicates(self, tmp_path):
+        # keep="first" per patient used to drop the second regimen.
+        _write_clinical(
+            tmp_path / "uuid-1",
+            "drug",
+            ["TCGA-01-0001\tCisplatin\tAlive", "TCGA-01-0001\tCarboplatin\tAlive"],
+        )
+        _write_clinical(tmp_path / "uuid-2", "drug", ["TCGA-01-0001\tCisplatin\tAlive"])
+
+        df = read_clinical(tmp_path, file_type="drug")
+
+        assert sorted(df["agent"]) == ["Carboplatin", "Cisplatin"]
+        assert isinstance(df.index, pd.RangeIndex)
+        assert set(df["bcr_patient_barcode"]) == {"TCGA-01-0001"}
+
+    def test_follow_up_keeps_later_death_record(self, tmp_path):
+        _write_clinical(
+            tmp_path / "uuid-1",
+            "follow_up",
+            ["TCGA-01-0001\tNA\tAlive", "TCGA-01-0001\tNA\tDead"],
+        )
+
+        df = read_clinical(tmp_path, file_type="follow_up")
+
+        assert df["vital_status"].tolist() == ["Alive", "Dead"]
+
+    def test_patient_table_stays_one_row_per_patient(self, mock_clinical_dir):
+        df = read_clinical(mock_clinical_dir, file_type="patient")
+
+        assert df.index.is_unique
+        assert len(df) == 3

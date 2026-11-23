@@ -122,6 +122,22 @@ removal release.
 * `PCA_CCA.get_weights()` back-projects with CCA's rotations and score scaling;
   the returned feature weights now reproduce the canonical scores (they were
   off by the per-component standard deviation and could rank genes wrongly).
+* **Segment-to-cytoband tables ignore unmeasured segments.**
+  `TCGACNVSegmentBuilder.build_cytoband_table()` and the legacy
+  `seg_to_cytoband_table()` counted the length of NaN `Segment_Mean`
+  segments, pulling bands toward 0 and reporting fully unmeasured bands
+  (e.g. chrY in female samples) as 0.0 (diploid); those cells are now NaN.
+* **TCGA clinical event tables keep every row.** `drug`, `radiation`,
+  `follow_up` and `nte` (several rows per patient) were cut to the first row
+  per patient, losing later regimens and deaths. They now drop only exact
+  duplicates and use a RangeIndex; `patient` stays one row per patient.
+* `read_gistic_gene_level()` accepts sample IDs without `_` (TCGA barcodes
+  crashed); `read_gistic_arm_level()` keeps X/Y arms and no longer fills arms
+  missing from the file with 0. A no-match `samples=` filter now warns instead
+  of printing.
+* `SmallVariationTable.to_gene_level()` marks a gene observed when any
+  observed site is mutated (or all sites were observed); a mutated gene with an
+  uncovered second site no longer makes `add_freq()` and enrichment raise.
 * `MAF.read_maf()` now detects comma- and tab-delimited inputs and reports
   incompatible columns without exposing user-specific paths.
 * `MAF.read_csv()` preserves a leading `Hugo_Symbol` as event data and can copy

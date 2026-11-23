@@ -128,6 +128,12 @@ class TCGACNVSegmentBuilder(TCGATableBuilder):
             seg["Chromosome"] = "chr" + seg["Chromosome"]
 
         sample_column = "sample_ID" if "sample_ID" in seg.columns else "case_id"
+        all_samples = pd.unique(seg[sample_column])
+        # Unmeasured segments (NaN Segment_Mean, e.g. centromeres, chrY in
+        # female samples) must not enter the overlap-weighted mean: counting
+        # their length in the denominator pulled bands toward 0 (diploid) and
+        # turned fully unmeasured bands into 0.0 instead of NaN.
+        seg = seg.loc[np.isfinite(pd.to_numeric(seg["Segment_Mean"], errors="coerce"))]
         # Build segment–cytoband overlap pairs chromosome by chromosome.  The
         # previous implementation scanned every segment for every band; this
         # vectorized interval expansion only materializes actual overlaps and
@@ -187,6 +193,7 @@ class TCGACNVSegmentBuilder(TCGATableBuilder):
             )
         else:
             matrix = pd.DataFrame()
+        matrix = matrix.reindex(columns=all_samples)
         matrix.index.name = "cytoband"
 
         # Feature metadata

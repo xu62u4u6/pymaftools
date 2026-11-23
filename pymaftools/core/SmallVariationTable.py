@@ -95,10 +95,24 @@ class SmallVariationTable(PivotTable):
         if self.observation_mask is not None:
             from .ObservationMask import ObservationMask
 
-            mask_frame = self.observation_mask.to_frame()
-            mask_frame.index = gene_col
+            # Fails loudly if a site-level event is marked unobserved.
+            self.observation_mask.calculate_feature_frequency(self)
+            site_observed = self.observation_mask.to_frame()
+            site_present = pd.DataFrame(self.to_binary_table()).astype(bool)
+            site_observed.index = gene_col
+            site_present.index = gene_col
+            # A gene is observed if every site was observed (confirmed
+            # wild-type) or any observed site is mutated (confirmed event).
+            # all() alone marked a mutated gene unobserved when another site
+            # was not covered, which downstream code rejects as impossible.
+            all_sites_observed = site_observed.groupby(level=0, sort=False).all()
+            any_observed_event = (
+                (site_present & site_observed).groupby(level=0, sort=False).any()
+            )
             result.observation_mask = ObservationMask(
-                mask_frame.groupby(level=0, sort=False).all().reindex(result.index)
+                (all_sites_observed | any_observed_event).reindex(
+                    index=result.index, columns=result.columns
+                )
             )
         result._validate_metadata()
         return result

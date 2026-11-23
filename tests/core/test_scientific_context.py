@@ -439,3 +439,52 @@ def test_tmb_audit_requires_positive_callable_territory():
 
     with pytest.raises(ValueError, match="positive callable territory"):
         _maf().calculate_tmb_audit(manifest)
+
+
+def _site_table(values, mask, genes):
+    from pymaftools.core.SmallVariationTable import SmallVariationTable
+
+    sites = [f"site{i}" for i in range(len(genes))]
+    table = SmallVariationTable(pd.DataFrame(values, index=sites, columns=["S1", "S2"]))
+    table.feature_metadata["Hugo_Symbol"] = genes
+    table.observation_mask = ObservationMask(
+        pd.DataFrame(mask, index=sites, columns=["S1", "S2"])
+    )
+    return table
+
+
+def test_gene_level_mask_observed_mutation_plus_unobserved_site_is_observed():
+    # all() used to mark S1 unobserved while it is mutated -> add_freq crashed.
+    table = _site_table(
+        [["Missense_Mutation", False], [False, False]],
+        [[True, True], [False, True]],
+        ["TP53", "TP53"],
+    )
+
+    gene = table.to_gene_level()
+
+    mask = gene.observation_mask.to_frame()
+    assert bool(mask.loc["TP53", "S1"]) is True
+    assert gene.calculate_feature_frequency().loc["TP53"] == 0.5
+
+
+def test_gene_level_mask_wild_type_with_unobserved_site_stays_unobserved():
+    table = _site_table(
+        [[False, "Missense_Mutation"], [False, False]],
+        [[True, True], [False, True]],
+        ["KRAS", "KRAS"],
+    )
+
+    mask = table.to_gene_level().observation_mask.to_frame()
+
+    assert bool(mask.loc["KRAS", "S1"]) is False
+    assert bool(mask.loc["KRAS", "S2"]) is True
+
+
+def test_gene_level_rejects_site_event_marked_unobserved():
+    table = _site_table(
+        [["Missense_Mutation", False]], [[False, True]], ["TP53"]
+    )
+
+    with pytest.raises(ValueError, match="present event"):
+        table.to_gene_level()

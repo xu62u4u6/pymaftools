@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 from .._deprecation import deprecated_alias, warn_deprecated
 import os
+import warnings
 import re
 from typing import TYPE_CHECKING
 from .PivotTable import PivotTable
@@ -121,13 +122,20 @@ class CopyNumberVariationTable(PivotTable):
         Returns
         -------
         CopyNumberVariationTable
-            A CopyNumberVariationTable object with arm-level copy number data.
+            Arm-level copy number data with one row per arm present in the
+            file (including X/Y), in genomic order 1p..22q, Xp..Yq. Arms the
+            file does not report (e.g. acrocentric p-arms) are not added.
         """
         df = pd.read_csv(file_path, sep="\t", index_col=0)
         df.columns = df.columns.str.replace(".call", "", regex=False)
         df = df.fillna(0)
-        order = [arm for i in range(1, 23) for arm in (f"{i}p", f"{i}q")]
-        table = CopyNumberVariationTable(df).reindex(index=order, fill_value=0)
+        canonical = [
+            arm for c in (*range(1, 23), "X", "Y") for arm in (f"{c}p", f"{c}q")
+        ]
+        order = [arm for arm in canonical if arm in df.index] + [
+            arm for arm in df.index if arm not in canonical
+        ]
+        table = CopyNumberVariationTable(df).reindex(index=order)
         table.feature_metadata["Chromosome"] = table.index.str.replace(
             "p", ""
         ).str.replace("q", "")
@@ -214,9 +222,14 @@ class CopyNumberVariationTable(PivotTable):
         table.feature_metadata = metadata_columns.copy()
 
         # Process sample metadata - extract case_ID and sample_type from column names
-        table.sample_metadata[["case_ID", "sample_type"]] = (
-            table.columns.to_series().str.rsplit("_", n=1).apply(pd.Series)
-        )
+        # "LUAD_001_T" -> ("LUAD_001", "T"). IDs without "_" (e.g. TCGA
+        # barcodes) used to crash here; keep the whole ID as case_ID.
+        parts = [
+            name.rsplit("_", 1) if "_" in name else [name, pd.NA]
+            for name in table.columns.astype(str)
+        ]
+        table.sample_metadata["case_ID"] = [case_id for case_id, _ in parts]
+        table.sample_metadata["sample_type"] = [sample_type for _, sample_type in parts]
 
         # Process chromosome information - parse cytoband into components
         if "Cytoband" in table.feature_metadata.columns:
@@ -234,8 +247,10 @@ class CopyNumberVariationTable(PivotTable):
             if available_samples:
                 table = table.subset(samples=available_samples)
             else:
-                print(
-                    f"Warning: No matching samples found from {len(samples)} specified samples"
+                warnings.warn(
+                    f"No matching samples found from {len(samples)} specified samples",
+                    UserWarning,
+                    stacklevel=2,
                 )
 
         return table.rename_index_and_columns()

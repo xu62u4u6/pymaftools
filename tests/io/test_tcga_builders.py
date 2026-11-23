@@ -359,3 +359,49 @@ def test_mutation_builder_reports_empty_tumor_selection(tmp_path):
                 }
             ]
         )
+
+
+def _nan_segment_inputs(tmp_path):
+    cytoband_path = tmp_path / "cytoBand.txt"
+    cytoband_path.write_text(
+        "chr1\t0\t100\tp1\tgneg\nchrY\t0\t100\tp11.31\tgneg\n", encoding="utf-8"
+    )
+    segments = pd.DataFrame(
+        {
+            "Chromosome": ["1", "1", "Y", "1", "Y"],
+            "Start": [0, 50, 0, 0, 0],
+            "End": [50, 100, 100, 100, 100],
+            "Segment_Mean": [2.0, float("nan"), -0.5, 1.0, float("nan")],
+            "sample_ID": ["male-01A", "male-01A", "male-01A", "female-01A", "female-01A"],
+            "case_id": ["male", "male", "male", "female", "female"],
+            "sample_type": ["Primary Tumor"] * 5,
+        }
+    )
+    return cytoband_path, segments
+
+
+def test_cnv_segment_nan_segments_do_not_dilute_or_fabricate_diploid(tmp_path):
+    # NaN segment length used to count in the denominator: the partly
+    # measured band read 1.0 instead of 2.0 and female chrY read 0.0.
+    cytoband_path, segments = _nan_segment_inputs(tmp_path)
+    builder = TCGACNVSegmentBuilder(
+        tmp_path, pd.DataFrame(columns=["filename", "case_id"]), sample_key="sample_id"
+    )
+
+    table = builder.build_cytoband_table(segments, cytoband_path)
+
+    assert table.loc["chr1p1", "male-01A"] == pytest.approx(2.0)
+    assert table.loc["chrYp11.31", "male-01A"] == pytest.approx(-0.5)
+    assert pd.isna(table.loc["chrYp11.31", "female-01A"])
+    assert list(table.columns) == ["male-01A", "female-01A"]
+
+
+def test_legacy_seg_to_cytoband_table_ignores_nan_segments(tmp_path):
+    from pymaftools.io.tcga_readers import seg_to_cytoband_table
+
+    cytoband_path, segments = _nan_segment_inputs(tmp_path)
+
+    table = seg_to_cytoband_table(segments, cytoband_path)
+
+    assert table.loc["chr1p1", "male"] == pytest.approx(2.0)
+    assert pd.isna(table.loc["chrYp11.31", "female"])

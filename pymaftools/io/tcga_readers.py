@@ -14,6 +14,7 @@ import json
 from pathlib import Path
 from typing import Literal
 
+import numpy as np
 import pandas as pd
 import requests
 
@@ -22,6 +23,7 @@ from ..core.ExpressionTable import ExpressionTable
 from ..core.MAF import MAF
 from ..core.maf_io import read_leading_comments
 from ..core.PivotTable import PivotTable
+from .tcga.clinical import _deduplicate_clinical
 
 
 # ------------------------------------------------------------------ #
@@ -349,6 +351,10 @@ def seg_to_cytoband_table(
     seg["Chromosome"] = seg["Chromosome"].astype(str)
     if not seg["Chromosome"].iloc[0].startswith("chr"):
         seg["Chromosome"] = "chr" + seg["Chromosome"]
+    all_cases = pd.unique(seg["case_id"])
+    # Drop unmeasured (NaN) segments so they neither dilute band means toward
+    # 0 nor turn fully unmeasured bands into 0.0.
+    seg = seg.loc[np.isfinite(pd.to_numeric(seg["Segment_Mean"], errors="coerce"))]
 
     records = []
     for _, b in bands.iterrows():
@@ -377,7 +383,7 @@ def seg_to_cytoband_table(
         )
         records.append(weighted)
 
-    matrix = pd.DataFrame(records)
+    matrix = pd.DataFrame(records).reindex(columns=all_cases)
     matrix.index.name = "cytoband"
 
     # Feature metadata: chromosome, arm, band, stain
@@ -610,9 +616,7 @@ def read_clinical(
         df = pd.read_csv(filepath, sep="	", skiprows=[1, 2], dtype=str)
         frames.append(df)
 
-    clinical = pd.concat(frames, ignore_index=True)
-    clinical = clinical.drop_duplicates(subset="bcr_patient_barcode", keep="first")
-    clinical = clinical.set_index("bcr_patient_barcode", drop=False)
+    clinical = _deduplicate_clinical(pd.concat(frames, ignore_index=True), file_type)
 
     print(
         f"[read_clinical] Loaded {len(clinical)} rows from "
