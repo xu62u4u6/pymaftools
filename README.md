@@ -485,6 +485,14 @@ Agents can also read the documentation index at
 anything. Contributor agents (Codex, Cursor, Claude Code, ...) follow
 [`AGENTS.md`](AGENTS.md).
 
+## Related projects
+
+- [EnrichRAG](https://github.com/xu62u4u6/EnrichRAG) — interpret a gene list
+  from pymaftools with GO/KEGG enrichment, a local knowledge graph, PubMed
+  evidence and an LLM-written report. See
+  [Related projects](https://dionic.xyz/pymaftools/ecosystem.html) for the
+  hand-off and its gene-length caveat.
+
 ## License
 
 MIT License - see the LICENSE file for details.

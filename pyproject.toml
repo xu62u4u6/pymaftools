@@ -5,11 +5,15 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "pymaftools"
 dynamic = ["version"]   # derived from the git tag by setuptools-scm
-description = "Python package for handling and analyzing Mutation Annotation Format (MAF) files."
+description = "MAF and multi-omics cancer genomics toolkit: mutation matrices, statistics and oncoplots."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 license-files = ["LICENSE"]
+keywords = [
+  "bioinformatics", "cancer-genomics", "maf", "mutation-annotation-format",
+  "somatic-mutation", "oncoplot", "tcga", "multi-omics", "vcf", "copy-number",
+]
 
 authors = [
   { name = "Ding-Yang Liu", email = "199928ltyos@gmail.com" }

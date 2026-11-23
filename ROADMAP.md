@@ -94,6 +94,26 @@ global threshold until low-coverage, high-risk modules improve.
   statsmodels/PyTables floors) rather than re-saving the file for NumPy 1.x.
 - Open: panel-aware denominators (GENIE-style targeted panels) are not modelled.
 
+### Ecosystem decisions (0.6.0)
+
+- Decided (2026-11-23): gene set enrichment, literature search and LLM
+  interpretation belong to EnrichRAG, not pymaftools. pymaftools never imports
+  EnrichRAG (an application with web, LLM and a ~5 GB knowledge graph) and
+  EnrichRAG never imports pymaftools; they exchange plain data (a gene list,
+  later plus a background gene set). Documented in `docs/ecosystem.rst`.
+- `utils/geneset.py` (`read_gmt`, `fetch_msigdb_geneset`) and
+  `ASCStackingModel` are removal candidates: unused inside the package,
+  project-specific, and superseded (gseapy in EnrichRAG; one-line
+  `predict_proba` lookup). Removing `geneset` also drops `beautifulsoup4`.
+- Shared code is copied, not packaged: gene-symbol normalization (NCBI
+  gene_info alias map, ~100 lines in EnrichRAG) may be copied into pymaftools.
+  Extract a shared package only when a third consumer appears, the copies
+  drift, or the code is worth publishing on its own.
+- Scientific constraint for the hand-off: a "most mutated genes" list is
+  biased toward long genes; enrichment needs an assay-covered background.
+  pymaftools knows that background (SampleManifest / ObservationMask), so it
+  should export it; EnrichRAG should pass it to `gseapy.enrichr(background=)`.
+
 ## Shipped in 0.5.0
 
 The full list is in `CHANGELOG.md`. The main roadmap milestones delivered were:
@@ -229,6 +249,11 @@ public API proposal before implementation.
 - [ ] Excel export for small review tables, with documented sheet and size limits.
 - [ ] Caller adapters for Strelka2, DRAGEN, DeepVariant, or Sentieon when real
       fixtures and expected harmonization behavior are available.
+- [ ] Export a gene list together with its assay-covered background gene set
+      for EnrichRAG / gseapy (see Ecosystem decisions).
+- [ ] Gene-symbol normalization (old/alias symbols such as `MLL2` to `KMT2D`)
+      from NCBI gene_info, so merged cohorts, protein domains and gene sizes
+      match on one symbol set.
 
 ### Analysis
 
