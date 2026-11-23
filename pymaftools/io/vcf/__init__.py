@@ -1,4 +1,64 @@
-from .parsers import parse_info, parse_vcf_rows, sample_type
-from .record import VCFRecord
+from .adapters import (
+    BaseCallerAdapter,
+    DeepSomaticAdapter,
+    DragenAdapter,
+    GenericFormatAdapter,
+    LoFreqAdapter,
+    MuseAdapter,
+    Mutect2Adapter,
+    PindelAdapter,
+    SampleMetrics,
+    Strelka2Adapter,
+    VarScan2Adapter,
+    detect_caller_adapter,
+    get_caller_adapter,
+    list_caller_adapters,
+    register_caller_adapter,
+)
+from .consensus import (
+    build_concordance_summary,
+    merge_caller_vcfs,
+    sort_vcf_dataframe,
+    summarize_cohort_consensus,
+)
+from .parsers import parse_info, parse_vcf_file, parse_vcf_rows, sample_type
+from .record import (
+    CHROM_PATTERN,
+    VCF_RECORD_COLUMNS,
+    VCFRecord,
+    chrom_sort_key,
+    classify_variant_type,
+    variant_category,
+)
 
-__all__ = ["parse_vcf_rows", "parse_info", "sample_type", "VCFRecord"]
+__all__ = [
+    "BaseCallerAdapter",
+    "CHROM_PATTERN",
+    "DeepSomaticAdapter",
+    "DragenAdapter",
+    "GenericFormatAdapter",
+    "LoFreqAdapter",
+    "MuseAdapter",
+    "Mutect2Adapter",
+    "PindelAdapter",
+    "SampleMetrics",
+    "Strelka2Adapter",
+    "VCFRecord",
+    "VCF_RECORD_COLUMNS",
+    "VarScan2Adapter",
+    "build_concordance_summary",
+    "chrom_sort_key",
+    "classify_variant_type",
+    "detect_caller_adapter",
+    "get_caller_adapter",
+    "list_caller_adapters",
+    "merge_caller_vcfs",
+    "parse_info",
+    "parse_vcf_file",
+    "parse_vcf_rows",
+    "register_caller_adapter",
+    "sample_type",
+    "sort_vcf_dataframe",
+    "summarize_cohort_consensus",
+    "variant_category",
+]

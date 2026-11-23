@@ -1,0 +1,16 @@
+##fileformat=VCFv4.2
+##GATKCommandLine=<ID=Mutect2,Version="4.5.0.0">
+##tumor_sample=CASE01_T
+##normal_sample=CASE01_N
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=AD,Number=R,Type=Integer,Description="Allelic depths for the ref and alt alleles">
+##FORMAT=<ID=AF,Number=A,Type=Float,Description="Allele fractions of alternate alleles">
+##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Approximate read depth">
+##FORMAT=<ID=F1R2,Number=R,Type=Integer,Description="Count of reads in F1R2 pair orientation">
+##FORMAT=<ID=F2R1,Number=R,Type=Integer,Description="Count of reads in F2R1 pair orientation">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	CASE01_N	CASE01_T
+chr17	7675088	.	C	T	.	PASS	DP=150	GT:AD:AF:DP:F1R2:F2R1	0/0:50,0:0.0:50:25,0:25,0	0/1:60,40:0.40:100:30,20:30,20
+chr7	55191822	.	T	G	.	PASS	DP=140	GT:AD:AF:DP:F1R2:F2R1	0/0:40,1:0.025:40:20,1:20,0	0/1:70,30:0.30:100:35,15:35,15
+chr12	25245350	.	C	CTG	.	PASS	DP=110	GT:AD:AF:DP:F1R2:F2R1	0/0:50,0:0.0:50:25,0:25,0	0/1:45,15:0.25:60:22,8:23,7
+chr1	1000	.	A	G	.	weak_evidence	DP=20	GT:AD:AF:DP:F1R2:F2R1	0/0:10,0:0.0:10:5,0:5,0	0/1:9,1:0.10:10:4,1:5,0
+chrUn_KI270442v1	500	.	G	A	.	PASS	DP=80	GT:AD:AF:DP:F1R2:F2R1	0/0:40,0:0.0:40:20,0:20,0	0/1:20,20:0.50:40:10,10:10,10

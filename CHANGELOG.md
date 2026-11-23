@@ -138,6 +138,22 @@ removal release.
 * `SmallVariationTable.to_gene_level()` marks a gene observed when any
   observed site is mutated (or all sites were observed); a mutated gene with an
   uncovered second site no longer makes `add_freq()` and enrichment raise.
+* **Pluggable VCF caller adapters and SNV/INDEL-aware consensus merging.**
+  `VCF.read_vcf()` adds a `BaseCallerAdapter` registry supporting `mutect2`,
+  `muse`, `varscan2`, `pindel`, `strelka2`, `deepsomatic`, `dragen`, `lofreq`,
+  and `caller="auto"` header detection, plus custom adapter registration.
+  `VCF.merge_callers()`, `concordance_summary()`, and `merge_cohort_vcfs()`
+  support separate SNV/INDEL caller thresholds (warning when SNV-only callers
+  would drop INDELs), warn on un-normalized multi-allelic sites or large VAF
+  spreads, reject mixed `chr1`/`1` naming, and sort variants in natural genomic
+  order.
+* **VCF I/O correctness:** `VCF.read_vcf()` accepts GRCh37/b37 bare chromosomes
+  (`1`–`22`, `X`, `Y`, `MT`) and `FILTER="."` records instead of silently
+  dropping them, and preserves the full column schema on empty VCFs.
+  `VCF.to_file()` no longer crashes on `NaN` normal depths or shifts tumor
+  genotypes into the normal column on mixed Tumor-Normal / Tumor-only rows,
+  computes actual normal AF, writes `CALLERS`/`N_CALLERS` in `INFO`, and
+  supports `.vcf.gz`.
 * `MAF.read_maf()` now detects comma- and tab-delimited inputs and reports
   incompatible columns without exposing user-specific paths.
 * `MAF.read_csv()` preserves a leading `Hugo_Symbol` as event data and can copy

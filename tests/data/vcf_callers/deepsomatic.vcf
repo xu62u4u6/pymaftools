@@ -1,0 +1,11 @@
+##fileformat=VCFv4.2
+##DeepSomatic_version=1.8.0
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=GQ,Number=1,Type=Integer,Description="Genotype quality">
+##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Read depth">
+##FORMAT=<ID=AD,Number=R,Type=Integer,Description="Read depth for each allele">
+##FORMAT=<ID=VAF,Number=A,Type=Float,Description="Variant allele fraction">
+##FORMAT=<ID=PL,Number=G,Type=Integer,Description="Phred-scaled genotype likelihoods">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	CASE01
+chr17	7675088	.	C	T	42.5	PASS	.	GT:GQ:DP:AD:VAF:PL	0/1:42:100:61,39:0.39:42,0,99
+chr12	25245350	.	C	CTG	36.0	PASS	.	GT:GQ:DP:AD:VAF:PL	0/1:36:60:46,14:0.2333:36,0,80

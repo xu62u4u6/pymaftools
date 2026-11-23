@@ -1,0 +1,12 @@
+##fileformat=VCFv4.2
+##MuSE_version=2.0.4
+##FILTER=<ID=Tier1,Description="Tier 1">
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Read depth">
+##FORMAT=<ID=AD,Number=R,Type=Integer,Description="Allelic depths">
+##FORMAT=<ID=BQ,Number=R,Type=Integer,Description="Average base quality">
+##FORMAT=<ID=SS,Number=1,Type=Integer,Description="Variant status">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	TUMOR	NORMAL
+chr17	7675088	.	C	T	.	PASS	SOMATIC	GT:DP:AD:BQ:SS	0/1:95:57,38:32,31:2	0/0:48:48,0:33,0:0
+chr7	55191822	.	T	G	.	Tier1	SOMATIC	GT:DP:AD:BQ:SS	0/1:90:63,27:31,30:2	0/0:40:40,0:32,0:0
+chr2	200000	.	A	T	.	PASS	SOMATIC	GT:DP:AD:BQ:SS	0/1:80:64,16:30,29:2	0/0:45:45,0:31,0:0

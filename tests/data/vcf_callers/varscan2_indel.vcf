@@ -1,0 +1,11 @@
+##fileformat=VCFv4.1
+##source=VarScan2
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=GQ,Number=1,Type=Integer,Description="Genotype Quality">
+##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Quality Read Depth">
+##FORMAT=<ID=RD,Number=1,Type=Integer,Description="Depth of reference-supporting bases">
+##FORMAT=<ID=AD,Number=1,Type=Integer,Description="Depth of variant-supporting bases">
+##FORMAT=<ID=FREQ,Number=1,Type=String,Description="Variant allele frequency">
+##FORMAT=<ID=DP4,Number=1,Type=String,Description="Strand read counts">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	NORMAL	TUMOR
+chr12	25245350	.	C	CTG	.	PASS	SOMATIC;SS=2	GT:GQ:DP:RD:AD:FREQ:DP4	0/0:.:50:50:0:0%:25,25,0,0	0/1:.:64:48:16:25.0%:24,24,8,8

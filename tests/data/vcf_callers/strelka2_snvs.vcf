@@ -1,0 +1,10 @@
+##fileformat=VCFv4.1
+##source=strelka
+##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Read depth for tier1">
+##FORMAT=<ID=AU,Number=2,Type=Integer,Description="Number of 'A' alleles used in tiers 1,2">
+##FORMAT=<ID=CU,Number=2,Type=Integer,Description="Number of 'C' alleles used in tiers 1,2">
+##FORMAT=<ID=GU,Number=2,Type=Integer,Description="Number of 'G' alleles used in tiers 1,2">
+##FORMAT=<ID=TU,Number=2,Type=Integer,Description="Number of 'T' alleles used in tiers 1,2">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	NORMAL	TUMOR
+chr17	7675088	.	C	T	.	PASS	SOMATIC;QSS=45	DP:FDP:SDP:SUBDP:AU:CU:GU:TU	50:0:0:0:0,0:50,50:0,0:0,0	102:2:0:0:0,0:60,61:0,0:40,41
+chr7	55191822	.	T	G	.	PASS	SOMATIC;QSS=38	DP:FDP:SDP:SUBDP:AU:CU:GU:TU	42:0:0:0:0,0:0,0:0,0:42,42	100:0:0:0:0,0:0,0:30,31:70,70
