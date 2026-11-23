@@ -23,6 +23,28 @@ producer-aware MAF input, and errors that say how to fix the call.
 * `read_maf()` keeps `Entrez_Gene_Id` as text; scripts that compare it numerically
   must cast it.
 
+### 🏷️ Name unification and deprecations
+
+Old names keep working and return identical results; they only emit a
+`DeprecationWarning` that names the replacement and the removal release,
+**pymaftools 1.0**. Nothing was removed.
+
+| Deprecated | Use instead |
+|---|---|
+| `Cohort.to_hdf5()` / `Cohort.read_hdf5()` | `Cohort.to_h5()` / `Cohort.read_h5()` (same file format; matches `PivotTable`) |
+| `PivotTable.PCA()` | `PivotTable.pca()` |
+| `MAF.vaild_variant_classfication` | `MAF.valid_variant_classification` |
+| `pymaftools.read_GMT`, `utils.geneset.read_GMT` | `pymaftools.read_gmt` |
+| `utils.geneinfo.get_ncbi_gene_ID(s)` | `get_ncbi_gene_id(s)` |
+| `TCGA_sample_type`, `get_target_sample_ID`, `read_TCGA_ASCAT3_CNV_file_sheet` | `tcga_sample_type`, `get_target_sample_id`, `read_tcga_ascat3_cnv_file_sheet` |
+| `pymaftools.ASCStackingModel` | `pymaftools.model.StackingModel.ASCStackingModel` |
+| `pymaftools.PCA_CCA` | `pymaftools.utils.reduction.PCA_CCA` |
+
+Project-specific names left the package root (`__all__`); they are still
+importable from it with a warning. Earlier deprecations (`to_MAF`, `write_maf`,
+`calculate_TMB`, SQLite I/O, `VCF.from_file`, ...) now also state the 1.0
+removal release.
+
 ### 🧪 Scientific data contracts
 
 * **`SampleManifest`:** declares eligible and excluded samples, patient identity,
@@ -91,6 +113,9 @@ producer-aware MAF input, and errors that say how to fix the call.
   untested (`not_tested_reason="degenerate_contingency_table"`) instead of
   aborting the whole analysis; untested rows are excluded from FDR (#20).
 
+* `read_maf()` builds its composite row index column-wise instead of row by
+  row: about 2x faster on large files (600k rows: 38 s → 19 s), identical labels.
+
 ### 🗣️ LLM usability: fail loud, hint the fix
 
 Calls that used to succeed silently or crash with a bare pandas error now say
@@ -128,6 +153,9 @@ rendered PNG bytes verified identical to the previous `dev`).
 * **`pymaftools.to_json()` / `to_jsonable()`** serialise any result to strict
   JSON (`NaN` → `null`, `±inf` → `"inf"`/`"-inf"`). `IngestReport`,
   `TMBAudit` gain `to_dict()` / `to_json()`.
+* **`schema_version`** (`"1.0"`) in every JSON record (provenance, ingest
+  report, TMB audit, figure summaries, CLI) and `pymaftools --version`; CLI
+  records also start with `pymaftools_version`.
 * **Provenance:** `somatic_interactions()`, `mutation_enrichment_test()` and
   `calculate_tmb_audit()` attach analysis name, parameters, input-file SHA-256
   and the sample universe (`pymaftools.get_provenance(result)`; DataFrames carry

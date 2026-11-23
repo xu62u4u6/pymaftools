@@ -169,10 +169,11 @@ class IngestReport:
         """Return a JSON-serialisable dict of every field (plus ``ok``)."""
         from dataclasses import asdict
 
-        from ..provenance import to_jsonable
+        from ..provenance import SCHEMA_VERSION, to_jsonable
 
         record = to_jsonable(asdict(self))
         record["ok"] = self.ok
+        record["schema_version"] = SCHEMA_VERSION
         return record
 
     def to_json(self, path=None, *, indent: int | None = 2) -> str:

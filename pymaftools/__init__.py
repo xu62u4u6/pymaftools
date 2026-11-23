@@ -76,7 +76,6 @@ _LAZY_EXPORTS = {
     "top_mutated_genes": ".plot.wes",
     # model
     "OmicsStackingModel": ".model.StackingModel",
-    "ASCStackingModel": ".model.StackingModel",
     "evaluate_model": ".model.modelUtils",
     "get_importance": ".model.modelUtils",
     "cross_validate_importance": ".model.modelUtils",
@@ -95,11 +94,24 @@ _LAZY_EXPORTS = {
     "TCGAMethylationBuilder": ".io.tcga",
     "TCGAClinicalBuilder": ".io.tcga",
     # utils
-    "read_GMT": ".utils.geneset",
+    "read_gmt": ".utils.geneset",
     "fetch_msigdb_geneset": ".utils.geneset",
     "get_exon_size": ".utils.geneinfo",
     "load_gene_sizes": ".utils.geneinfo",
-    "PCA_CCA": ".utils.reduction",
+}
+
+# Names deprecated at the top level in 0.6.0: still importable (with a
+# DeprecationWarning) until pymaftools 1.0, but no longer part of ``__all__``.
+# Project-specific helpers belong in their submodule, not the package root.
+_DEPRECATED_EXPORTS = {
+    # name: (module, attribute, replacement shown to the user)
+    "ASCStackingModel": (
+        ".model.StackingModel",
+        "ASCStackingModel",
+        "pymaftools.model.StackingModel.ASCStackingModel",
+    ),
+    "PCA_CCA": (".utils.reduction", "PCA_CCA", "pymaftools.utils.reduction.PCA_CCA"),
+    "read_GMT": (".utils.geneset", "read_gmt", "pymaftools.read_gmt"),
 }
 
 
@@ -135,6 +147,13 @@ __all__ = [
 
 def __getattr__(name: str) -> Any:
     """Lazily load heavy top-level exports on first access."""
+    if name in _DEPRECATED_EXPORTS:
+        from ._deprecation import warn_deprecated
+
+        module_name, attribute, replacement = _DEPRECATED_EXPORTS[name]
+        warn_deprecated(f"pymaftools.{name}", replacement, stacklevel=3)
+        # Not cached in globals(): every access keeps warning.
+        return getattr(import_module(module_name, __name__), attribute)
     module_name = _LAZY_EXPORTS.get(name)
     if module_name is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

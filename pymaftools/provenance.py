@@ -31,6 +31,15 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+SCHEMA_VERSION = "1.0"
+"""Version of the JSON layout pymaftools emits (provenance records, ingest
+reports, TMB audits, figure summaries and CLI output).
+
+Bump the minor part when fields are only added; bump the major part when a
+field is renamed, removed or changes meaning, so consumers can refuse output
+they do not understand.
+"""
+
 PROVENANCE_ATTR = "pymaftools_provenance"
 """Key under which :func:`attach_provenance` stores the record in ``df.attrs``."""
 
@@ -162,6 +171,8 @@ class Provenance:
             timespec="seconds"
         )
     )
+    schema_version: str = SCHEMA_VERSION
+    """See :data:`SCHEMA_VERSION`."""
 
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-serialisable dict."""

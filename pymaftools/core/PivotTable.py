@@ -14,6 +14,8 @@ from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Union
 # Third-party imports
 import numpy as np
 import pandas as pd
+
+from .._deprecation import deprecated_alias, warn_deprecated
 from sklearn.decomposition import PCA
 from sklearn.metrics import pairwise_distances
 from sklearn.metrics.pairwise import cosine_similarity
@@ -126,7 +128,7 @@ class PivotTable(pd.DataFrame):
     ]
 
     # Registry of PivotTable subclasses keyed by class name. Populated
-    # automatically via __init_subclass__ so that Cohort.read_hdf5 can
+    # automatically via __init_subclass__ so that Cohort.read_h5 can
     # restore the correct concrete type from a serialized table.
     _subclass_registry: dict[str, type] = {}
 
@@ -410,11 +412,10 @@ class PivotTable(pd.DataFrame):
         """
         from . import pivot_io
 
-        warnings.warn(
-            "PivotTable.to_sqlite() is deprecated; use to_h5() instead. "
+        warn_deprecated(
+            "PivotTable.to_sqlite()",
+            "PivotTable.to_h5()",
             "SQLite cannot reliably store high-dimensional omics matrices.",
-            DeprecationWarning,
-            stacklevel=2,
         )
         pivot_io.to_sqlite(self, db_path)
 
@@ -461,11 +462,7 @@ class PivotTable(pd.DataFrame):
         """
         from . import pivot_io
 
-        warnings.warn(
-            "PivotTable.read_sqlite() is deprecated; use read_h5() instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
+        warn_deprecated("PivotTable.read_sqlite()", "PivotTable.read_h5()")
         return pivot_io.read_sqlite(cls, db_path)
 
     @classmethod
@@ -1210,11 +1207,7 @@ class PivotTable(pd.DataFrame):
 
     def calculate_TMB(self, *args: Any, **kwargs: Any) -> "PivotTable":
         """Deprecated alias for :meth:`calculate_tmb`."""
-        warnings.warn(
-            "calculate_TMB is deprecated; use calculate_tmb() instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
+        warn_deprecated("PivotTable.calculate_TMB()", "PivotTable.calculate_tmb()")
         return self.calculate_tmb(*args, **kwargs)
 
     def calculate_tmb(
@@ -1614,7 +1607,7 @@ class PivotTable(pd.DataFrame):
             self, group_col=group_col, group_order=group_order, top=top
         )
 
-    def PCA(self, to_binary: bool) -> Tuple[pd.DataFrame, np.ndarray, PCA]:
+    def pca(self, to_binary: bool) -> Tuple[pd.DataFrame, np.ndarray, PCA]:
         """
         Perform Principal Component Analysis on the PivotTable.
 
@@ -1640,6 +1633,8 @@ class PivotTable(pd.DataFrame):
             pca_result, index=pivot_table.columns, columns=["PC1", "PC2"]
         )
         return pca_result_df, explained_variance, pca
+
+    PCA = deprecated_alias(pca, "PivotTable.PCA()", "PivotTable.pca()")
 
     def head(self, n: int = 50) -> "PivotTable":
         """

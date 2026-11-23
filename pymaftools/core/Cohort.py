@@ -7,6 +7,7 @@ import warnings
 
 from .PivotTable import PivotTable
 from ._atomic import atomic_output_path
+from .._deprecation import deprecated_alias, warn_deprecated
 import sqlite3
 from pathlib import Path
 
@@ -344,8 +345,8 @@ class Cohort:
         Save Cohort to SQLite database format.
 
         .. deprecated:: 0.4.0
-            ``to_sqlite`` will be removed in a future version.
-            Use :meth:`to_hdf5` instead, which supports larger datasets
+            ``to_sqlite`` will be removed in pymaftools 1.0.
+            Use :meth:`to_h5` instead, which supports larger datasets
             without column limits.
 
         Parameters
@@ -353,11 +354,10 @@ class Cohort:
         db_path : str
             Path to the output SQLite database file.
         """
-        warnings.warn(
-            "to_sqlite is deprecated and will be removed in a future version. "
-            "Use to_hdf5() instead, which supports larger datasets.",
-            DeprecationWarning,
-            stacklevel=2,
+        warn_deprecated(
+            "Cohort.to_sqlite()",
+            "Cohort.to_h5()",
+            "HDF5 supports larger datasets.",
         )
         db_path = Path(db_path)
 
@@ -395,8 +395,8 @@ class Cohort:
         Load Cohort from SQLite database format.
 
         .. deprecated:: 0.4.0
-            ``read_sqlite`` will be removed in a future version.
-            Use :meth:`read_hdf5` instead.
+            ``read_sqlite`` will be removed in pymaftools 1.0.
+            Use :meth:`read_h5` instead.
 
         Parameters
         ----------
@@ -408,12 +408,7 @@ class Cohort:
         Cohort
             Loaded Cohort object.
         """
-        warnings.warn(
-            "read_sqlite is deprecated and will be removed in a future version. "
-            "Use read_hdf5() instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
+        warn_deprecated("Cohort.read_sqlite()", "Cohort.read_h5()")
         with closing(sqlite3.connect(db_path)) as conn:
             registry_df = pd.read_sql("SELECT * FROM registry", conn)
 
@@ -443,7 +438,7 @@ class Cohort:
         print(f"[Cohort] loaded from {db_path}")
         return cohort
 
-    def to_hdf5(self, h5_path: str) -> None:
+    def to_h5(self, h5_path: str) -> None:
         """
         Save Cohort to HDF5 format.
 
@@ -503,7 +498,7 @@ class Cohort:
         print(f"[Cohort] saved to {h5_path}")
 
     @classmethod
-    def read_hdf5(cls, h5_path: str) -> Cohort:
+    def read_h5(cls, h5_path: str) -> Cohort:
         """
         Load Cohort from HDF5 format.
 
@@ -530,7 +525,7 @@ class Cohort:
                 warnings.warn(
                     f"HDF5 file '{h5_path}' was written without class info; "
                     "all tables will be loaded as PivotTable. Re-save with "
-                    "to_hdf5() to preserve subclass type.",
+                    "to_h5() to preserve subclass type.",
                     UserWarning,
                     stacklevel=2,
                 )
@@ -587,6 +582,11 @@ class Cohort:
 
         print(f"[Cohort] loaded from {h5_path}")
         return cohort
+
+    to_hdf5 = deprecated_alias(to_h5, "Cohort.to_hdf5()", "Cohort.to_h5()")
+    read_hdf5 = classmethod(
+        deprecated_alias(read_h5.__func__, "Cohort.read_hdf5()", "Cohort.read_h5()")
+    )
 
 
 # cohort = Cohort(name="ASC")

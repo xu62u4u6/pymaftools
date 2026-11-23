@@ -541,4 +541,6 @@ def test_read_maf_reports_missing_index_columns(tmp_path):
 
 
 def test_correct_variant_classification_name_keeps_legacy_alias():
-    assert MAF.valid_variant_classification is MAF.vaild_variant_classfication
+    with pytest.warns(DeprecationWarning, match="valid_variant_classification"):
+        legacy = MAF.vaild_variant_classfication
+    assert legacy is MAF.valid_variant_classification

@@ -132,13 +132,13 @@ class TestCohortPersistence:
 
         # Save to SQLite
         db_path = temp_output_dir / "test_cohort.db"
-        with pytest.warns(DeprecationWarning, match="to_hdf5"):
+        with pytest.warns(DeprecationWarning, match="to_h5"):
             cohort.to_sqlite(str(db_path))
 
         assert db_path.exists()
 
         # Load from SQLite
-        with pytest.warns(DeprecationWarning, match="read_hdf5"):
+        with pytest.warns(DeprecationWarning, match="read_h5"):
             loaded_cohort = Cohort.read_sqlite(str(db_path))
 
         assert loaded_cohort.name == cohort.name
@@ -166,8 +166,8 @@ class TestCohortPersistence:
     def test_hdf5_save_and_load(self, sample_cohort, tmp_path):
         h5_path = tmp_path / "cohort.h5"
 
-        sample_cohort.to_hdf5(h5_path)
-        loaded = Cohort.read_hdf5(h5_path)
+        sample_cohort.to_h5(h5_path)
+        loaded = Cohort.read_h5(h5_path)
 
         assert loaded.name == sample_cohort.name
         assert loaded.description == sample_cohort.description
@@ -187,8 +187,8 @@ class TestCohortPersistence:
             cohort.add_table(sample_pivot_table.copy(), table_name)
         h5_path = tmp_path / "special-names.h5"
 
-        cohort.to_hdf5(h5_path)
-        loaded = Cohort.read_hdf5(h5_path)
+        cohort.to_h5(h5_path)
+        loaded = Cohort.read_h5(h5_path)
 
         assert list(loaded.tables) == table_names
         assert loaded.description == cohort.description
@@ -200,8 +200,8 @@ class TestCohortPersistence:
         cohort = Cohort("empty", description="no tables yet")
         h5_path = tmp_path / "empty.h5"
 
-        cohort.to_hdf5(h5_path)
-        loaded = Cohort.read_hdf5(h5_path)
+        cohort.to_h5(h5_path)
+        loaded = Cohort.read_h5(h5_path)
 
         assert loaded.name == "empty"
         assert loaded.description == "no tables yet"
