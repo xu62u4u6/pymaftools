@@ -108,7 +108,7 @@ class ModelPlot(BasePlot):
             axes = [axes]  # Make it iterable for single metric
 
         if order is None:
-            order = sorted(data[group_col].unique())
+            order = sorted(data[group_col].dropna().unique())
 
         for i, metric in enumerate(metrics):
             ax = axes[i]

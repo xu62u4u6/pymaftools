@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
@@ -76,23 +78,35 @@ def evaluate_model(
     """
     y_pred = model.predict(X_test)
     prob = model.predict_proba(X_test)
-    # predict_proba columns follow the model's own class order
-    # (OmicsStackingModel.class_order, sklearn's classes_); roc_auc_score
-    # would otherwise assume sorted labels and score the wrong columns.
-    class_order = np.asarray(
-        list(getattr(model, "class_order", None) or model.classes_)
-    )
-
-    if prob.shape[1] == 2:
-        auc = roc_auc_score(np.asarray(y_test) == class_order[1], prob[:, 1])
+    # predict_proba column i is model.classes_[i] (sklearn convention, also
+    # implemented by OmicsStackingModel). roc_auc_score would otherwise assume
+    # sorted labels and score the wrong columns.
+    fitted_labels = np.asarray(model.classes_)
+    if len(fitted_labels) != prob.shape[1]:
+        raise ValueError(
+            f"model.classes_ has {len(fitted_labels)} labels but predict_proba "
+            f"returned {prob.shape[1]} columns."
+        )
+    unseen = sorted(set(np.asarray(y_test)) - set(fitted_labels))
+    if unseen:
+        warnings.warn(
+            f"y_test contains classes not seen in training {unseen}; the model "
+            "has no probability for them, so AUC is undefined and set to NaN. "
+            "Use stratified splits so every class appears in each training fold.",
+            UserWarning,
+            stacklevel=2,
+        )
+        auc = np.nan
+    elif prob.shape[1] == 2:
+        auc = roc_auc_score(np.asarray(y_test) == fitted_labels[1], prob[:, 1])
     else:
         # sklearn requires ``labels`` sorted, so sort the columns to match.
-        sorted_columns = np.argsort(class_order)
+        sorted_columns = np.argsort(fitted_labels)
         auc = roc_auc_score(
             y_test,
             prob[:, sorted_columns],
             multi_class="ovr",
-            labels=class_order[sorted_columns],
+            labels=fitted_labels[sorted_columns],
         )
 
     return {

@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import pytest
 from sklearn.ensemble import RandomForestClassifier
 
 from pymaftools.core.PivotTable import PivotTable
@@ -84,10 +85,10 @@ def test_cross_validate_importance_accepts_array_groups():
 
 
 class _PerfectClassifier:
-    """predict_proba columns follow ``class_order``, like OmicsStackingModel."""
+    """predict_proba columns follow ``classes_`` in a non-sorted order."""
 
-    def __init__(self, class_order, y):
-        self.class_order = class_order
+    def __init__(self, classes, y):
+        self.classes_ = np.asarray(classes)
         self.y = np.asarray(y)
 
     def predict(self, X):
@@ -95,7 +96,7 @@ class _PerfectClassifier:
 
     def predict_proba(self, X):
         return np.array(
-            [[float(label == truth) for label in self.class_order] for truth in self.y]
+            [[float(label == truth) for label in self.classes_] for truth in self.y]
         )
 
 
@@ -114,3 +115,53 @@ def test_evaluate_model_auc_follows_model_class_order_binary():
     model = _PerfectClassifier(["LUSC", "LUAD"], y)
 
     assert evaluate_model(model, None, y)["auc"] == 1.0
+
+
+def test_evaluate_model_imperfect_multiclass_matches_sorted_reference():
+    # Asymmetric scores, so a wrong column permutation cannot give the same AUC.
+    from sklearn.metrics import roc_auc_score
+
+    rng = np.random.default_rng(3)
+    y = np.array(["LUAD", "ASC", "LUSC"] * 20)
+    prob = rng.dirichlet([1, 1, 1], size=len(y))
+    prob[y == "LUAD", 0] += 0.6
+    prob[y == "ASC", 1] += 0.2
+    prob = prob / prob.sum(axis=1, keepdims=True)
+
+    class _Model:
+        classes_ = np.array(["LUAD", "ASC", "LUSC"])
+
+        def predict(self, X):
+            return y
+
+        def predict_proba(self, X):
+            return prob
+
+    sorted_reference = roc_auc_score(
+        y, prob[:, [1, 0, 2]], multi_class="ovr", labels=["ASC", "LUAD", "LUSC"]
+    )
+    assert evaluate_model(_Model(), None, y)["auc"] == pytest.approx(sorted_reference)
+
+
+def test_evaluate_model_unseen_test_class_gives_nan_auc_with_warning():
+    # A stacking model trained without ASC returns two probability columns;
+    # scoring "is ASC" against P(LUSC) used to produce a silent bogus AUC.
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).parent))
+    from test_stacking_model import _build_model_inputs
+
+    from pymaftools.model.StackingModel import OmicsStackingModel
+
+    omics_dict, X, _ = _build_model_inputs(n_samples=30)
+    y_train = np.array(["LUAD"] * 15 + ["LUSC"] * 15)
+    model = OmicsStackingModel(omics_dict=omics_dict, class_order=["LUAD", "ASC", "LUSC"])
+    model.fit(X, y_train)
+    assert list(model.classes_) == ["LUAD", "LUSC"]
+
+    y_test = y_train.copy()
+    y_test[:3] = "ASC"
+    with pytest.warns(UserWarning, match="not seen in training"):
+        metrics = evaluate_model(model, X, y_test)
+    assert np.isnan(metrics["auc"])

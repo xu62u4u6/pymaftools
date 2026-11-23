@@ -397,10 +397,20 @@ class OmicsStackingModel:
         Returns
         -------
         np.ndarray
-            Probability matrix of shape ``(n_samples, n_classes)``.
+            Probability matrix of shape ``(n_samples, n_classes)``; column
+            ``i`` is the probability of ``classes_[i]``.
         """
         self._validate_input_features(X)
         return self._require_fitted().predict_proba(X)
+
+    @property
+    def classes_(self) -> np.ndarray:
+        """Labels of the ``predict_proba`` columns, in column order.
+
+        Only classes seen during ``fit`` get a column, so this can be shorter
+        than ``class_order`` when a training fold lacks a rare class.
+        """
+        return self.decode_y(self._require_fitted().classes_)
 
     def get_omics_feature_importance(self, omics_key: str) -> pd.Series:
         """

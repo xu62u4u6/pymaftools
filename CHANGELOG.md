@@ -99,7 +99,10 @@ removal release.
   `predict_proba` columns as if they were in sorted label order. With a
   non-alphabetical `OmicsStackingModel.class_order` a perfect multiclass model
   scored 0.5, and a reversed binary order reported 1 - AUC. Benchmarks run with
-  such class orders should be re-run.
+  such class orders should be re-run. `OmicsStackingModel.classes_` now names
+  the `predict_proba` columns (classes seen in training); when `y_test` has a
+  class the training fold lacked, AUC is NaN with a warning instead of a
+  silently mis-scored value.
 * `OmicsStackingModel.plot_final_coefficients()` draws the per-omic `abs_mean`
   track; it was all-NaN.
 * Lung-project defaults removed: `CopyNumberVariationTable.plot.band_ratio()`
