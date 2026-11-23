@@ -221,9 +221,11 @@ class MainMatrixTrack(Track):
         return ~observed.to_numpy(dtype=bool)
 
     def _draw_not_assessed(self, ax: Axes) -> None:
-        """Grey out cells the ObservationMask marks unobserved (not sequenced),
-        which would otherwise look exactly like observed wild-type."""
+        """Hatch cells the ObservationMask marks unobserved (not sequenced),
+        keeping them visually distinct from both solid-grey Missense_Mutation
+        and white observed wild-type."""
         rows, cols = np.nonzero(self._unobserved_cells())
+        lw = _fit_linewidths(ax, self.linewidths, self.table.shape)
         for row, col in zip(rows, cols):
             ax.add_patch(
                 Rectangle(
@@ -231,10 +233,22 @@ class MainMatrixTrack(Track):
                     1,
                     1,
                     facecolor=ColorManager.NOT_ASSESSED_COLOR,
-                    edgecolor=self.linecolor,
-                    linewidth=_fit_linewidths(ax, self.linewidths, self.table.shape),
+                    edgecolor=ColorManager.NOT_ASSESSED_HATCH_COLOR,
+                    hatch=ColorManager.NOT_ASSESSED_HATCH,
+                    linewidth=0,
                 )
             )
+            if lw > 0:
+                ax.add_patch(
+                    Rectangle(
+                        (col, row),
+                        1,
+                        1,
+                        facecolor="none",
+                        edgecolor=self.linecolor,
+                        linewidth=lw,
+                    )
+                )
 
     # wild-type / no-mutation sentinels never worth a legend entry. Note the
     # matrix stores boolean ``False`` for wild-type while the cmap keys it as the
@@ -244,6 +258,8 @@ class MainMatrixTrack(Track):
     def legend_entries(self) -> dict[str, dict]:
         if self.show_all_categories:
             legend = {k: v for k, v in self.cmap_dict.items() if k != "Unknown"}
+            if self._unobserved_cells().any():
+                legend["Not assessed"] = dict(ColorManager.NOT_ASSESSED_STYLE)
             return {"Mutation": legend}
 
         # Default: only categories that actually occur in the matrix and are not
@@ -257,7 +273,7 @@ class MainMatrixTrack(Track):
             if k != "Unknown" and k in present and k not in self._WILDTYPE
         }
         if self._unobserved_cells().any():
-            legend["Not assessed"] = ColorManager.NOT_ASSESSED_COLOR
+            legend["Not assessed"] = dict(ColorManager.NOT_ASSESSED_STYLE)
         return {"Mutation": legend}
 
     def subset(self, feat=None, samp=None) -> "MainMatrixTrack":
@@ -563,6 +579,21 @@ class BarTrack(Track):
         return new
 
 
+def _fit_annot_fontsize(ax: Axes, shape: tuple[int, int], requested: float) -> float:
+    """Cap heatmap annotation font size so ``0.50`` fits inside narrow strips."""
+    nrows, ncols = shape
+    if nrows <= 0 or ncols <= 0 or ax.figure is None:
+        return float(requested)
+    fig_w, fig_h = ax.figure.get_size_inches()
+    pos = ax.get_position()
+    cell_w_pt = pos.width * fig_w * 72.0 / ncols
+    cell_h_pt = pos.height * fig_h * 72.0 / nrows
+    # "0.50" in DejaVu Sans spans roughly 2.45 * fontsize points in width.
+    max_for_width = (cell_w_pt * 0.86) / 2.45
+    max_for_height = cell_h_pt * 0.78
+    return max(3.5, min(float(requested), max_for_width, max_for_height))
+
+
 class FreqTrack(Track):
     """Per-feature frequency annotation column drawn right of the matrix."""
 
@@ -586,6 +617,11 @@ class FreqTrack(Track):
         self.annot_fontsize = annot_fontsize
         self.linewidths = linewidths
         self.xtick_fontsize = xtick_fontsize
+        self.size = (
+            max(1.6, 1.4 * freq_data.shape[1])
+            if annot
+            else max(1.0, float(freq_data.shape[1]))
+        )
         # Frequencies are proportions, so the colour scale is pinned to 0-1 by
         # default; this keeps every freq strip (overall and per-group sections)
         # on one comparable scale. Pass vmin/vmax to override.
@@ -593,6 +629,9 @@ class FreqTrack(Track):
         self.vmax = vmax
 
     def render(self, ax: Axes) -> Axes:
+        effective_fontsize = _fit_annot_fontsize(
+            ax, self.freq_data.shape, self.annot_fontsize
+        )
         sns.heatmap(
             self.freq_data,
             cbar=False,
@@ -603,7 +642,7 @@ class FreqTrack(Track):
             yticklabels=False,
             annot=self.annot,
             fmt=".2f",
-            annot_kws={"size": self.annot_fontsize},
+            annot_kws={"size": effective_fontsize},
             cmap="Blues",
             vmin=self.vmin,
             vmax=self.vmax,

@@ -252,7 +252,10 @@ rendered PNG bytes verified identical to the previous `dev`).
   no legend entry.
 * **Unobserved cells are shown as "Not assessed".** Cells an
   `ObservationMask` marks unsequenced were drawn white like observed
-  wild-type; they are now grey with a legend entry.
+  wild-type; they are now pale-hatched (`///`) with a matching legend swatch so
+  they stay visually distinct from solid-grey `Missense_Mutation`.
+* `FreqTrack` widens annotated strips slightly and fits annotation font size to
+  cell bounds so values like `0.50` no longer overflow narrow bars.
 * Numeric heatmaps with `vmin`/`vmax` colour cells on the same scale as the
   colorbar (a forced `center=0` shifted them), and `group_samples()` with an
   explicit range no longer raises.

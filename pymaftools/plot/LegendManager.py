@@ -11,6 +11,24 @@ from typing import Any
 import matplotlib.axes as Axes
 
 
+def _swatch_kwargs(
+    color: Any, *, default_edgecolor: str = "none", default_linewidth: float = 0
+) -> dict[str, Any]:
+    """Build Rectangle patch kwargs from a colour or hatched swatch style dict."""
+    if isinstance(color, dict):
+        return {
+            "facecolor": color["facecolor"],
+            "edgecolor": color.get("edgecolor", default_edgecolor),
+            "hatch": color.get("hatch"),
+            "linewidth": color.get("linewidth", default_linewidth),
+        }
+    return {
+        "facecolor": color,
+        "edgecolor": default_edgecolor,
+        "linewidth": default_linewidth,
+    }
+
+
 class LegendManager:
     """
     Specialized class for legend management.
@@ -220,9 +238,7 @@ class LegendManager:
                     (0.05, y_position - rect_height / 2),
                     rect_width,
                     rect_height,
-                    facecolor=color,
-                    edgecolor="none",
-                    linewidth=0,
+                    **_swatch_kwargs(color),
                 )
                 rect.set_clip_on(False)  # label text is never clipped either
                 target_ax.add_patch(rect)
@@ -389,8 +405,7 @@ class LegendManager:
                         (x_position, y_position - rect_size[1] / 2),
                         rect_size[0],
                         rect_size[1],
-                        facecolor=color,
-                        edgecolor="none",
+                        **_swatch_kwargs(color),
                     )
                     rect.set_clip_on(False)  # label text is never clipped either
                     target_ax.add_patch(rect)
@@ -709,8 +724,8 @@ class LegendManager:
                     (0.05, y_position - 0.015),
                     0.06,
                     0.025,
-                    facecolor=color,
                     transform=target_ax.transAxes,
+                    **_swatch_kwargs(color),
                 )
                 rect.set_clip_on(False)  # label text is never clipped either
                 target_ax.add_patch(rect)

@@ -45,14 +45,58 @@ def test_unobserved_cells_are_drawn_and_listed_as_not_assessed():
     main_track = op.tracks[0]
 
     assert main_track.legend_entries()["Mutation"]["Not assessed"] == (
-        ColorManager.NOT_ASSESSED_COLOR
+        ColorManager.NOT_ASSESSED_STYLE
     )
-    grey = matplotlib.colors.to_rgba(ColorManager.NOT_ASSESSED_COLOR)
-    grey_patches = [
-        p for ax in op.fig.axes for p in ax.patches if p.get_facecolor() == grey
+    pale = matplotlib.colors.to_rgba(ColorManager.NOT_ASSESSED_COLOR)
+    hatched_cells = [
+        p
+        for p in op.ax_heatmap.patches
+        if p.get_facecolor() == pale
+        and p.get_hatch() == ColorManager.NOT_ASSESSED_HATCH
         and p.get_width() == 1
     ]
-    assert len(grey_patches) == 1
+    assert len(hatched_cells) == 1
+
+    hatched_legend = [
+        p
+        for p in op.ax_legend.patches
+        if p.get_facecolor() == pale
+        and p.get_hatch() == ColorManager.NOT_ASSESSED_HATCH
+    ]
+    assert len(hatched_legend) == 1
+
+
+def test_freq_track_annotations_fit_within_narrow_bars():
+    data = pd.DataFrame(
+        [
+            ["Missense_Mutation", False, False, False],
+            [False, "Nonsense_Mutation", False, False],
+        ],
+        index=["TP53", "KRAS"],
+        columns=["S1", "S2", "S3", "S4"],
+        dtype=object,
+    )
+    table = SmallVariationTable(data)
+    table.observation_mask = ObservationMask(
+        pd.DataFrame(
+            [[True, True, True, True], [True, True, False, False]],
+            index=data.index,
+            columns=data.columns,
+        )
+    )
+    table = table.add_freq()
+
+    op = table.plot.oncoplot(figsize=(5.5, 2.2)).main().add_freq().render()
+    op.fig.canvas.draw()
+    renderer = op.fig.canvas.get_renderer()
+    freq_ax = next(
+        ax for ax in op.fig.axes if [t.get_text() for t in ax.get_xticklabels()] == ["freq"]
+    )
+    ax_bbox = freq_ax.get_window_extent(renderer=renderer)
+    for text in freq_ax.texts:
+        tb = text.get_window_extent(renderer=renderer)
+        assert tb.x0 >= ax_bbox.x0 - 1.0
+        assert tb.x1 <= ax_bbox.x1 + 1.0
 
 
 def _numeric_table():

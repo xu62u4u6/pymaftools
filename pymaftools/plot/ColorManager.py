@@ -36,9 +36,24 @@ class ColorManager:
         "Multi_Hit": "#222222",  # Black (multiple mutations)
     }
 
-    NOT_ASSESSED_COLOR = "#D3D3D3"
-    """Fill for gene-sample cells an ObservationMask marks unobserved (not
-    sequenced), so they are not drawn white like observed wild-type."""
+    NOT_ASSESSED_COLOR = "#F4F4F4"
+    """Pale fill for gene-sample cells an ObservationMask marks unobserved
+    (not sequenced), paired with diagonal hatching so it stays visually
+    distinct from both solid-grey ``Missense_Mutation`` and white wild-type."""
+
+    NOT_ASSESSED_HATCH = "///"
+    """Diagonal hatch pattern drawn over unobserved (not assessed) cells."""
+
+    NOT_ASSESSED_HATCH_COLOR = "#8C8C8C"
+    """Stroke colour of the diagonal hatch lines on unobserved cells."""
+
+    NOT_ASSESSED_STYLE = {
+        "facecolor": NOT_ASSESSED_COLOR,
+        "edgecolor": NOT_ASSESSED_HATCH_COLOR,
+        "hatch": NOT_ASSESSED_HATCH,
+        "linewidth": 0.4,
+    }
+    """Legend swatch specification matching hatched ``Not assessed`` cells."""
 
     ALL_MUTATION_CMAP = NONSYNONYMOUS_CMAP | {
         "Silent": "#eeeeee",
