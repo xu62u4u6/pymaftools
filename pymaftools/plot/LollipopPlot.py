@@ -176,12 +176,15 @@ class LollipopPlot(BasePlot):
             mutation_counts = list(dict.fromkeys(mutation_counts))
             num_ticks = len(mutation_counts)
 
-        # Calculate corresponding Y positions
-        y_ticks = np.linspace(
-            self.config["backbone_y"],
-            self.min_lollipop_candy_y + self.config["max_additional_scaled_height"],
-            num=num_ticks,
-        )
+        # Place each tick with the same formula as the lollipop heads, so a
+        # head of count c sits exactly on tick c (a linspace from the backbone
+        # put count 1 between ticks 1 and 2).
+        y_ticks = [
+            self.min_lollipop_candy_y
+            + (count / self.max_mutation_count)
+            * self.config["max_additional_scaled_height"]
+            for count in mutation_counts
+        ]
 
         self.ax_main.set_yticks(y_ticks)
         self.ax_main.set_yticklabels(mutation_counts)

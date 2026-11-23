@@ -325,14 +325,28 @@ class PivotStatsPlot(BasePlot):
             pair_groups = data.groupby(pair_col)
             valid_pairs = []
 
+            compared_groups = (
+                list(order)
+                if order is not None
+                else list(data[group_col].dropna().unique())
+            )
             for pair_id, pair_data in pair_groups:
-                groups_in_pair = pair_data[group_col].unique()
-                # Only keep pairs that have data for multiple groups
-                if len(groups_in_pair) > 1:
-                    valid_pairs.append(pair_data)
+                observed = pair_data.dropna(subset=[test_col])
+                # A paired test matches rows by position within each group, so
+                # every kept subject needs exactly one value in every group;
+                # otherwise statannotations pairs different subjects.
+                counts = observed[group_col].value_counts()
+                if all(counts.get(group, 0) == 1 for group in compared_groups):
+                    valid_pairs.append(
+                        observed[observed[group_col].isin(compared_groups)]
+                    )
 
             if valid_pairs:
-                data = pd.concat(valid_pairs, ignore_index=True)
+                data = (
+                    pd.concat(valid_pairs, ignore_index=True)
+                    .sort_values([group_col, pair_col], kind="stable")
+                    .reset_index(drop=True)
+                )
             else:
                 print(
                     "Warning: No valid paired samples found. Switching to unpaired test."
@@ -604,6 +618,11 @@ class PivotStatsPlot(BasePlot):
 
                 # Plot with both numeric color and shape
                 scatter_objects = []
+                # One colour scale for every shape group: each scatter call
+                # would otherwise rescale to its own min/max while the single
+                # colorbar shows only the first group's range.
+                color_vmin = pca_result_df[color_col].min()
+                color_vmax = pca_result_df[color_col].max()
                 for shape_val in unique_shapes:
                     mask = pca_result_df[shape_col] == shape_val
                     subset = pca_result_df[mask]
@@ -613,6 +632,8 @@ class PivotStatsPlot(BasePlot):
                             subset["PC2"],
                             c=subset[color_col],
                             cmap=palette,
+                            vmin=color_vmin,
+                            vmax=color_vmax,
                             marker=shape_dict[shape_val],  # type: ignore
                             alpha=alpha,
                             s=s,

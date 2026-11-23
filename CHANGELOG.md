@@ -247,6 +247,26 @@ rendered PNG bytes verified identical to the previous `dev`).
 
 ### 🎨 Plot fixes
 
+* **Oncoplot colours every nonsynonymous class.** `Translation_Start_Site` and
+  `Nonstop_Mutation` had no colour and were drawn white, like wild-type, with
+  no legend entry.
+* **Unobserved cells are shown as "Not assessed".** Cells an
+  `ObservationMask` marks unsequenced were drawn white like observed
+  wild-type; they are now pale-hatched (`///`) with a matching legend swatch so
+  they stay visually distinct from solid-grey `Missense_Mutation`.
+* `FreqTrack` widens annotated strips slightly and fits annotation font size to
+  cell bounds so values like `0.50` no longer overflow narrow bars.
+* Numeric heatmaps with `vmin`/`vmax` colour cells on the same scale as the
+  colorbar (a forced `center=0` shifted them), and `group_samples()` with an
+  explicit range no longer raises.
+* Lollipop heads sit on their count ticks (count 1 was drawn between ticks 1
+  and 2).
+* `plot_pca_samples(is_numeric=True, shape_col=...)` uses one colour scale for
+  all shape groups; `plot_boxplot_with_annot(is_paired=True)` keeps only
+  subjects with a value in every group, so pairs are no longer mismatched.
+* Legend swatches are no longer clipped when a legend is taller than its axis
+  (labels stayed, colours disappeared).
+
 * **OncoPlot sample labels (#16):** sample-label gutters now share the heatmap's
   `(0, n)` data limits, so labels sit on their column centres instead of half a
   cell to the right (ungrouped and `group_samples` layouts).

@@ -1146,6 +1146,8 @@ class OncoPlot(BasePlot):
             else:
                 main_track.vmin = float(tbl.min().min())
                 main_track.vmax = float(tbl.max().max())
+        if isinstance(main_track, NumericMatrixTrack):
+            # Also when vmin/vmax were given: the legend colorbar reads _vmin.
             main_track._vmin, main_track._vmax = main_track.vmin, main_track.vmax
         for t in [*top, *bottom, *left, *right]:
             if isinstance(t, NumericTrack) and t.vmin is None:
