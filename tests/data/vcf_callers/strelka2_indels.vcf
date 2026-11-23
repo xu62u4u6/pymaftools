@@ -1,0 +1,7 @@
+##fileformat=VCFv4.1
+##source=strelka
+##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Read depth for tier1">
+##FORMAT=<ID=TAR,Number=2,Type=Integer,Description="Reads strongly supporting alternate allele for tiers 1,2">
+##FORMAT=<ID=TIR,Number=2,Type=Integer,Description="Reads strongly supporting indel allele for tiers 1,2">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	NORMAL	TUMOR
+chr12	25245350	.	C	CTG	.	PASS	SOMATIC;QSI=52	DP:DP2:TAR:TIR:TOR:DP50:FDP50:SUBDP50:BCN50	50:50:48,48:0,0:2,2:50:0:0:0	62:62:45,46:15,16:2,2:62:0:0:0

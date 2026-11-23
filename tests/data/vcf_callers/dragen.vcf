@@ -1,0 +1,11 @@
+##fileformat=VCFv4.2
+##source=DRAGEN
+##DRAGENCommandLine=<ID=dragen,Version="4.2.4">
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=SQ,Number=1,Type=Float,Description="Somatic quality">
+##FORMAT=<ID=AD,Number=R,Type=Integer,Description="Allelic depths">
+##FORMAT=<ID=AF,Number=A,Type=Float,Description="Allele fraction">
+##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Read depth">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	NORMAL	TUMOR
+chr17	7675088	.	C	T	.	PASS	SOMATIC	GT:SQ:AD:AF:F1R2:F2R1:DP	0/0:0.0:50,0:0.0:25,0:25,0:50	0/1:68.4:59,41:0.41:30,20:29,21:100
+chr7	55191822	.	T	G	.	PASS	SOMATIC	GT:SQ:AD:AF:F1R2:F2R1:DP	0/0:0.0:40,0:0.0:20,0:20,0:40	0/1:51.2:71,29:0.29:35,14:36,15:100

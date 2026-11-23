@@ -3,20 +3,33 @@ from __future__ import annotations
 import csv
 import gzip
 import os
+import re
+from collections.abc import Iterable
+from typing import Any
 
-from .record import CHROM_PATTERN, VCFRecord
+from .adapters import (
+    BaseCallerAdapter,
+    detect_caller_adapter,
+    get_caller_adapter,
+    parse_format_mapping,
+    safe_af,
+)
+from .record import CHROM_PATTERN, VCFRecord, classify_variant_type
+
+_ID_PATTERN = re.compile(r"ID=([^,>]+)")
+_TUMOR_META_RE = re.compile(r"^##tumor_sample=(.+)$", re.IGNORECASE)
+_NORMAL_META_RE = re.compile(r"^##normal_sample=(.+)$", re.IGNORECASE)
 
 
-def _open_text(path: str):
-    path = os.fspath(path)
-    if path.endswith(".gz"):
-        return gzip.open(path, "rt", encoding="utf-8", newline="")
-    return open(path, encoding="utf-8", newline="")
+def _open_text(path: str | os.PathLike[str]):
+    path_str = os.fspath(path)
+    if path_str.endswith(".gz"):
+        return gzip.open(path_str, "rt", encoding="utf-8", newline="")
+    return open(path_str, encoding="utf-8", newline="")
 
 
 def sample_type(sample_id: str) -> str:
-    """
-    Classify a VCF sample column as tumour or normal.
+    """Classify a VCF sample column as tumour or normal.
 
     Parameters
     ----------
@@ -31,43 +44,21 @@ def sample_type(sample_id: str) -> str:
     Raises
     ------
     ValueError
-        If the sample identifier does not end with ``T`` or ``N``.
+        If the sample identifier does not end with ``T`` or ``N`` and is not
+        literally ``"TUMOR"`` or ``"NORMAL"``.
     """
     if sample_id.upper() == "TUMOR" or sample_id.endswith("T"):
         return "TUMOR"
     if sample_id.upper() == "NORMAL" or sample_id.endswith("N"):
         return "NORMAL"
     raise ValueError(
-        f"Unable to determine sample type for '{sample_id}'. Expected suffix 'T' or 'N', or literal 'TUMOR'/'NORMAL'."
+        f"Unable to determine sample type for '{sample_id}'. "
+        "Expected suffix 'T' or 'N', or literal 'TUMOR'/'NORMAL'."
     )
 
 
 def _safe_af(ad: int, dp: int) -> float:
-    """
-    Derive allele fraction from depth values.
-
-    Parameters
-    ----------
-    ad : int
-        Alternate allele depth.
-    dp : int
-        Total read depth.
-
-    Returns
-    -------
-    float
-        Alternate allele fraction.
-
-    Raises
-    ------
-    ValueError
-        If depth is zero while alternate depth is positive.
-    """
-    if dp == 0:
-        if ad == 0:
-            return 0.0
-        raise ValueError("Unable to derive AF when DP is zero and AD is positive.")
-    return ad / dp
+    return safe_af(ad, dp)
 
 
 def parse_info(
@@ -76,78 +67,40 @@ def parse_info(
     *,
     alt_index: int = 0,
 ) -> tuple[int, int, int, float]:
+    """Parse caller-specific ``FORMAT`` data into ``(DP, ref, alt, AF)``.
+
+    Kept for backwards compatibility; new code should use a
+    :class:`~pymaftools.io.vcf.adapters.BaseCallerAdapter`.
     """
-    Parse caller-specific FORMAT data into depth metrics.
-
-    Parameters
-    ----------
-    format_str : str
-        FORMAT column value.
-    value_str : str
-        Sample-specific value string matching ``format_str``.
-    alt_index : int, default 0
-        Zero-based alternate allele index for multi-allelic records.
-
-    Returns
-    -------
-    tuple[int, int, int, float]
-        Parsed ``(DP, ref_count, alt_count, AF)`` values.
-        ref_count is the reference allele depth.
-
-    Raises
-    ------
-    ValueError
-        If the FORMAT pattern is not recognised or cannot be parsed.
-    """
-    keys = format_str.split(":")
-    values = value_str.split(":")
-    if len(keys) != len(values):
-        raise ValueError(
-            f"Failed to parse FORMAT '{format_str}' with value '{value_str}': "
-            "field counts differ."
-        )
-    parsed = dict(zip(keys, values))
-
+    parsed = parse_format_mapping(format_str, value_str)
     try:
-        # varscan: GT:GQ:DP:RD:AD:FREQ:DP4
-        # RD = ref depth, AD = alt depth (Number=1, alt only)
-        if format_str == "GT:GQ:DP:RD:AD:FREQ:DP4":
+        # VarScan2: GT:GQ:DP:RD:AD:FREQ:DP4 (RD = ref, AD = alt-only)
+        if "RD" in parsed and "AD" in parsed and "," not in parsed["AD"]:
             if alt_index != 0:
                 raise ValueError("VarScan FORMAT does not encode per-ALT depths.")
-            dp = int(values[2])
-            ref = int(values[3])  # RD
-            ad = int(values[4])  # alt only
-            af = float(values[5].rstrip("%")) / 100
+            dp = int(parsed["DP"])
+            ref = int(parsed["RD"])
+            ad = int(parsed["AD"])
+            af = (
+                float(parsed["FREQ"].rstrip("%")) / 100.0
+                if "FREQ" in parsed
+                else safe_af(ad, dp)
+            )
             return dp, ref, ad, af
 
-        # mutect2: GT:AD:AF:DP:... (AD = Number=R → ref,alt)
-        if "AD" in parsed and (("AF" in parsed) or ("DP" in parsed)):
+        # Standard Number=R AD callers (Mutect2, MuSE, Pindel, DeepSomatic, DRAGEN)
+        if "AD" in parsed:
             ad_values = [int(x) for x in parsed["AD"].split(",")]
             ref = ad_values[0]
             ad = ad_values[alt_index + 1]
             dp = int(parsed["DP"]) if "DP" in parsed else sum(ad_values)
-            af_values = parsed.get("AF", "").split(",")
-            af = float(af_values[alt_index]) if "AF" in parsed else _safe_af(ad, dp)
+            if "AF" in parsed:
+                af = float(parsed["AF"].split(",")[alt_index])
+            elif "VAF" in parsed:
+                af = float(parsed["VAF"].split(",")[alt_index])
+            else:
+                af = safe_af(ad, dp)
             return dp, ref, ad, af
-
-        # muse: GT:DP:AD:BQ:SS (AD = ref,alt)
-        if format_str == "GT:DP:AD:BQ:SS":
-            dp = int(parsed["DP"])
-            ad_values = [int(x) for x in parsed["AD"].split(",")]
-            ref = ad_values[0]
-            ad = ad_values[alt_index + 1]
-            af = _safe_af(ad, dp)
-            return dp, ref, ad, af
-
-        # pindel: GT:AD (AD = ref,alt)
-        if format_str == "GT:AD":
-            ad_values = [int(x) for x in parsed["AD"].split(",")]
-            ref = ad_values[0]
-            ad = ad_values[alt_index + 1]
-            dp = sum(ad_values)
-            af = _safe_af(ad, dp)
-            return dp, ref, ad, af
-
     except (IndexError, KeyError, TypeError, ValueError) as exc:
         raise ValueError(
             f"Failed to parse FORMAT '{format_str}' with value '{value_str}'."
@@ -160,113 +113,87 @@ def _resolve_samples(
     meta_tumor: str | None,
     meta_normal: str | None,
     sample_columns: list[str],
-) -> tuple[str, str | None]:
-    """
-    Determine which sample column is tumor and which is normal.
-
-    Resolution order:
-    1. ``##tumor_sample=`` / ``##normal_sample=`` metadata (Mutect2 style).
-    2. Column name is literally ``TUMOR`` or ``NORMAL`` (MuSE / VarScan style).
-    3. Last character of sample ID is ``T`` (tumor) or ``N`` (normal) (Pindel style).
-
-    Parameters
-    ----------
-    meta_tumor : str or None
-        Value of ``##tumor_sample=`` header line, if present.
-    meta_normal : str or None
-        Value of ``##normal_sample=`` header line, if present.
-    sample_columns : list[str]
-        Sample column names from the ``#CHROM`` line (index 9 onwards).
-
-    Returns
-    -------
-    tuple[str, str | None]
-        ``(tumor_column, normal_column)`` where ``normal_column`` may be ``None``.
-
-    Raises
-    ------
-    ValueError
-        If no tumor column can be identified.
-    """
-    tumor_col: str | None = None
-    normal_col: str | None = None
-
-    # Priority 1: explicit metadata headers (e.g. Mutect2 ##tumor_sample=AS_02T)
-    if meta_tumor is not None:
-        for col in sample_columns:
-            if col == meta_tumor:
-                tumor_col = col
-            elif col == meta_normal:
-                normal_col = col
-
-    # Priority 2: literal TUMOR / NORMAL column names (MuSE, VarScan)
-    if tumor_col is None:
-        for col in sample_columns:
-            if col.upper() == "TUMOR":
-                tumor_col = col
-            elif col.upper() == "NORMAL":
-                normal_col = col
-
-    # Priority 3: sample ID suffix T / N (Pindel, custom IDs)
-    if tumor_col is None:
-        for col in sample_columns:
-            if col.endswith("T"):
-                tumor_col = col
-            elif col.endswith("N"):
-                normal_col = col
-
-    if tumor_col is None:
-        raise ValueError(
-            f"Unable to identify tumor sample column from: {sample_columns}. "
-            "Expected ##tumor_sample= header, a 'TUMOR' column, or a sample ID ending in 'T'."
-        )
-
-    return tumor_col, normal_col
+    *,
+    tumor_sample: str | None = None,
+    normal_sample: str | None = None,
+    adapter: BaseCallerAdapter | None = None,
+) -> tuple[str | None, str | None]:
+    """Resolve ``(tumor_column, normal_column)`` using an adapter or default rules."""
+    resolved_adapter = adapter or get_caller_adapter("mutect2")
+    return resolved_adapter.resolve_samples(
+        meta_tumor,
+        meta_normal,
+        sample_columns,
+        tumor_sample=tumor_sample,
+        normal_sample=normal_sample,
+    )
 
 
-def parse_vcf_rows(vcf_path: str, caller: str) -> list[dict]:
-    """
-    Parse PASS VCF rows into validated dictionaries.
+def parse_vcf_file(
+    vcf_path: str | os.PathLike[str],
+    caller: str | BaseCallerAdapter = "auto",
+    *,
+    tumor_sample: str | None = None,
+    normal_sample: str | None = None,
+    accepted_filters: Iterable[str] | None = None,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Parse a VCF file in a single pass using a caller adapter.
 
     Parameters
     ----------
-    vcf_path : str
-        Path to the VCF file.
-    caller : str
-        Variant caller name assigned to each row.
+    vcf_path : str or os.PathLike
+        Path to a plain-text or gzipped VCF file.
+    caller : str or BaseCallerAdapter, default ``"auto"``
+        Registered caller name (e.g. ``"mutect2"``, ``"strelka2"``,
+        ``"varscan2"``, ``"muse"``, ``"pindel"``, ``"deepsomatic"``,
+        ``"dragen"``, ``"lofreq"``), ``"auto"`` for header auto-detection, or
+        a custom :class:`BaseCallerAdapter` instance.
+    tumor_sample : str or None, default None
+        Explicit tumour sample column name overriding automatic resolution.
+    normal_sample : str or None, default None
+        Explicit normal sample column name overriding automatic resolution.
+    accepted_filters : Iterable[str] or None, default None
+        ``FILTER`` values to retain. Defaults to the caller adapter's
+        ``default_accepted_filters`` (typically ``{"PASS", "."}``).
 
     Returns
     -------
-    list[dict]
-        Parsed and validated VCF rows.
+    tuple[dict[str, Any], list[dict[str, Any]]]
+        ``(header, rows)`` where ``header`` stores parsed metadata and ``rows``
+        contains validated harmonized variant dictionaries.
     """
-    rows: list[dict] = []
+    header_lines: list[str] = []
     column_header: list[str] | None = None
     meta_tumor: str | None = None
     meta_normal: str | None = None
-    rename_map = {
-        "CHROM": "chrom",
-        "POS": "pos",
-        "REF": "ref",
-        "ALT": "alt",
-        "FILTER": "filter",
-    }
+    info_defs: dict[str, str] = {}
+    format_defs: dict[str, str] = {}
 
-    import re
+    allowed_filters = (
+        frozenset(accepted_filters) if accepted_filters is not None else None
+    )
 
-    _tumor_meta_re = re.compile(r"^##tumor_sample=(.+)$", re.IGNORECASE)
-    _normal_meta_re = re.compile(r"^##normal_sample=(.+)$", re.IGNORECASE)
+    rows: list[dict[str, Any]] = []
+    multiallelic_sites_expanded = 0
+    filtered_non_pass_count = 0
+    filtered_chrom_count = 0
 
     with _open_text(vcf_path) as handle:
         for line in handle:
-            line = line.rstrip("\n")
+            line = line.rstrip("\r\n")
             if line.startswith("##"):
-                m = _tumor_meta_re.match(line)
-                if m:
+                header_lines.append(line)
+                if line.startswith("##INFO="):
+                    match = _ID_PATTERN.search(line)
+                    if match is not None:
+                        info_defs[match.group(1)] = line
+                elif line.startswith("##FORMAT="):
+                    match = _ID_PATTERN.search(line)
+                    if match is not None:
+                        format_defs[match.group(1)] = line
+                elif m := _TUMOR_META_RE.match(line):
                     meta_tumor = m.group(1).strip()
-                    continue
-                m = _normal_meta_re.match(line)
-                if m:
+                elif m := _NORMAL_META_RE.match(line):
                     meta_normal = m.group(1).strip()
                 continue
             if line.startswith("#CHROM"):
@@ -276,42 +203,87 @@ def parse_vcf_rows(vcf_path: str, caller: str) -> list[dict]:
         if column_header is None:
             raise ValueError(f"No #CHROM header line found in VCF file: {vcf_path}")
 
-        tumor_sample, normal_sample = _resolve_samples(
-            meta_tumor, meta_normal, column_header[9:]
-        )
+        if isinstance(caller, str) and caller.strip().lower() == "auto":
+            adapter = detect_caller_adapter(header_lines)
+        else:
+            adapter = get_caller_adapter(caller)
 
-        if tumor_sample is None:
-            raise ValueError(f"No tumor sample column found in VCF file: {vcf_path}")
+        sample_columns = column_header[9:] if len(column_header) > 9 else []
+        resolved_tumor, resolved_normal = adapter.resolve_samples(
+            meta_tumor,
+            meta_normal,
+            sample_columns,
+            tumor_sample=tumor_sample,
+            normal_sample=normal_sample,
+        )
 
         reader = csv.DictReader(handle, fieldnames=column_header, delimiter="\t")
         for raw_row in reader:
-            row = {rename_map.get(key, key): value for key, value in raw_row.items()}
-            if row["filter"] != "PASS":
+            if not raw_row or not raw_row.get("CHROM"):
                 continue
-            if not CHROM_PATTERN.match(row["chrom"]):
+            chrom = raw_row["CHROM"]
+            filter_val = raw_row.get("FILTER", ".")
+            if not adapter.accept_filter(filter_val, allowed_filters):
+                filtered_non_pass_count += 1
+                continue
+            if not CHROM_PATTERN.match(chrom):
+                filtered_chrom_count += 1
                 continue
 
-            for alt_index, alt in enumerate(row["alt"].split(",")):
-                tumor_dp, tumor_ref, tumor_ad, tumor_af = parse_info(
-                    row["FORMAT"], row[tumor_sample], alt_index=alt_index
+            pos = int(raw_row["POS"])
+            ref = raw_row["REF"]
+            raw_alts = raw_row["ALT"].split(",")
+            if len(raw_alts) > 1:
+                multiallelic_sites_expanded += 1
+
+            info_str = raw_row.get("INFO", ".") or "."
+            format_str = raw_row.get("FORMAT")
+            tumor_value = (
+                raw_row.get(resolved_tumor) if resolved_tumor is not None else None
+            )
+            normal_value = (
+                raw_row.get(resolved_normal) if resolved_normal is not None else None
+            )
+
+            for alt_index, alt in enumerate(raw_alts):
+                if alt in {".", "*", ""}:
+                    continue
+                tumor_metrics = adapter.parse_record_metrics(
+                    ref=ref,
+                    alt=alt,
+                    format_str=format_str,
+                    sample_value=tumor_value,
+                    info_str=info_str,
+                    alt_index=alt_index,
                 )
-                normal_dp = normal_ref = normal_ad = None
-                if normal_sample is not None:
-                    normal_dp, normal_ref, normal_ad, _ = parse_info(
-                        row["FORMAT"], row[normal_sample], alt_index=alt_index
+                normal_dp: int | None = None
+                normal_ref: int | None = None
+                normal_ad: int | None = None
+                if resolved_normal is not None and normal_value is not None:
+                    normal_metrics = adapter.parse_record_metrics(
+                        ref=ref,
+                        alt=alt,
+                        format_str=format_str,
+                        sample_value=normal_value,
+                        info_str=info_str,
+                        alt_index=alt_index,
                     )
+                    normal_dp = normal_metrics.dp
+                    normal_ref = normal_metrics.ref_count
+                    normal_ad = normal_metrics.alt_count
 
-                parsed_row = {
-                    "chrom": row["chrom"],
-                    "pos": int(row["pos"]),
-                    "ref": row["ref"],
+                parsed_row: dict[str, Any] = {
+                    "chrom": chrom,
+                    "pos": pos,
+                    "ref": ref,
                     "alt": alt,
-                    "filter": row["filter"],
-                    "caller": caller,
-                    "tumor_dp": tumor_dp,
-                    "tumor_ref": tumor_ref,
-                    "tumor_ad": tumor_ad,
-                    "tumor_af": tumor_af,
+                    "variant_type": classify_variant_type(ref, alt),
+                    "filter": filter_val,
+                    "caller": adapter.name,
+                    "tumor_dp": tumor_metrics.dp,
+                    "tumor_ref": tumor_metrics.ref_count,
+                    "tumor_ad": tumor_metrics.alt_count,
+                    "tumor_af": tumor_metrics.af,
                     "normal_dp": normal_dp,
                     "normal_ref": normal_ref,
                     "normal_ad": normal_ad,
@@ -319,4 +291,35 @@ def parse_vcf_rows(vcf_path: str, caller: str) -> list[dict]:
                 VCFRecord(**parsed_row)
                 rows.append(parsed_row)
 
+    header: dict[str, Any] = {
+        "INFO": info_defs,
+        "FORMAT": format_defs,
+        "samples": sample_columns,
+        "tumor_sample": resolved_tumor or "TUMOR",
+        "normal_sample": resolved_normal,
+        "caller": adapter.name,
+        "supported_variant_types": sorted(adapter.supported_variant_types),
+        "multiallelic_sites_expanded": multiallelic_sites_expanded,
+        "filtered_non_pass_count": filtered_non_pass_count,
+        "filtered_chrom_count": filtered_chrom_count,
+    }
+    return header, rows
+
+
+def parse_vcf_rows(
+    vcf_path: str | os.PathLike[str],
+    caller: str | BaseCallerAdapter = "auto",
+    *,
+    tumor_sample: str | None = None,
+    normal_sample: str | None = None,
+    accepted_filters: Iterable[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Parse accepted VCF rows into validated harmonized dictionaries."""
+    _, rows = parse_vcf_file(
+        vcf_path,
+        caller=caller,
+        tumor_sample=tumor_sample,
+        normal_sample=normal_sample,
+        accepted_filters=accepted_filters,
+    )
     return rows

@@ -1,0 +1,7 @@
+##fileformat=VCFv4.2
+##source=pindel
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=AD,Number=2,Type=Integer,Description="Allelic depths for the ref and alt alleles">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	CASE01_N	CASE01_T
+chr12	25245350	.	C	CTG	.	PASS	SVTYPE=INS	GT:AD	0/0:45,0	0/1:42,18
+chr10	87933147	.	ACTG	A	.	.	SVTYPE=DEL	GT:AD	0/0:40,0	0/1:30,10

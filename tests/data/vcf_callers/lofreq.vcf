@@ -1,0 +1,8 @@
+##fileformat=VCFv4.0
+##source=lofreq call-parallel
+##INFO=<ID=DP,Number=1,Type=Integer,Description="Raw Depth">
+##INFO=<ID=AF,Number=1,Type=Float,Description="Allele Frequency">
+##INFO=<ID=DP4,Number=4,Type=Integer,Description="Counts for ref-forward bases, ref-reverse, alt-forward and alt-reverse bases">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO
+chr17	7675088	.	C	T	250	PASS	DP=100;AF=0.400000;SB=0;DP4=30,30,20,20
+chr7	55191822	.	T	G	180	.	DP=80;AF=0.250000;SB=1;DP4=30,30,10,10
