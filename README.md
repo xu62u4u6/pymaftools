@@ -57,7 +57,6 @@
 
 ### Utilities
 - **PCA + CCA** — Dimensionality reduction (`pymaftools.utils.reduction.PCA_CCA`)
-- **Gene set tools** — Read GMT files, fetch MSigDB gene sets
 - **Gene info** — NCBI gene ID lookup; Ensembl BioMart exon/transcript size lookup (`get_exon_size`, `load_gene_sizes`) for size-based gene grouping
 
 ## Requirements
@@ -66,7 +65,7 @@ Python 3.10+ with the following dependencies:
 
 - **pandas** (>2.0), **numpy**, **matplotlib**, **seaborn**, **scipy**
 - **networkx**, **scikit-learn**, **statsmodels**, **statannotations**
-- **requests**, **beautifulsoup4**, **tqdm**, **tables** (HDF5)
+- **requests**, **tqdm**, **tables** (HDF5)
 
 All dependencies are automatically installed.
 

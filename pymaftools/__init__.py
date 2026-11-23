@@ -94,8 +94,6 @@ _LAZY_EXPORTS = {
     "TCGAMethylationBuilder": ".io.tcga",
     "TCGAClinicalBuilder": ".io.tcga",
     # utils
-    "read_gmt": ".utils.geneset",
-    "fetch_msigdb_geneset": ".utils.geneset",
     "get_exon_size": ".utils.geneinfo",
     "load_gene_sizes": ".utils.geneinfo",
 }
@@ -105,13 +103,19 @@ _LAZY_EXPORTS = {
 # Project-specific helpers belong in their submodule, not the package root.
 _DEPRECATED_EXPORTS = {
     # name: (module, attribute, replacement shown to the user)
-    "ASCStackingModel": (
-        ".model.StackingModel",
-        "ASCStackingModel",
-        "pymaftools.model.StackingModel.ASCStackingModel",
-    ),
     "PCA_CCA": (".utils.reduction", "PCA_CCA", "pymaftools.utils.reduction.PCA_CCA"),
-    "read_GMT": (".utils.geneset", "read_gmt", "pymaftools.read_gmt"),
+}
+
+# Names removed in 0.6.0 (project-specific or superseded); accessing them
+# raises with the replacement instead of a bare AttributeError.
+_REMOVED_EXPORTS = {
+    "ASCStackingModel": (
+        "use OmicsStackingModel and read one class column: "
+        "model.predict_proba(X)[:, model.class_order.index('LUSC')]"
+    ),
+    "read_GMT": "use gseapy.read_gmt (pip install gseapy)",
+    "read_gmt": "use gseapy.read_gmt (pip install gseapy)",
+    "fetch_msigdb_geneset": "use gseapy.Msigdb().get_gmt(category=...)",
 }
 
 
@@ -154,6 +158,10 @@ def __getattr__(name: str) -> Any:
         warn_deprecated(f"pymaftools.{name}", replacement, stacklevel=3)
         # Not cached in globals(): every access keeps warning.
         return getattr(import_module(module_name, __name__), attribute)
+    if name in _REMOVED_EXPORTS:
+        raise AttributeError(
+            f"pymaftools.{name} was removed in 0.6.0; {_REMOVED_EXPORTS[name]}"
+        )
     module_name = _LAZY_EXPORTS.get(name)
     if module_name is None:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

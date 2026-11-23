@@ -22,22 +22,26 @@ producer-aware MAF input, and errors that say how to fix the call.
   `allow_mixed_builds=True`.
 * `read_maf()` keeps `Entrez_Gene_Id` as text; scripts that compare it numerically
   must cast it.
+* **Removed** `utils.geneset` (`read_GMT`, `read_gmt`, `fetch_msigdb_geneset`) and
+  `ASCStackingModel`: unused inside the package and project-specific. Use
+  `gseapy.read_gmt` / `gseapy.Msigdb().get_gmt()`, and
+  `model.predict_proba(X)[:, model.class_order.index("LUSC")]` instead of
+  `ASCStackingModel.soft_score()`. Accessing the old top-level names raises an
+  error naming the replacement. `beautifulsoup4` is no longer a dependency.
 
 ### 🏷️ Name unification and deprecations
 
 Old names keep working and return identical results; they only emit a
 `DeprecationWarning` that names the replacement and the removal release,
-**pymaftools 1.0**. Nothing was removed.
+**pymaftools 1.0**. Removals are listed under Breaking changes.
 
 | Deprecated | Use instead |
 |---|---|
 | `Cohort.to_hdf5()` / `Cohort.read_hdf5()` | `Cohort.to_h5()` / `Cohort.read_h5()` (same file format; matches `PivotTable`) |
 | `PivotTable.PCA()` | `PivotTable.pca()` |
 | `MAF.vaild_variant_classfication` | `MAF.valid_variant_classification` |
-| `pymaftools.read_GMT`, `utils.geneset.read_GMT` | `pymaftools.read_gmt` |
 | `utils.geneinfo.get_ncbi_gene_ID(s)` | `get_ncbi_gene_id(s)` |
 | `TCGA_sample_type`, `get_target_sample_ID`, `read_TCGA_ASCAT3_CNV_file_sheet` | `tcga_sample_type`, `get_target_sample_id`, `read_tcga_ascat3_cnv_file_sheet` |
-| `pymaftools.ASCStackingModel` | `pymaftools.model.StackingModel.ASCStackingModel` |
 | `pymaftools.PCA_CCA` | `pymaftools.utils.reduction.PCA_CCA` |
 
 Project-specific names left the package root (`__all__`); they are still

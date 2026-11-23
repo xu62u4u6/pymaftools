@@ -17,7 +17,7 @@ from pymaftools import Cohort, PivotTable
 from pymaftools._deprecation import REMOVAL_VERSION
 from pymaftools.core import CopyNumberVariationTable as cnv_module
 from pymaftools.core.MAF import MAF
-from pymaftools.utils import geneinfo, geneset
+from pymaftools.utils import geneinfo
 
 
 def _table() -> PivotTable:
@@ -39,7 +39,7 @@ def test_removal_version_is_one_point_zero():
     assert REMOVAL_VERSION == "1.0"
 
 
-@pytest.mark.parametrize("name", ["ASCStackingModel", "PCA_CCA", "read_GMT"])
+@pytest.mark.parametrize("name", ["PCA_CCA"])
 def test_project_specific_names_left_top_level_namespace(name):
     assert name not in pymaftools.__all__
     with pytest.warns(DeprecationWarning, match=rf"pymaftools\.{name}.*1\.0"):
@@ -48,27 +48,39 @@ def test_project_specific_names_left_top_level_namespace(name):
 
 
 def test_top_level_deprecated_names_resolve_to_submodule_objects():
-    from pymaftools.model.StackingModel import ASCStackingModel
     from pymaftools.utils.reduction import PCA_CCA
 
     with pytest.warns(DeprecationWarning):
-        assert pymaftools.ASCStackingModel is ASCStackingModel
-    with pytest.warns(DeprecationWarning):
         assert pymaftools.PCA_CCA is PCA_CCA
-    with pytest.warns(DeprecationWarning):
-        assert pymaftools.read_GMT is geneset.read_gmt
 
 
 def test_from_import_of_deprecated_top_level_name_warns():
-    with pytest.warns(DeprecationWarning, match="ASCStackingModel"):
-        from pymaftools import ASCStackingModel  # noqa: F401
+    with pytest.warns(DeprecationWarning, match="PCA_CCA"):
+        from pymaftools import PCA_CCA  # noqa: F401
 
 
-def test_new_top_level_name_does_not_warn():
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")
-        assert pymaftools.read_gmt is geneset.read_gmt
-        assert "read_gmt" in pymaftools.__all__
+@pytest.mark.parametrize(
+    ("name", "hint"),
+    [
+        ("ASCStackingModel", "predict_proba"),
+        ("read_GMT", "gseapy.read_gmt"),
+        ("read_gmt", "gseapy.read_gmt"),
+        ("fetch_msigdb_geneset", "gseapy.Msigdb"),
+    ],
+)
+def test_removed_names_raise_with_replacement(name, hint):
+    with pytest.raises(AttributeError, match=rf"removed in 0\.6\.0.*{hint}"):
+        getattr(pymaftools, name)
+    assert name not in pymaftools.__all__
+
+
+def test_removed_modules_are_gone():
+    import importlib.util
+
+    import pymaftools.model.StackingModel as stacking
+
+    assert importlib.util.find_spec("pymaftools.utils.geneset") is None
+    assert not hasattr(stacking, "ASCStackingModel")
 
 
 def test_cohort_hdf5_aliases_round_trip_identically(tmp_path):
@@ -121,10 +133,9 @@ def test_tcga_cnv_helpers_have_snake_case_names():
     )
 
 
-def test_geneinfo_and_geneset_aliases_delegate():
+def test_geneinfo_aliases_delegate():
     assert geneinfo.get_ncbi_gene_ID.__wrapped__ is geneinfo.get_ncbi_gene_id
     assert geneinfo.get_ncbi_gene_IDs.__wrapped__ is geneinfo.get_ncbi_gene_ids
-    assert geneset.read_GMT.__wrapped__ is geneset.read_gmt
 
 
 @pytest.mark.parametrize(

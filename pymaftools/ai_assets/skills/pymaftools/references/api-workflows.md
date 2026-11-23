@@ -139,7 +139,7 @@ pymaftools session-info --json
 
 Every JSON record carries `schema_version` (currently `"1.0"`); check it before
 parsing. `pymaftools --version` prints the installed version. Use the current
-names (`Cohort.to_h5`/`read_h5`, `PivotTable.pca`, `read_gmt`); the old ones
+names (`Cohort.to_h5`/`read_h5`, `PivotTable.pca`); the old ones
 still work until 1.0 but emit `DeprecationWarning`.
 
 ## Matrix metadata
