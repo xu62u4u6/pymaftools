@@ -44,3 +44,24 @@ def test_get_weights_raises_before_fit():
 
     with pytest.raises(ValueError, match="Model has not been fitted yet"):
         reducer.get_weights()
+
+
+def test_get_weights_reproduce_canonical_scores_from_centered_features():
+    rng = np.random.default_rng(42)
+    samples = [f"S{i}" for i in range(30)]
+    snv_values = rng.normal(size=(10, 30))
+    snv_values[0] *= 20.0  # unequal PCA score variances make 1/std matter
+    snv_values[1] *= 5.0
+    cnv_values = 0.7 * snv_values + 0.3 * rng.normal(size=(10, 30))
+    snv = pd.DataFrame(snv_values, index=[f"G{i}" for i in range(10)], columns=samples)
+    cnv = pd.DataFrame(cnv_values, index=[f"C{i}" for i in range(10)], columns=samples)
+
+    model = PCA_CCA(n_pca_components=5, n_cca_components=3)
+    snv_scores, cnv_scores = model.fit_transform(snv, cnv)
+    snv_weights, cnv_weights = model.get_weights()
+
+    for table, scores, weights in [(snv, snv_scores, snv_weights), (cnv, cnv_scores, cnv_weights)]:
+        components = [c for c in weights.columns if c != "abs_weight_mean"]
+        centered = table.T.values - table.T.values.mean(axis=0)
+        projected = centered @ weights.loc[table.index, components].values
+        np.testing.assert_allclose(projected, np.asarray(scores), atol=1e-8)

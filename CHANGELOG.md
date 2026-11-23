@@ -109,6 +109,19 @@ removal release.
   shows the cohort's own subtypes (it showed nothing for non-LUAD/ASC/LUSC
   cohorts) and `ModelPlot.plot_metric_comparison_with_annotation()` orders
   groups from the data instead of `SNV/CNV-gene/CNV-cluster/STACK`.
+* **Group similarity p-values no longer report NaN as significant.**
+  `SimilarityMatrix.calculate_group_similarity_pvalues()` returned the minimum
+  p-value `1/(N+1)` whenever the observed group similarity was NaN (e.g. a
+  one-sample group); it now returns NaN and drops non-finite permutations from
+  the denominator.
+* `SimilarityMatrix` group methods align a sample-ID-indexed `groups` Series to
+  the matrix rows instead of using its order (reordered metadata silently
+  mislabelled samples); a Series missing matrix samples raises.
+* `align_cluster_label_dict()` uses the full Hungarian assignment, so a cluster
+  absent from the fold's common samples is no longer merged into another one.
+* `PCA_CCA.get_weights()` back-projects with CCA's rotations and score scaling;
+  the returned feature weights now reproduce the canonical scores (they were
+  off by the per-component standard deviation and could rank genes wrongly).
 * `MAF.read_maf()` now detects comma- and tab-delimited inputs and reports
   incompatible columns without exposing user-specific paths.
 * `MAF.read_csv()` preserves a leading `Hugo_Symbol` as event data and can copy

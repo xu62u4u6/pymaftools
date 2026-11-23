@@ -130,3 +130,66 @@ def test_analysis_infers_colors_for_arbitrary_groups(monkeypatch):
 
     assert set(captured) == {"X", "Y", "Z"}
     assert captured["X"] == "black"
+
+
+def test_group_pvalues_are_nan_when_observed_similarity_is_undefined():
+    # NaN compares False, which used to give the minimum p = 1/(N+1).
+    groups = ["A", "B"]
+    observed = pd.DataFrame([[np.nan, 0.1], [0.1, 0.5]], index=groups, columns=groups)
+    rng = np.random.default_rng(0)
+    permutations = [
+        pd.DataFrame(rng.random((2, 2)), index=groups, columns=groups)
+        for _ in range(99)
+    ]
+
+    pvalues = SimilarityMatrix.calculate_group_similarity_pvalues(
+        observed, permutations, groups
+    )
+
+    assert np.isnan(pvalues.loc["A", "A"])
+    assert pvalues.loc["B", "B"] > 1 / 100
+
+
+def test_group_pvalues_exclude_nan_permutations_from_denominator():
+    groups = ["A"]
+    observed = pd.DataFrame([[0.5]], index=groups, columns=groups)
+    permutations = [pd.DataFrame([[v]], index=groups, columns=groups) for v in
+                    [0.9, np.nan, 0.1, np.nan]]
+
+    pvalues = SimilarityMatrix.calculate_group_similarity_pvalues(
+        observed, permutations, groups, tail="two"
+    )
+
+    # Finite permutations 0.9 and 0.1 (mean 0.5); both are as extreme as 0.
+    assert pvalues.loc["A", "A"] == pytest.approx((2 + 1) / (2 + 1))
+
+
+def test_group_series_is_aligned_by_sample_id_not_position():
+    samples = ["s1", "s2", "s3", "s4"]
+    matrix = SimilarityMatrix(
+        np.array(
+            [
+                [1.0, 0.9, 0.1, 0.1],
+                [0.9, 1.0, 0.1, 0.1],
+                [0.1, 0.1, 1.0, 0.9],
+                [0.1, 0.1, 0.9, 1.0],
+            ]
+        ),
+        index=samples,
+        columns=samples,
+    )
+    aligned = pd.Series(["A", "A", "B", "B"], index=samples)
+    reordered = aligned.loc[["s3", "s1", "s4", "s2"]]
+
+    result = matrix.get_mean_group_similarity(reordered, group_order=["A", "B"])
+
+    assert result.loc["A", "A"] == pytest.approx(0.9)
+    assert result.loc["A", "B"] == pytest.approx(0.1)
+
+
+def test_group_series_missing_samples_raises_with_hint():
+    samples = ["s1", "s2"]
+    matrix = SimilarityMatrix(np.eye(2), index=samples, columns=samples)
+
+    with pytest.raises(ValueError, match="to_numpy"):
+        matrix.get_mean_group_similarity(pd.Series(["A", "B"], index=["s1", "x"]))

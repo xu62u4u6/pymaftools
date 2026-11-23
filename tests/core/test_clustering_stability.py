@@ -93,3 +93,17 @@ def test_k_fold_rejects_groups_smaller_than_number_of_splits():
 
     with np.testing.assert_raises_regex(ValueError, "needs at least 3 samples"):
         k_fold_clustering_evaluation(table, group_col="subtype", n_splits=3)
+
+
+def test_align_cluster_labels_keeps_cluster_absent_from_common_samples_distinct():
+    from pymaftools.core.Clustering import align_cluster_label_dict
+
+    reference = pd.Series([0, 0, 2, 2], index=list("abcd"))
+    # Target cluster 2 only appears on 'e', which the reference fold lacks.
+    target = pd.Series([1, 1, 0, 0, 2], index=list("abcde"))
+
+    aligned = align_cluster_label_dict({3: {1: reference, 2: target}})[3][2]
+
+    assert aligned.loc[["a", "b"]].tolist() == [0, 0]
+    assert aligned.loc[["c", "d"]].tolist() == [2, 2]
+    assert aligned.loc["e"] not in {0, 2}

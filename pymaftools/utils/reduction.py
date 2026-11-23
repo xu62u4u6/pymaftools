@@ -120,8 +120,11 @@ class PCA_CCA:
         loadings_snv = self.pca_model_snv.components_.T  # (n_features, n_pca)
         loadings_cnv = self.pca_model_cnv.components_.T
 
-        cca_w_snv = self.cca_model.x_weights_  # (n_pca, n_cca)
-        cca_w_cnv = self.cca_model.y_weights_
+        # CCA (scale=True) standardizes each PCA score by its std before
+        # applying the rotations, so the back-projection must include 1/std;
+        # x_rotations_ (not x_weights_) maps inputs to canonical scores.
+        cca_w_snv = self.cca_model.x_rotations_ / self.cca_model._x_std[:, None]
+        cca_w_cnv = self.cca_model.y_rotations_ / self.cca_model._y_std[:, None]
 
         feature_w_snv = loadings_snv @ cca_w_snv
         feature_w_cnv = loadings_cnv @ cca_w_cnv
