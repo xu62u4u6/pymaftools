@@ -196,7 +196,7 @@ Sorting
 Somatic interactions and FDR
 ----------------------------
 
-``somatic_interactions_stats`` tests co-occurrence or mutual exclusivity for
+``PivotTable.somatic_interactions`` tests co-occurrence or mutual exclusivity for
 the selected top genes and returns one row for each **unique unordered gene
 pair**. The diagonal (``A``--``A``) and mirrored entry (``A``--``B`` versus
 ``B``--``A``) are not separate biological hypotheses. Benjamini-Hochberg FDR
@@ -205,7 +205,7 @@ cell of an ``n`` by ``n`` matrix:
 
 .. code-block:: python
 
-   stats = table.plot.somatic_interactions_stats(top=25)
+   stats = table.somatic_interactions(top=25)
    significant = stats.loc[stats["is_significant"]]
 
    figure, stats = table.plot.somatic_interactions(top=25)

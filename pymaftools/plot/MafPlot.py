@@ -28,10 +28,15 @@ class MafPlot:
         return plot_vaf(self.maf, **kwargs)
 
     def compare_cohorts(self, other, **kwargs):
-        """Compare gene mutation frequencies against another MAF cohort."""
-        from .wes import compare_cohorts
+        """Deprecated alias for :meth:`~pymaftools.core.MAF.MAF.compare_cohorts`.
 
-        return compare_cohorts(self.maf, other, **kwargs)
+        .. deprecated:: 0.6.0
+            Use :meth:`MAF.compare_cohorts`.
+        """
+        from .._deprecation import warn_deprecated
+
+        warn_deprecated("MAF.plot.compare_cohorts()", "MAF.compare_cohorts()")
+        return self.maf.compare_cohorts(other, **kwargs)
 
     def forest(self, compare_result, **kwargs):
         """Draw a forest-style plot from ``compare_cohorts`` output."""
@@ -49,10 +54,15 @@ class MafPlot:
         return plot_overview(self.maf, **kwargs)
 
     def summary_stats(self):
-        """Cohort-level summary numbers (dict); no plot."""
-        from .wes import summary_stats
+        """Deprecated alias for :meth:`~pymaftools.core.MAF.MAF.summary_stats`.
 
-        return summary_stats(self.maf)
+        .. deprecated:: 0.6.0
+            Use :meth:`MAF.summary_stats`.
+        """
+        from .._deprecation import warn_deprecated
+
+        warn_deprecated("MAF.plot.summary_stats()", "MAF.summary_stats()")
+        return self.maf.summary_stats()
 
     def sample_burden(self, **kwargs):
         """Per-sample mutation burden stacked by functional consequence."""

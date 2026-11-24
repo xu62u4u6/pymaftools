@@ -18,7 +18,7 @@ class SignatureTablePlot(PivotStatsPlot):
     Plotting interface for SignatureTable objects.
 
     Inherits the shared plotters from :class:`PivotStatsPlot` (``oncoplot``,
-    ``plot_pca_samples``, ``plot_boxplot_with_annot``) and adds the
+    ``pca``, ``boxplot``) and adds the
     signature-specific exposure landscape (:meth:`stacked_bar`).
 
     A :class:`~pymaftools.core.SignatureTable.SignatureTable` is oriented

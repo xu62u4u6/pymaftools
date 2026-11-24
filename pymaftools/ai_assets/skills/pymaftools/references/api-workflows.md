@@ -80,7 +80,7 @@ For mutation co-occurrence or mutual exclusivity, use the matrix-level
 interaction workflow:
 
 ```python
-stats = table.plot.somatic_interactions_stats(top=25)
+stats = table.somatic_interactions(top=25)
 figure, stats = table.plot.somatic_interactions(top=25)
 ```
 
@@ -107,7 +107,7 @@ Serialise results instead of printing them; the JSON keeps provenance
 ```python
 import pymaftools as pm
 
-stats = table.plot.somatic_interactions_stats(top=25)
+stats = table.somatic_interactions(top=25)
 pm.to_json(stats, "interactions.json")
 pm.get_provenance(stats)  # also on mutation_enrichment_test() results
 maf.ingest_report.to_json("ingest.json")

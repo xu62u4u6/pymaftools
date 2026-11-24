@@ -25,6 +25,7 @@ from sklearn.decomposition import PCA
 from statannotations.Annotator import Annotator
 
 # Local imports
+from .._deprecation import deprecated_alias, warn_deprecated
 from .BasePlot import BasePlot
 
 
@@ -44,8 +45,8 @@ class PivotStatsPlot(BasePlot):
     Examples
     --------
     >>> # Using property accessor (recommended)
-    >>> pivot_table.plot.plot_pca_samples(color_col="subtype")
-    >>> pivot_table.plot.plot_boxplot_with_annot(test_col="TMB")
+    >>> pivot_table.plot.pca(color_col="subtype")
+    >>> pivot_table.plot.boxplot(test_col="TMB")
     >>> # Composite oncoplot via the same accessor
     >>> pivot_table.plot.oncoplot(figsize=(15, 10)).main().add_freq().render()
     """
@@ -129,8 +130,9 @@ class PivotStatsPlot(BasePlot):
         """Draw the co-occurrence / mutual-exclusivity heatmap.
 
         Thin wrapper over :func:`pymaftools.plot.wes.plot_somatic_interactions`;
-        statistics come from :meth:`somatic_interactions_stats`, so the figure and
-        the table never disagree.
+        statistics come from
+        :meth:`~pymaftools.core.PivotTable.PivotTable.somatic_interactions`, so
+        the figure and the table never disagree.
 
         Parameters
         ----------
@@ -145,7 +147,7 @@ class PivotStatsPlot(BasePlot):
         -------
         tuple of (matplotlib.figure.Figure, pandas.DataFrame)
             The figure and the same statistics table as
-            :meth:`somatic_interactions_stats`.
+            :meth:`~pymaftools.core.PivotTable.PivotTable.somatic_interactions`.
         """
         from .wes import plot_somatic_interactions
 
@@ -154,35 +156,18 @@ class PivotStatsPlot(BasePlot):
         )
 
     def somatic_interactions_stats(self, top: int = 25, alpha: float = 0.05):
-        """Pairwise Fisher tests for co-occurrence / mutual exclusivity.
+        """Deprecated alias for :meth:`~pymaftools.core.PivotTable.PivotTable.somatic_interactions`.
 
-        Thin wrapper over :func:`pymaftools.plot.wes.somatic_interactions`.
-        Each unordered pair among the ``top`` most mutated genes is tested once;
-        BH-FDR covers that unique-pair family. Warns (without changing results)
-        on fewer than 10 samples or when most pairs are significant
-        co-occurrences, a typical sign of mutation-burden confounding.
-
-        Parameters
-        ----------
-        top : int, default 25
-            Number of most frequently mutated genes to include.
-        alpha : float, default 0.05
-            BH-FDR threshold for ``is_significant``.
-
-        Returns
-        -------
-        pandas.DataFrame
-            One row per gene pair with ``gene1``, ``gene2``, ``odds_ratio``,
-            ``p_value``, the 2x2 counts (``both_mutated``, ``gene1_only``,
-            ``gene2_only``, ``neither_mutated``), ``adjusted_p_value``,
-            ``interaction`` ("Co-occurrence" / "Mutual exclusivity") and
-            ``is_significant``, sorted by ``adjusted_p_value``.
+        .. deprecated:: 0.6.0
+            Use :meth:`PivotTable.somatic_interactions`.
         """
-        from .wes import somatic_interactions
+        warn_deprecated(
+            "PivotTable.plot.somatic_interactions_stats()",
+            "PivotTable.somatic_interactions()",
+        )
+        return self.pivot_table.somatic_interactions(top=top, alpha=alpha)
 
-        return somatic_interactions(self.pivot_table, top=top, alpha=alpha)
-
-    def plot_boxplot_with_annot(
+    def boxplot(
         self,
         data: pd.DataFrame | None = None,
         group_col: str = "subtype",
@@ -270,13 +255,13 @@ class PivotStatsPlot(BasePlot):
         Examples
         --------
         >>> # Basic boxplot comparing TMB by subtype
-        >>> pivot_table.plot.plot_boxplot_with_annot(
+        >>> pivot_table.plot.boxplot(
         ...     test_col="TMB",
         ...     group_col="subtype"
         ... )
 
         >>> # Custom styling with specific order and colors
-        >>> pivot_table.plot.plot_boxplot_with_annot(
+        >>> pivot_table.plot.boxplot(
         ...     test_col="MSI",
         ...     group_col="subtype",
         ...     palette={"LUAD": "orange", "ASC": "green", "LUSC": "blue"},
@@ -288,7 +273,7 @@ class PivotStatsPlot(BasePlot):
         ... )
 
         >>> # Paired comparison (e.g., before/after treatment)
-        >>> pivot_table.plot.plot_boxplot_with_annot(
+        >>> pivot_table.plot.boxplot(
         ...     test_col="expression_level",
         ...     group_col="treatment_status",  # "before", "after"
         ...     xlabel="Treatment Status",
@@ -445,7 +430,13 @@ class PivotStatsPlot(BasePlot):
             self.save(save_path, dpi=dpi, bbox_inches="tight", facecolor="white")
         return ax
 
-    def plot_pca_samples(
+    plot_boxplot_with_annot = deprecated_alias(
+        boxplot,
+        "PivotTable.plot.plot_boxplot_with_annot()",
+        "PivotTable.plot.boxplot()",
+    )
+
+    def pca(
         self,
         color_col: str = "subtype",
         shape_col: str | None = None,
@@ -537,12 +528,12 @@ class PivotStatsPlot(BasePlot):
         Examples
         --------
         >>> # Basic PCA plot with categorical colors
-        >>> pca_df, variance, pca_obj = pivot_table.plot.plot_pca_samples(
+        >>> pca_df, variance, pca_obj = pivot_table.plot.pca(
         ...     color_col="subtype"
         ... )
 
         >>> # PCA with numeric colors and shape encoding
-        >>> pca_df, variance, pca_obj = pivot_table.plot.plot_pca_samples(
+        >>> pca_df, variance, pca_obj = pivot_table.plot.pca(
         ...     color_col="TMB",  # numeric column
         ...     shape_col="subtype",  # categorical shapes
         ...     is_numeric=True,
@@ -550,7 +541,7 @@ class PivotStatsPlot(BasePlot):
         ... )
 
         >>> # PCA with both categorical color and shape encoding
-        >>> pca_df, variance, pca_obj = pivot_table.plot.plot_pca_samples(
+        >>> pca_df, variance, pca_obj = pivot_table.plot.pca(
         ...     color_col="subtype",
         ...     shape_col="sample_type",
         ...     palette={"LUAD": "red", "ASC": "green", "LUSC": "blue"}
@@ -810,3 +801,9 @@ class PivotStatsPlot(BasePlot):
         plt.tight_layout()
         plt.show()
         return pca_result_df, explained_variance, pca
+
+    plot_pca_samples = deprecated_alias(
+        pca,
+        "PivotTable.plot.plot_pca_samples()",
+        "PivotTable.plot.pca()",
+    )

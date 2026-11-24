@@ -172,6 +172,20 @@ a global percentage.
 - [ ] Reassess whether every remaining `PivotTable` method belongs on the core
       data object or on an accessor/helper. A line-count reduction alone is not
       sufficient justification.
+- [ ] Move remaining plotting methods out of `core/` into `.plot` accessors
+      (target 0.7): add `SimilarityMatrix.plot` (migrating `plot_*` and
+      splitting `analyze_similarity` into stats + plot), move plotting helpers
+      out of `core/Clustering.py` (separating `find_best_k` from plotting), and
+      split `CopyNumberVariationTable._cnv_band_ratio` into table statistics vs
+      `CopyNumberVariationTablePlot.band_ratio`. Also move pure statistics
+      helpers (`summary_stats`, `compare_cohorts`, `somatic_interactions`,
+      `summarize_titv`, `infer_vaf`) out of `plot/wes.py` into `core/`.
+- [ ] Breaking API consistency cleanup (target 1.0): convert expensive
+      computed `@property` accessors (`MAF.mutations_count`,
+      `MAF.tmb_by_functional_group`) to explicit methods, review inplace-only
+      `ExpressionTable.deseq2()` return semantics, and unify `.plot.*` return
+      types (`Figure` vs `Axes` vs plot builder) alongside removing 0.6.0
+      deprecated aliases.
 - [ ] Profile feature-frequency calculation and large-table copies before adding
       caching or removing defensive `.copy()` calls.
 - [ ] Decide how to handle the bundled 24 MB `protein_domains.csv`: keep it for

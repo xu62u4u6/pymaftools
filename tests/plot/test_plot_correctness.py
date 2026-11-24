@@ -163,7 +163,7 @@ def test_pca_shape_groups_share_one_colour_scale():
     table.sample_metadata["grp"] = ["a", "a", "a", "b", "b", "b"]
 
     plot = PivotStatsPlot(table)
-    plot.plot_pca_samples(color_col="score", shape_col="grp", is_numeric=True)
+    plot.pca(color_col="score", shape_col="grp", is_numeric=True)
 
     clims = {c.get_clim() for ax in plot.fig.axes for c in ax.collections if c.get_array() is not None}
     assert clims == {(1.0, 300.0)}
@@ -184,7 +184,7 @@ def test_paired_boxplot_keeps_only_complete_pairs():
     )
     _, ax = plt.subplots()
 
-    plot.plot_boxplot_with_annot(
+    plot.boxplot(
         data, group_col="group", test_col="val", order=["Pre", "Post"],
         is_paired=True, pair_col="patient", ax=ax, verbose=0,
     )

@@ -159,7 +159,7 @@ def test_to_gene_table_warns_when_silent_events_are_kept():
 
 def test_somatic_interactions_warns_on_few_samples_without_changing_stats(table):
     with pytest.warns(UserWarning, match="only 6 samples"):
-        stats = table.plot.somatic_interactions_stats(top=5)
+        stats = table.somatic_interactions(top=5)
     assert len(stats) == 10
 
 
@@ -175,4 +175,4 @@ def test_somatic_interactions_warns_on_pervasive_cooccurrence():
     data = {k: v.to_numpy(dtype=object) for k, v in data.items()}
     frame = pd.DataFrame(data, index=[f"S{i}" for i in range(200)]).T
     with pytest.warns(UserWarning, match="mutation burden"):
-        SmallVariationTable(frame).plot.somatic_interactions_stats(top=6)
+        SmallVariationTable(frame).somatic_interactions(top=6)

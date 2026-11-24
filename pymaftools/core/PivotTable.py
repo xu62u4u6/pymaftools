@@ -313,10 +313,10 @@ class PivotTable(pd.DataFrame):
         Examples
         --------
         >>> # PCA plot colored by subtype
-        >>> pivot_table.plot.plot_pca_samples(group_col="subtype")
+        >>> pivot_table.plot.pca(color_col="subtype")
 
         >>> # Boxplot with statistical annotations
-        >>> pivot_table.plot.plot_boxplot_with_annot(
+        >>> pivot_table.plot.boxplot(
         ...     test_col="TMB",
         ...     group_col="subtype"
         ... )
@@ -2013,6 +2013,32 @@ class PivotTable(pd.DataFrame):
             analysis_unit=analysis_unit,
             confidence_level=confidence_level,
         )
+
+    def somatic_interactions(self, top: int = 25, alpha: float = 0.05) -> pd.DataFrame:
+        """Pairwise Fisher tests for gene co-occurrence and mutual exclusivity.
+
+        Tests every unique unordered pair among the ``top`` most frequently
+        mutated features and applies Benjamini-Hochberg FDR across testable
+        pairs. When an :class:`~pymaftools.core.ObservationMask` is attached,
+        each pair uses only jointly observed samples.
+
+        Parameters
+        ----------
+        top : int, default 25
+            Number of most frequently mutated features to include.
+        alpha : float, default 0.05
+            BH-FDR significance threshold for ``is_significant``.
+
+        Returns
+        -------
+        pd.DataFrame
+            One row per unordered feature pair with ``gene1``, ``gene2``,
+            ``odds_ratio``, ``p_value``, 2x2 counts, ``adjusted_p_value``,
+            ``interaction``, and ``is_significant``.
+        """
+        from ..plot.wes import somatic_interactions
+
+        return somatic_interactions(self, top=top, alpha=alpha)
 
     def compute_similarity(
         self,
