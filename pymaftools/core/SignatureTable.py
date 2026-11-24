@@ -26,20 +26,40 @@ class SignatureTable(PivotTable):
         return SignatureTablePlot(self)
 
     @classmethod
-    def read_signature(cls, file_path: str) -> SignatureTable:
+    def read_signature(
+        cls,
+        file_path: str,
+        *,
+        orientation: str = "samples_by_signatures",
+    ) -> SignatureTable:
         """
         Read a signature weight file and return a SignatureTable.
 
         Parameters
         ----------
         file_path : str
-            Path to a tab-separated signature file where rows are
-            signatures and columns are mutation contexts.
+            Path to a tab-separated signature exposure file.
+        orientation : {"samples_by_signatures", "signatures_by_samples"}, \
+default "samples_by_signatures"
+            Orientation of the input file. Defaults to ``"samples_by_signatures"``
+            (rows = samples, columns = signatures), matching SigProfilerExtractor /
+            SigProfilerAssignment ``*_Activities.txt`` files and legacy behaviour.
+            Pass ``orientation="signatures_by_samples"`` when the file already has
+            signatures as rows and samples as columns. The returned table always
+            follows the package's feature-by-sample contract (signatures × samples).
 
         Returns
         -------
         SignatureTable
-            Transposed table with signatures as columns.
+            Exposure table with signatures as rows and samples as columns.
         """
-        df = pd.read_csv(file_path, sep="\t", index_col=0).T
+        valid_orientations = {"signatures_by_samples", "samples_by_signatures"}
+        if orientation not in valid_orientations:
+            raise ValueError(
+                f"orientation must be one of {sorted(valid_orientations)}; "
+                f"got {orientation!r}."
+            )
+        df = pd.read_csv(file_path, sep="\t", index_col=0)
+        if orientation == "samples_by_signatures":
+            df = df.T
         return cls(df)

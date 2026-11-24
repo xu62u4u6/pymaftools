@@ -35,7 +35,7 @@ class ExpressionTablePlot(PivotStatsPlot):
         padj: float = 0.05,
         log2fc: float = 1.0,
         top_n: int = 10,
-        label_col: str = "gene_name",
+        label_col: str | None = None,
         ax: Optional[Axes] = None,
         figsize: tuple = (8, 6),
         save_path: Optional[str] = None,
@@ -52,8 +52,9 @@ class ExpressionTablePlot(PivotStatsPlot):
             Absolute log2 fold-change threshold.
         top_n : int, default 10
             Number of top DEGs to label.
-        label_col : str, default "gene_name"
-            Column in ``feature_metadata`` used for gene labels.
+        label_col : str or None, default None
+            Column in ``feature_metadata`` used for gene labels. ``None`` uses
+            ``gene_name`` when present, otherwise the feature index.
         ax : Axes, optional
             Matplotlib axes to draw on. Created if *None*.
         figsize : tuple, default (8, 6)
@@ -70,6 +71,19 @@ class ExpressionTablePlot(PivotStatsPlot):
         fm = self.pivot_table.feature_metadata.copy()
         if "padj" not in fm.columns or "log2FoldChange" not in fm.columns:
             raise ValueError("Run .deseq2() before plotting a volcano.")
+        if label_col is not None and label_col not in fm.columns:
+            raise ValueError(
+                f"label_col {label_col!r} not found in feature_metadata. "
+                f"Available columns: {list(fm.columns)}. Pass label_col=None "
+                "to use gene_name when available or the feature index."
+            )
+        if label_col is None:
+            if "gene_name" in fm.columns:
+                fm["_plot_label"] = fm["gene_name"]
+            else:
+                fm["_plot_label"] = fm.index.astype(str)
+        else:
+            fm["_plot_label"] = fm[label_col]
 
         fm = fm.dropna(subset=["padj", "log2FoldChange"])
         fm["-log10padj"] = -np.log10(fm["padj"].clip(lower=1e-300))
@@ -114,13 +128,13 @@ class ExpressionTablePlot(PivotStatsPlot):
         ax.axvline(-log2fc, ls="--", lw=0.8, color=style.SPINE_COLOR)
 
         # Label top genes
-        if label_col in fm.columns and top_n > 0:
+        if top_n > 0:
             sig = fm.loc[fm["_deg"] != "NS"].nsmallest(top_n, "padj")
             for _, row in sig.iterrows():
                 ax.text(
                     row["log2FoldChange"],
                     row["-log10padj"],
-                    row[label_col],
+                    row["_plot_label"],
                     fontsize=7,
                     ha="center",
                     va="bottom",

@@ -28,6 +28,18 @@ BASE_CHANGE_ORDER = [
 ]
 
 
+def _canonical_substitution(ref, alt) -> str | float:
+    """Normalize one SNV to the six pyrimidine-context substitutions."""
+    comp = {"A": "T", "T": "A", "G": "C", "C": "G"}
+    ref = str(ref).upper()
+    alt = str(alt).upper()
+    if ref not in comp or alt not in comp or ref == alt:
+        return np.nan
+    if ref in {"A", "G"}:
+        ref, alt = comp[ref], comp[alt]
+    return f"{ref}>{alt}"
+
+
 def _get_sample_col(maf: pd.DataFrame) -> str:
     if "sample_ID" in maf.columns:
         return "sample_ID"
@@ -69,16 +81,11 @@ def summarize_titv(maf: pd.DataFrame) -> pd.DataFrame:
         maf, [sample_col, "Variant_Type", "Reference_Allele", "Tumor_Seq_Allele2"]
     )
     snp = maf.loc[maf["Variant_Type"].eq("SNP")].copy()
-    comp = {"A": "T", "T": "A", "G": "C", "C": "G"}
 
     def normalize(row):
-        ref = str(row["Reference_Allele"]).upper()
-        alt = str(row["Tumor_Seq_Allele2"]).upper()
-        if ref not in comp or alt not in comp or ref == alt:
-            return np.nan
-        if ref in {"A", "G"}:
-            ref, alt = comp[ref], comp[alt]
-        return f"{ref}>{alt}"
+        return _canonical_substitution(
+            row["Reference_Allele"], row["Tumor_Seq_Allele2"]
+        )
 
     snp["Base_Change"] = snp.apply(normalize, axis=1)
     counts = pd.crosstab(snp[sample_col], snp["Base_Change"])
@@ -135,16 +142,45 @@ def plot_rainfall(
     sample: str | None = None,
     figsize=(12, 4),
     point_size: float = 10,
+    color_by: str = "substitution",
+    chrom_lengths: dict | None = None,
 ):
-    """Draw inter-mutation distance across genomic coordinates."""
+    """Draw inter-mutation distance across genomic coordinates.
+
+    Parameters
+    ----------
+    maf : pandas.DataFrame
+        MAF event table.
+    sample : str, optional
+        Sample to draw. With multiple samples, defaults to the first sample.
+    figsize : tuple, default (12, 4)
+        Figure size.
+    point_size : float, default 10
+        Scatter marker area.
+    color_by : {"substitution", "variant_classification"}, \
+default "substitution"
+        ``substitution`` plots SNPs by the six canonical pyrimidine classes;
+        ``variant_classification`` preserves consequence-based colouring.
+    chrom_lengths : dict, optional
+        Reference chromosome lengths keyed by chromosome label (``1`` or
+        ``chr1``). When provided, every plotted chromosome must be present and
+        at least as long as its largest observed position.
+    """
     from .ColorManager import ColorManager
     from . import style
 
+    valid_color_modes = {"substitution", "variant_classification"}
+    if color_by not in valid_color_modes:
+        raise ValueError(
+            f"color_by must be one of {sorted(valid_color_modes)}; got {color_by!r}."
+        )
     sample_col = _get_sample_col(maf)
-    _require_columns(
-        maf,
-        [sample_col, "Chromosome", "Start_Position", "Variant_Classification"],
-    )
+    required = [sample_col, "Chromosome", "Start_Position"]
+    if color_by == "substitution":
+        required += ["Variant_Type", "Reference_Allele", "Tumor_Seq_Allele2"]
+    else:
+        required += ["Variant_Classification"]
+    _require_columns(maf, required)
     data = maf.copy()
     if sample is not None:
         data = data.loc[data[sample_col].eq(sample)].copy()
@@ -154,15 +190,66 @@ def plot_rainfall(
     if data.empty:
         raise ValueError("No variants available for rainfall plot.")
 
+    if color_by == "substitution":
+        data = data.loc[data["Variant_Type"].eq("SNP")].copy()
+        data["_rainfall_class"] = data.apply(
+            lambda row: _canonical_substitution(
+                row["Reference_Allele"], row["Tumor_Seq_Allele2"]
+            ),
+            axis=1,
+        )
+        data = data.dropna(subset=["_rainfall_class"])
+        color_map = ColorManager.TITV_CMAP
+        legend_title = "Substitution"
+        if data.empty:
+            raise ValueError(
+                "No valid SNP substitutions available for rainfall plot; "
+                "check Variant_Type, Reference_Allele, and Tumor_Seq_Allele2."
+            )
+    else:
+        data["_rainfall_class"] = data["Variant_Classification"]
+        color_map = ColorManager.ALL_MUTATION_CMAP
+        legend_title = "Mutation"
+
     data["Start_Position"] = pd.to_numeric(data["Start_Position"], errors="coerce")
     data = data.dropna(subset=["Start_Position"])
     chroms = sorted(data["Chromosome"].dropna().unique(), key=_chrom_sort_key)
+    reference_lengths = None
+    if chrom_lengths is not None:
+        reference_lengths = {
+            str(chrom).lower().removeprefix("chr"): length
+            for chrom, length in chrom_lengths.items()
+        }
+        missing = [
+            str(chrom)
+            for chrom in chroms
+            if str(chrom).lower().removeprefix("chr") not in reference_lengths
+        ]
+        if missing:
+            raise ValueError(
+                f"chrom_lengths is missing plotted chromosome(s): {missing}."
+            )
     offsets = {}
     offset = 0
     for chrom in chroms:
         offsets[chrom] = offset
         max_pos = data.loc[data["Chromosome"].eq(chrom), "Start_Position"].max()
-        offset += int(max_pos) + 1
+        if reference_lengths is None:
+            span = int(max_pos) + 1
+        else:
+            key = str(chrom).lower().removeprefix("chr")
+            try:
+                span = int(reference_lengths[key])
+            except (TypeError, ValueError) as error:
+                raise ValueError(
+                    f"chrom_lengths[{key!r}] must be a positive integer."
+                ) from error
+            if span <= 0 or span < max_pos:
+                raise ValueError(
+                    f"chrom_lengths[{key!r}]={span} is shorter than the largest "
+                    f"observed position {int(max_pos)}."
+                )
+        offset += span
     data["genomic_pos"] = data.apply(
         lambda row: offsets[row["Chromosome"]] + row["Start_Position"],
         axis=1,
@@ -183,8 +270,16 @@ def plot_rainfall(
 
     fig, ax, legend_ax = style.fig_with_legend(figsize, legend_width=0.16)
     present = {}
-    for cls, sub in data.groupby("Variant_Classification"):
-        color = ColorManager.ALL_MUTATION_CMAP.get(cls, style.MUTED)
+    class_order = (
+        BASE_CHANGE_ORDER
+        if color_by == "substitution"
+        else list(pd.unique(data["_rainfall_class"]))
+    )
+    for cls in class_order:
+        sub = data.loc[data["_rainfall_class"].eq(cls)]
+        if sub.empty:
+            continue
+        color = color_map.get(cls, style.MUTED)
         present[cls] = color
         ax.scatter(
             sub["genomic_pos"],
@@ -198,7 +293,7 @@ def plot_rainfall(
     ax.set_xlabel("Genomic position")
     ax.set_ylabel("log10 inter-mutation distance")
     style.style_axes(ax)
-    style.draw_legend_cards(legend_ax, {"Mutation": present})
+    style.draw_legend_cards(legend_ax, {legend_title: present})
     fig.tight_layout()
     return fig
 

@@ -120,7 +120,7 @@ class MafPlot:
         --------
         >>> maf.plot.lollipop("TP53").plot()
         """
-        from .LollipopPlot import LollipopPlot
+        from .LollipopPlot import LollipopPlot, resolve_lollipop_domains
 
         AA_length, mutations_data = self.maf.get_protein_info(gene)
         if AA_length is None and mutations_data:
@@ -144,7 +144,9 @@ class MafPlot:
                 "(needs Protein_position, HGVSp_Short or Protein_Change, and "
                 "a protein length from 'pos/length' or the domain table)."
             )
-        domains, _ = self.maf.get_domain_info(gene, AA_length, protein_domains_path)
+        domains = resolve_lollipop_domains(
+            self.maf, gene, AA_length, protein_domains_path=protein_domains_path
+        )
         return LollipopPlot(
             protein_name=gene,
             protein_length=AA_length,

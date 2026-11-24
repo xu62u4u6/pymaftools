@@ -1,11 +1,83 @@
 from __future__ import annotations
 
-import matplotlib.pyplot as plt
-from matplotlib import colormaps
-import numpy as np
+import warnings
+from pathlib import Path
+
 import matplotlib.patches as patches
-from .BasePlot import BasePlot
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from matplotlib import colormaps
+
 from . import style
+from .BasePlot import BasePlot
+
+
+def _closest_available_lengths(
+    gene: str,
+    aa_length: int,
+    protein_domains_path=None,
+) -> str:
+    """Return a human-readable summary of closest protein lengths in a domain CSV."""
+    domain_path = (
+        Path(protein_domains_path)
+        if protein_domains_path is not None
+        else Path(__file__).resolve().parents[1] / "data" / "protein_domains.csv"
+    )
+    try:
+        domain_table = pd.read_csv(domain_path, index_col=0, low_memory=False)
+    except Exception:
+        return "unavailable (could not read protein domains table)"
+
+    required_cols = {"HGNC", "aa.length"}
+    missing = sorted(required_cols - set(domain_table.columns))
+    if missing:
+        return f"unavailable (domain table missing column(s): {missing})"
+
+    available = (
+        pd.to_numeric(
+            domain_table.loc[domain_table["HGNC"].eq(gene), "aa.length"],
+            errors="coerce",
+        )
+        .dropna()
+        .astype(int)
+        .unique()
+    )
+    if not len(available):
+        return "none for this gene"
+    distance = min(abs(int(length) - int(aa_length)) for length in available)
+    closest = sorted(
+        int(length)
+        for length in available
+        if abs(int(length) - int(aa_length)) == distance
+    )
+    return ", ".join(map(str, closest))
+
+
+def resolve_lollipop_domains(
+    maf,
+    gene: str,
+    aa_length: int,
+    protein_domains_path=None,
+) -> list[dict]:
+    """Fetch protein domains for ``gene`` at ``aa_length``, warning on length mismatch."""
+    try:
+        domains, _ = maf.get_domain_info(gene, aa_length, protein_domains_path)
+        return list(domains)
+    except ValueError as error:
+        if "No domain info found" not in str(error):
+            raise
+        closest_text = _closest_available_lengths(
+            gene, aa_length, protein_domains_path=protein_domains_path
+        )
+        warnings.warn(
+            f"No protein domains found for {gene} at requested protein length "
+            f"{aa_length}; closest available length(s): {closest_text}. "
+            "Plotting mutations without domains.",
+            UserWarning,
+            stacklevel=3,
+        )
+        return []
 
 
 class LollipopPlot(BasePlot):
@@ -559,7 +631,7 @@ class LollipopPlot(BasePlot):
         # Save if requested
         if save_path:
             try:
-                format_ext = save_path.split(".")[-1].lower()
+                format_ext = Path(save_path).suffix.lstrip(".").lower() or None
                 pil_kwargs = {"compression": "tiff_lzw"} if format_ext == "tiff" else {}
 
                 fig.savefig(

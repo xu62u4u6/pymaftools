@@ -329,9 +329,13 @@ class OncoPlot(BasePlot):
 
         Examples
         --------
+        >>> tmb_cols = [f"tmb_{g}" for g in ColorManager.FUNCTIONAL_ORDER]
+        >>> functional_counts = pt.sample_metadata[tmb_cols].rename(
+        ...     columns=lambda col: col.removeprefix("tmb_")
+        ... )
         >>> op.add_track(BarTrack(
-        ...     pt.sample_metadata[[f"tmb_{g}" for g in ColorManager.FUNCTIONAL_ORDER]],
-        ...     side="top", label="TMB", cmap=ColorManager.FUNCTIONAL_CMAP))
+        ...     functional_counts, side="top", label="Mutation count",
+        ...     cmap=ColorManager.FUNCTIONAL_CMAP))
         """
         self.tracks.append(track)
         return self
@@ -453,11 +457,12 @@ class OncoPlot(BasePlot):
         Columns absent from ``cmap_dict`` use the global ``cmap`` in ``kwargs``
         (numeric, default ``"Blues"`` in NumericTrack) or an auto-generated
         ``default_cmap`` palette (categorical)."""
+        columns = [columns] if isinstance(columns, str) else list(columns)
         horizontal = side in ("top", "bottom")
         where = "sample_metadata" if horizontal else "feature_metadata"
         self._require_columns(
             metadata,
-            list(columns),
+            columns,
             where,
             " Attach it with table.add_sample_metadata(df) / "
             "table.add_feature_metadata(df) before plotting.",
@@ -465,7 +470,9 @@ class OncoPlot(BasePlot):
         for col in columns:
             series = metadata[col]
             data = series.to_frame().T if horizontal else series.to_frame()
-            if pd.api.types.is_numeric_dtype(series):
+            if pd.api.types.is_numeric_dtype(series) and not pd.api.types.is_bool_dtype(
+                series
+            ):
                 # per-column cmap from cmap_dict (e.g. "coolwarm" for a signed
                 # delta column) takes precedence over a global cmap in kwargs.
                 numeric_kwargs = dict(kwargs)
@@ -502,7 +509,7 @@ class OncoPlot(BasePlot):
 
     def add_sample_annotation(
         self,
-        columns: list[str],
+        columns: str | list[str],
         side: str = "bottom",
         *,
         cmap_dict: dict | None = None,
@@ -515,8 +522,8 @@ class OncoPlot(BasePlot):
 
         Parameters
         ----------
-        columns : list of str
-            ``sample_metadata`` columns to draw, one track each.
+        columns : str or list of str
+            ``sample_metadata`` column(s) to draw, one track each.
         side : {"bottom", "top"}, default "bottom"
             Which side of the matrix to place the strips on.
         cmap_dict : dict, optional
@@ -538,7 +545,7 @@ class OncoPlot(BasePlot):
 
     def add_feature_annotation(
         self,
-        columns: list[str],
+        columns: str | list[str],
         side: str = "right",
         *,
         cmap_dict: dict | None = None,
@@ -552,8 +559,8 @@ class OncoPlot(BasePlot):
 
         Parameters
         ----------
-        columns : list of str
-            ``feature_metadata`` columns to draw, one track each.
+        columns : str or list of str
+            ``feature_metadata`` column(s) to draw, one track each.
         side : {"right", "left"}, default "right"
             Which side of the matrix to place the strips on.
         cmap_dict : dict, optional
@@ -796,7 +803,8 @@ class OncoPlot(BasePlot):
         sample_labels = self._resolve_labels(
             sample_labels, self.pivot_table.columns, "sample"
         )
-        show_feature_labels = bool(getattr(main_track, "yticklabels", False))
+        original_yticklabels = getattr(main_track, "yticklabels", False)
+        show_feature_labels = bool(original_yticklabels)
         main_track.yticklabels = False
         self._render_info = {
             "show_sample_labels": bool(show_sample_labels),
@@ -824,26 +832,29 @@ class OncoPlot(BasePlot):
             if (self._feature_groups or self._sample_groups)
             else self._render_simple
         )
-        layout(
-            fig,
-            main_track,
-            top,
-            bottom,
-            left,
-            right,
-            main_w=main_w,
-            main_h=main_h,
-            legend_width=legend_width,
-            legend_pad=legend_pad,
-            wspace=wspace,
-            hspace=hspace,
-            show_sample_labels=show_sample_labels,
-            show_feature_labels=show_feature_labels,
-            feature_labels=feature_labels,
-            sample_labels=sample_labels,
-            feature_gutter_size=feature_gutter_size,
-            sample_gutter_size=sample_gutter_size,
-        )
+        try:
+            layout(
+                fig,
+                main_track,
+                top,
+                bottom,
+                left,
+                right,
+                main_w=main_w,
+                main_h=main_h,
+                legend_width=legend_width,
+                legend_pad=legend_pad,
+                wspace=wspace,
+                hspace=hspace,
+                show_sample_labels=show_sample_labels,
+                show_feature_labels=show_feature_labels,
+                feature_labels=feature_labels,
+                sample_labels=sample_labels,
+                feature_gutter_size=feature_gutter_size,
+                sample_gutter_size=sample_gutter_size,
+            )
+        finally:
+            main_track.yticklabels = original_yticklabels
 
         # legends: single source of truth, gathered from every track —
         # categorical swatches plus any numeric tracks set to colorbar="legend".
@@ -1116,9 +1127,11 @@ class OncoPlot(BasePlot):
             t.render(fig.add_subplot(self.gs[i, main_col]))
         for i, t in enumerate(bottom):
             t.render(fig.add_subplot(self.gs[main_row + 1 + i, main_col]))
-        # left[0] sits adjacent to the matrix (just left of the feature gutter)
+        # Registration order runs outside-in: left[0] is the outermost track.
+        # Keeping track placement in the same order as width_ratios also means a
+        # track's requested size applies to its own GridSpec column.
         for i, t in enumerate(left):
-            t.render(fig.add_subplot(self.gs[main_row, len(left) - 1 - i]))
+            t.render(fig.add_subplot(self.gs[main_row, i]))
         for i, t in enumerate(right):
             t.render(fig.add_subplot(self.gs[main_row, right_cols[i]]))
 

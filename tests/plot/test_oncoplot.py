@@ -154,9 +154,11 @@ def test_main_cnv_renders_numeric_matrix_with_colorbar():
             columns=[f"s{i}" for i in range(6)],
         )
     )
-    op = OncoPlot(table, figsize=(6, 4)).main(
-        kind="cnv", cmap="coolwarm", symmetric=True
-    ).render()
+    op = (
+        OncoPlot(table, figsize=(6, 4))
+        .main(kind="cnv", cmap="coolwarm", symmetric=True)
+        .render()
+    )
 
     assert any(isinstance(t, NumericMatrixTrack) for t in op.tracks)
     assert len(op.ax_heatmap.collections) >= 1
@@ -192,7 +194,9 @@ def test_plot_freq_registers_freqtrack_and_draws(mutation_table):
 def test_plot_categorical_metadata_tracks_and_legends(mutation_table):
     """One CategoricalTrack per configured column, each contributing its own
     legend after render()."""
-    op = OncoPlot(mutation_table, figsize=(8, 6), categorical_columns=["subtype", "sex"])
+    op = OncoPlot(
+        mutation_table, figsize=(8, 6), categorical_columns=["subtype", "sex"]
+    )
     op.main().plot_categorical_metadata().render()
 
     cat_tracks = [t for t in op.tracks if isinstance(t, CategoricalTrack)]
@@ -309,6 +313,72 @@ def test_add_sample_annotation_dtype_inference(mutation_table):
 
     assert any(isinstance(t, NumericTrack) for t in op.tracks)
     assert any(isinstance(t, CategoricalTrack) for t in op.tracks)
+
+
+def test_annotation_accepts_bare_strings_and_routes_bool_as_categorical(
+    mutation_table,
+):
+    """Issue #44: a column name is one column, not an iterable of characters;
+    bool metadata is a binary category rather than a continuous measurement."""
+    mutation_table.sample_metadata["is_smoker"] = [True, False] * 4
+    mutation_table.feature_metadata["is_driver"] = [True, False] * 3
+    op = OncoPlot(mutation_table, figsize=(8, 6)).main()
+
+    op.add_sample_annotation("is_smoker")
+    op.add_feature_annotation("is_driver")
+
+    annotation_tracks = op.tracks[1:]
+    assert [type(track) for track in annotation_tracks] == [
+        CategoricalTrack,
+        CategoricalTrack,
+    ]
+    assert [track.name for track in annotation_tracks] == ["is_smoker", "is_driver"]
+
+
+@pytest.mark.parametrize("grouped", [False, True])
+def test_render_twice_preserves_feature_labels(grouped):
+    """Issue #44: render may suppress matrix ticks locally, but must restore
+    the track configuration so a later render still creates label gutters."""
+    table = _grouped_table()
+    op = OncoPlot(table, figsize=(7, 5)).main()
+    if grouped:
+        op.group_features(by="pathway")
+
+    main_track = op.tracks[0]
+    op.render()
+    assert main_track.yticklabels is True
+    op.render()
+
+    shown = {text.get_text() for ax in op.fig.axes for text in ax.texts}
+    assert set(table.index) <= shown
+    assert main_track.yticklabels is True
+
+
+@pytest.mark.parametrize("sectioned", [False, True])
+def test_left_track_registration_order_and_widths(sectioned):
+    """The first left track is outermost and each requested size belongs to
+    the column where that track is actually rendered."""
+    table = _grouped_table()
+    op = OncoPlot(table, figsize=(9, 5), wspace=0).main(yticklabels=False)
+    op.add_track(
+        BarTrack(np.arange(1, len(table) + 1), side="left", label="outer", size=1)
+    )
+    op.add_track(
+        BarTrack(np.arange(1, len(table) + 1), side="left", label="inner", size=3)
+    )
+    if sectioned:
+        op.group_features(by="pathway", show_titles=False)
+    op.render(show_sample_labels=False, legend_pad=0)
+
+    outer_axes = [ax for ax in op.fig.axes if ax.get_title() == "outer"]
+    inner_axes = [ax for ax in op.fig.axes if ax.get_title() == "inner"]
+    assert len(outer_axes) == len(inner_axes) == (3 if sectioned else 1)
+    for outer_ax, inner_ax in zip(outer_axes, inner_axes):
+        outer_box = outer_ax.get_position()
+        inner_box = inner_ax.get_position()
+        assert outer_box.x1 <= inner_box.x0
+        assert inner_box.width / outer_box.width == pytest.approx(3.0)
+        assert inner_box.x1 <= op.ax_heatmap.get_position().x0
 
 
 # --- Stage 4: legend filter / xticklabel params / render spacing -----------
@@ -472,9 +542,7 @@ def test_group_samples_per_section_freq_strips():
     """group_samples(freq=True) draws each group's own freq strip (X_freq, Y_freq)
     right of its section, independent of an overall freq bar at the far right."""
     t = _grouped_table()
-    groups = {
-        g: t.subset(samples=t.sample_metadata["grp"] == g) for g in ["X", "Y"]
-    }
+    groups = {g: t.subset(samples=t.sample_metadata["grp"] == g) for g in ["X", "Y"]}
     t = t.add_freq(groups=groups)  # creates X_freq, Y_freq, and overall freq
 
     op = (
@@ -487,9 +555,7 @@ def test_group_samples_per_section_freq_strips():
 
     # Each section drew a strip labelled with ITS OWN freq column (not a shared
     # one), alongside the overall "freq" bar.
-    labels = {
-        lbl.get_text() for ax in op.fig.axes for lbl in ax.get_xticklabels()
-    }
+    labels = {lbl.get_text() for ax in op.fig.axes for lbl in ax.get_xticklabels()}
     assert {"X_freq", "Y_freq", "freq"} <= labels
 
 
@@ -518,8 +584,9 @@ def test_feature_names_render_in_gutter_not_on_matrix(mutation_table):
     """The regression: gene names go to a dedicated gutter, so a LEFT track can
     no longer cover them (and they are off the heatmap axis)."""
     op = OncoPlot(mutation_table, figsize=(8, 6)).main()
-    op.add_track(BarTrack(mutation_table.feature_metadata["freq"], side="left",
-                          label="freq"))
+    op.add_track(
+        BarTrack(mutation_table.feature_metadata["freq"], side="left", label="freq")
+    )
     op.render()
 
     genes = set(mutation_table.index)
@@ -554,8 +621,8 @@ def test_label_override_wrong_length_raises(mutation_table):
 
 def test_show_sample_labels_false_hides_the_sample_gutter(mutation_table):
     """Forcing labels off leaves no sample gutter axis (the auto-hide path)."""
-    op = OncoPlot(mutation_table, figsize=(8, 6)).main().render(
-        show_sample_labels=False
+    op = (
+        OncoPlot(mutation_table, figsize=(8, 6)).main().render(show_sample_labels=False)
     )
     assert op._sample_gutter_axes == []
 
@@ -584,6 +651,19 @@ def _label_centre_offsets_px(op, gutter_ax, heatmap_ax, positions):
         label_x = bbox.x0 + bbox.width / 2
         cell_x = heatmap_ax.transData.transform((col + 0.5, 0))[0]
         offsets.append(abs(label_x - cell_x))
+    return offsets
+
+
+def _label_y_centre_offsets_px(op, gutter_ax, heatmap_ax, positions):
+    """Display-space distance between each feature label and its row centre."""
+    op.fig.canvas.draw()
+    renderer = op.fig.canvas.get_renderer()
+    offsets = []
+    for text, row in zip(gutter_ax.texts, positions):
+        bbox = text.get_window_extent(renderer)
+        label_y = bbox.y0 + bbox.height / 2
+        cell_y = heatmap_ax.transData.transform((0, row + 0.5))[1]
+        offsets.append(abs(label_y - cell_y))
     return offsets
 
 
@@ -626,8 +706,38 @@ def test_grouped_sample_labels_centred_on_section_cells():
         assert max(_label_centre_offsets_px(op, gutter, heatmap_ax, range(n))) < 1.0
 
 
-@pytest.mark.parametrize("fig_height", [3, 4, 6, 10])
-def test_legend_title_does_not_overlap_first_item(fig_height):
+@pytest.mark.parametrize("grouped", [False, True])
+def test_feature_labels_centred_on_heatmap_rows(grouped):
+    """Issue #16 companion check: the y-gutter uses the same inverted row
+    coordinates as each ungrouped or feature-grouped heatmap section."""
+    table = _grouped_table()
+    op = OncoPlot(table, figsize=(7, 5)).main()
+    if grouped:
+        op.group_features(by="pathway")
+    op.render(show_sample_labels=False)
+
+    features = set(table.index)
+    gutters = [
+        ax
+        for ax in op.fig.axes
+        if ax.texts and {text.get_text() for text in ax.texts}.issubset(features)
+    ]
+    heatmaps = [ax for ax in op.fig.axes if ax.collections]
+    gutters.sort(key=lambda ax: ax.get_position().y0, reverse=True)
+    heatmaps.sort(key=lambda ax: ax.get_position().y0, reverse=True)
+    expected_sections = 3 if grouped else 1
+    assert len(gutters) == len(heatmaps) == expected_sections
+    for gutter, heatmap_ax in zip(gutters, heatmaps):
+        n = len(gutter.texts)
+        assert gutter.get_ylim() == heatmap_ax.get_ylim() == (n, 0)
+        assert max(_label_y_centre_offsets_px(op, gutter, heatmap_ax, range(n))) < 1.0
+
+
+@pytest.mark.parametrize(
+    ("fig_height", "fontsize", "title_fontsize"),
+    [(3, 8, 10), (4, 12, 16), (6, 10, 14), (10, 14, 18)],
+)
+def test_legend_title_does_not_overlap_first_item(fig_height, fontsize, title_fontsize):
     """Issue #17: on short figures the fixed axes-fraction title offset was
     smaller than the glyph height; spacing is now floored in physical units."""
     table = PivotTable(
@@ -636,6 +746,11 @@ def test_legend_title_does_not_overlap_first_item(fig_height):
     op = OncoPlot(table).set_config(figsize=(9, fig_height))
     op.main(cmap_dict={"mut": "steelblue"}, linewidths=1)
     op.render(show_sample_labels=True)
+    op.legend_manager.plot_legends(
+        ax=op.ax_legend,
+        fontsize=fontsize,
+        title_fontsize=title_fontsize,
+    )
     op.fig.canvas.draw()
     renderer = op.fig.canvas.get_renderer()
 
