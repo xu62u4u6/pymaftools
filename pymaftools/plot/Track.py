@@ -490,31 +490,47 @@ class BarTrack(Track):
         n = len(frame)
         pos = np.arange(n)
         horizontal = self.side in ("left", "right")
+        edge_kwargs = (
+            {"edgecolor": "white"} if n <= 50 else {"edgecolor": "none", "linewidth": 0}
+        )
 
         offset = np.zeros(n)
         for col in frame.columns:
             vals = frame[col].to_numpy(dtype=float)
+            plot_vals = np.where(np.isnan(vals), 0.0, vals)
             color = self.cmap.get(col, self.color) if self.cmap else self.color
             if horizontal:
                 ax.barh(
-                    pos, vals, left=offset, height=0.95, color=color, edgecolor="white"
+                    pos,
+                    plot_vals,
+                    left=offset,
+                    height=0.95,
+                    color=color,
+                    **edge_kwargs,
                 )
             else:
                 ax.bar(
-                    pos, vals, bottom=offset, width=0.95, color=color, edgecolor="white"
+                    pos,
+                    plot_vals,
+                    bottom=offset,
+                    width=0.95,
+                    color=color,
+                    **edge_kwargs,
                 )
-            offset = offset + vals
+            offset = offset + plot_vals
 
         vmax = (
             self._shared_max
             if self._shared_max is not None
-            else (float(offset.max()) if n else 1.0)
+            else (float(np.nanmax(offset)) if n else 1.0)
         )
         vmax = vmax if vmax and vmax > 0 else 1.0
 
         if self.bar_value and frame.shape[1] == 1:
             totals = frame.iloc[:, 0].to_numpy(dtype=float)
             for i, value in enumerate(totals):
+                if np.isnan(value):
+                    continue
                 if horizontal:
                     ax.text(
                         value, i, f"{value:.1f}", va="center", fontsize=self.fontsize

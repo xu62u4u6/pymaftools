@@ -13,6 +13,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import pytest
 
 from pymaftools.plot.Track import BarTrack
 
@@ -58,14 +59,14 @@ def test_grow_out_vs_in_flips_value_axis_direction():
     # top: value axis = y. out -> grows up (normal), in -> inverted (down).
     _, ax_out = _render(BarTrack(_stacked_frame(), side="top", cmap=CMAP, grow="out"))
     _, ax_in = _render(BarTrack(_stacked_frame(), side="top", cmap=CMAP, grow="in"))
-    assert ax_out.get_ylim()[0] < ax_out.get_ylim()[1]   # up
-    assert ax_in.get_ylim()[0] > ax_in.get_ylim()[1]     # down (toward matrix)
+    assert ax_out.get_ylim()[0] < ax_out.get_ylim()[1]  # up
+    assert ax_in.get_ylim()[0] > ax_in.get_ylim()[1]  # down (toward matrix)
 
     # right: value axis = x. out -> grows right (normal), in -> inverted (left).
     _, rx_out = _render(BarTrack(_stacked_frame(), side="right", cmap=CMAP, grow="out"))
     _, rx_in = _render(BarTrack(_stacked_frame(), side="right", cmap=CMAP, grow="in"))
-    assert rx_out.get_xlim()[0] < rx_out.get_xlim()[1]   # right
-    assert rx_in.get_xlim()[0] > rx_in.get_xlim()[1]     # left (toward matrix)
+    assert rx_out.get_xlim()[0] < rx_out.get_xlim()[1]  # right
+    assert rx_in.get_xlim()[0] > rx_in.get_xlim()[1]  # left (toward matrix)
 
     # left default (out) mirrors right: grows left (inverted x)
     _, lx_out = _render(BarTrack(_stacked_frame(), side="left", cmap=CMAP, grow="out"))
@@ -92,6 +93,36 @@ def test_stacked_contributes_legend_single_series_does_not():
     assert single.legend_entries() is None
 
 
+def test_nan_values_do_not_collapse_scale_or_poison_stacked_offsets():
+    """Missing segments render as zero-height bars while valid totals still
+    determine the shared value scale."""
+    frame = pd.DataFrame(
+        {"A": [5.0, np.nan, 2.0], "B": [1.0, 3.0, np.nan]},
+        index=["P0", "P1", "P2"],
+    )
+
+    fig, ax = _render(BarTrack(frame, side="top", cmap=CMAP))
+
+    assert ax.get_ylim() == pytest.approx((0.0, 6.0))
+    heights = np.array([patch.get_height() for patch in ax.patches])
+    assert np.isfinite(heights).all()
+    np.testing.assert_allclose(heights, [5.0, 0.0, 2.0, 1.0, 3.0, 0.0])
+    plt.close(fig)
+
+
+def test_bar_edges_are_disabled_above_sample_label_density_limit():
+    """White outlines remain useful for small cohorts but cannot paint over
+    bars once there are more than 50 positions."""
+    small_fig, small_ax = _render(BarTrack(np.ones(50), side="top"))
+    dense_fig, dense_ax = _render(BarTrack(np.ones(51), side="top"))
+
+    assert small_ax.patches[0].get_edgecolor() == pytest.approx((1, 1, 1, 1))
+    assert dense_ax.patches[0].get_edgecolor()[-1] == 0
+    assert dense_ax.patches[0].get_linewidth() == 0
+    plt.close(small_fig)
+    plt.close(dense_fig)
+
+
 def test_subset_slices_the_side_aligned_axis():
     """top/bottom subset by sample positions; left/right by feature positions.
 
@@ -112,15 +143,13 @@ def test_backward_compatible_single_value_top_bar():
     track = BarTrack(np.array([5, 3, 8]), "TMB")
     assert track.side == "top"
     fig, ax = _render(track)
-    assert ax.get_xlim() == (-0.5, 2.5)         # 3 positions, vertical
-    assert len(ax.patches) == 3                  # single series -> 3 bars
+    assert ax.get_xlim() == (-0.5, 2.5)  # 3 positions, vertical
+    assert len(ax.patches) == 3  # single series -> 3 bars
     np.testing.assert_array_equal(track.values, [5, 3, 8])
     plt.close(fig)
 
 
 def test_invalid_grow_raises():
     """grow must be 'out' or 'in' — fail loud on a typo."""
-    import pytest
-
     with pytest.raises(ValueError, match="grow"):
         BarTrack(_stacked_frame(), side="top", grow="up")

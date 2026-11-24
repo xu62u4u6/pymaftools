@@ -5,8 +5,10 @@ import matplotlib
 matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import pytest
+from matplotlib.colors import to_hex
 from statsmodels.stats.multitest import multipletests
 
 from pymaftools.core.MAF import MAF
@@ -14,6 +16,7 @@ from pymaftools.plot.wes import (
     compare_cohorts,
     infer_vaf,
     plot_cohort_comparison_forest,
+    plot_rainfall,
     somatic_interactions,
     summarize_titv,
 )
@@ -69,6 +72,93 @@ def test_maf_plot_accessor_draws_overview_titv_vaf_and_rainfall():
     assert all(fig.axes for fig in figures)
     for fig in figures:
         plt.close(fig)
+
+
+def test_rainfall_defaults_to_canonical_pyrimidine_substitution_colors():
+    from pymaftools.plot.ColorManager import ColorManager
+
+    frame = pd.DataFrame(
+        {
+            "sample_ID": ["S1"] * 3,
+            "Chromosome": ["1"] * 3,
+            "Start_Position": [10, 20, 30],
+            "Variant_Type": ["SNP"] * 3,
+            "Reference_Allele": ["C", "G", "A"],
+            "Tumor_Seq_Allele2": ["A", "A", "C"],
+            "Variant_Classification": ["Missense_Mutation"] * 3,
+        }
+    )
+
+    fig = plot_rainfall(frame)
+
+    colors = {
+        to_hex(collection.get_facecolors()[0]) for collection in fig.axes[0].collections
+    }
+    assert colors == {
+        to_hex(ColorManager.TITV_CMAP["C>T"]),  # reverse complement G>A
+        to_hex(ColorManager.TITV_CMAP["T>G"]),  # reverse complement A>C
+    }
+    legend_text = {text.get_text() for text in fig.axes[1].texts}
+    assert {"Substitution", "C>T", "T>G"} <= legend_text
+    plt.close(fig)
+
+
+def test_rainfall_reference_lengths_determine_chromosome_offsets():
+    frame = pd.DataFrame(
+        {
+            "sample_ID": ["S1"] * 4,
+            "Chromosome": ["1", "1", "2", "2"],
+            "Start_Position": [10, 20, 5, 15],
+            "Variant_Type": ["SNP"] * 4,
+            "Reference_Allele": ["C"] * 4,
+            "Tumor_Seq_Allele2": ["T"] * 4,
+        }
+    )
+
+    fig = plot_rainfall(frame, chrom_lengths={"chr1": 100, "2": 200})
+
+    x_positions = np.concatenate(
+        [collection.get_offsets()[:, 0] for collection in fig.axes[0].collections]
+    )
+    np.testing.assert_allclose(np.sort(x_positions), [20, 115])
+    plt.close(fig)
+
+
+def test_rainfall_variant_classification_mode_is_preserved():
+    frame = pd.DataFrame(
+        {
+            "sample_ID": ["S1"] * 3,
+            "Chromosome": ["1"] * 3,
+            "Start_Position": [10, 20, 30],
+            "Variant_Classification": [
+                "Missense_Mutation",
+                "Nonsense_Mutation",
+                "Frame_Shift_Del",
+            ],
+        }
+    )
+
+    fig = plot_rainfall(frame, color_by="variant_classification")
+
+    legend_text = {text.get_text() for text in fig.axes[1].texts}
+    assert {"Mutation", "Nonsense_Mutation", "Frame_Shift_Del"} <= legend_text
+    plt.close(fig)
+
+
+def test_rainfall_reference_lengths_must_cover_all_plotted_chromosomes():
+    frame = pd.DataFrame(
+        {
+            "sample_ID": ["S1"] * 4,
+            "Chromosome": ["1", "1", "2", "2"],
+            "Start_Position": [10, 20, 5, 15],
+            "Variant_Type": ["SNP"] * 4,
+            "Reference_Allele": ["C"] * 4,
+            "Tumor_Seq_Allele2": ["T"] * 4,
+        }
+    )
+
+    with pytest.raises(ValueError, match="missing plotted chromosome.*2"):
+        plot_rainfall(frame, chrom_lengths={"1": 100})
 
 
 def test_maf_plot_summary_accessor_removed():
@@ -159,6 +249,74 @@ def test_lollipop_single_gene_draws_legend_axis():
     assert plot.has_legend("Domains")
     assert plot.has_legend("Mutation Types")
     assert len(plot.fig.axes) == 2
+    plt.close(plot.fig)
+
+
+def test_lollipop_length_mismatch_warns_and_draws_without_domains(tmp_path):
+    """Issue #53: a transcript-length mismatch must not discard otherwise
+    usable mutation positions."""
+    domain_path = tmp_path / "domains.csv"
+    pd.DataFrame(
+        {
+            "HGNC": ["TP53", "TP53"],
+            "aa.length": [391, 393],
+            "refseq.ID": ["NM_short", "NM_long"],
+            "Start": [10, 10],
+            "End": [100, 100],
+            "Label": ["Domain", "Domain"],
+        }
+    ).to_csv(domain_path)
+    maf = MAF(
+        pd.DataFrame(
+            {
+                "Hugo_Symbol": ["TP53"],
+                "sample_ID": ["S1"],
+                "Variant_Classification": ["Missense_Mutation"],
+                "Protein_position": ["10/392"],
+            }
+        )
+    )
+
+    with pytest.warns(
+        UserWarning,
+        match=r"requested protein length 392.*391, 393.*without domains",
+    ):
+        plot = maf.plot.lollipop("TP53", protein_domains_path=domain_path)
+
+    assert plot.protein_length == 392
+    assert plot.domains == []
+    plot.plot()
+    assert plot.ax_main is not None
+    assert plot.ax_main.lines or plot.ax_main.patches
+    plt.close(plot.fig)
+
+
+def test_multi_cohort_lollipop_saves_extensionless_path_in_dotted_directory(
+    tmp_path,
+):
+    from pymaftools.plot import LollipopPlot
+
+    output_dir = tmp_path / "qc.figures"
+    output_dir.mkdir()
+    output_path = output_dir / "tp53_lollipop"
+    cohorts = {
+        "cohort": (
+            100,
+            [{"position": 20, "type": "Missense_Mutation", "count": 1}],
+            [],
+            "NM_test",
+        )
+    }
+
+    plot = LollipopPlot.plot_multi_cohort(
+        "TP53",
+        cohorts,
+        figsize=(6, 3),
+        save_path=output_path,
+        dpi=72,
+    )
+
+    assert output_path.with_suffix(".png").is_file()
     plt.close(plot.fig)
 
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import matplotlib.pyplot as plt
 from matplotlib import colormaps
 import numpy as np
@@ -559,7 +561,7 @@ class LollipopPlot(BasePlot):
         # Save if requested
         if save_path:
             try:
-                format_ext = save_path.split(".")[-1].lower()
+                format_ext = Path(save_path).suffix.lstrip(".").lower() or None
                 pil_kwargs = {"compression": "tiff_lzw"} if format_ext == "tiff" else {}
 
                 fig.savefig(

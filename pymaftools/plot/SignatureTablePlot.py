@@ -8,7 +8,9 @@ Reachable via ``signature_table.plot``.
 from __future__ import annotations
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
+from matplotlib.colors import ListedColormap
 
 from .PivotStatsPlot import PivotStatsPlot
 
@@ -85,7 +87,13 @@ class SignatureTablePlot(PivotStatsPlot):
         # Explicit colour per signature, so the stacked bars and the legend card
         # share one mapping.
         cmap = plt.get_cmap(colormap)
-        sig_colors = {sig: to_hex(cmap(i % cmap.N)) for i, sig in enumerate(df.columns)}
+        if isinstance(cmap, ListedColormap) and cmap.N <= 20:
+            color_values = [cmap(i % cmap.N) for i in range(len(df.columns))]
+        else:
+            color_values = cmap(np.linspace(0, 1, len(df.columns)))
+        sig_colors = {
+            sig: to_hex(color) for sig, color in zip(df.columns, color_values)
+        }
 
         legend_ax = None
         if ax is None:

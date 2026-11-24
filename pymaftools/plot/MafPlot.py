@@ -144,7 +144,54 @@ class MafPlot:
                 "(needs Protein_position, HGVSp_Short or Protein_Change, and "
                 "a protein length from 'pos/length' or the domain table)."
             )
-        domains, _ = self.maf.get_domain_info(gene, AA_length, protein_domains_path)
+        try:
+            domains, _ = self.maf.get_domain_info(gene, AA_length, protein_domains_path)
+        except ValueError as error:
+            if "No domain info found" not in str(error):
+                raise
+
+            from pathlib import Path
+            import warnings
+
+            import pandas as pd
+
+            domain_path = (
+                Path(protein_domains_path)
+                if protein_domains_path is not None
+                else Path(__file__).resolve().parents[1]
+                / "data"
+                / "protein_domains.csv"
+            )
+            domain_table = pd.read_csv(domain_path, index_col=0, low_memory=False)
+            available = (
+                pd.to_numeric(
+                    domain_table.loc[domain_table["HGNC"].eq(gene), "aa.length"],
+                    errors="coerce",
+                )
+                .dropna()
+                .astype(int)
+                .unique()
+            )
+            if len(available):
+                distance = min(
+                    abs(int(length) - int(AA_length)) for length in available
+                )
+                closest = sorted(
+                    int(length)
+                    for length in available
+                    if abs(int(length) - int(AA_length)) == distance
+                )
+                closest_text = ", ".join(map(str, closest))
+            else:
+                closest_text = "none for this gene"
+            warnings.warn(
+                f"No protein domains found for {gene} at requested protein length "
+                f"{AA_length}; closest available length(s): {closest_text}. "
+                "Plotting mutations without domains.",
+                UserWarning,
+                stacklevel=2,
+            )
+            domains = []
         return LollipopPlot(
             protein_name=gene,
             protein_length=AA_length,
