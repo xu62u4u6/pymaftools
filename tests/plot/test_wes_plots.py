@@ -13,6 +13,7 @@ from pymaftools.core.MAF import MAF
 from pymaftools.plot.wes import (
     compare_cohorts,
     infer_vaf,
+    plot_cohort_comparison_forest,
     somatic_interactions,
     summarize_titv,
 )
@@ -219,6 +220,17 @@ def test_compare_cohorts_uses_explicit_cohort_column_names():
     assert fig.axes
     assert any(ax.collections or ax.lines or ax.patches for ax in fig.axes)
     plt.close(fig)
+
+
+def test_forest_plot_rejects_non_comparison_input_with_actionable_hint():
+    with pytest.raises(ValueError) as exc_info:
+        plot_cohort_comparison_forest(pd.DataFrame())
+
+    message = str(exc_info.value)
+    assert all(
+        column in message for column in ("gene", "odds_ratio", "adjusted_p_value")
+    )
+    assert "maf.compare_cohorts(other)" in message
 
 
 def test_compare_cohorts_applies_bh_fdr_and_attaches_provenance():

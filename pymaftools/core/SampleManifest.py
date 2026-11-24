@@ -92,6 +92,34 @@ class SampleManifest:
         """Return a defensive copy of the complete manifest."""
         return self._frame.copy()
 
+    def subset(self, samples: Iterable[object]) -> "SampleManifest":
+        """Return a validated manifest in the requested sample order.
+
+        Parameters
+        ----------
+        samples : iterable
+            Sample identifiers to retain, in the desired output order.
+
+        Raises
+        ------
+        ValueError
+            If a requested sample is absent or is requested more than once.
+        """
+        requested = pd.Index(samples)
+        if not requested.is_unique:
+            duplicates = requested[requested.duplicated()].unique().tolist()
+            raise ValueError(
+                "SampleManifest subset samples must be unique; duplicate "
+                f"sample(s): {duplicates}."
+            )
+        unknown = requested.difference(self.samples)
+        if not unknown.empty:
+            raise ValueError(
+                "SampleManifest subset contains unknown sample(s): "
+                f"{unknown.tolist()}. Available samples: {self.samples.tolist()}."
+            )
+        return SampleManifest(self._frame.loc[requested].copy())
+
     def validate_event_samples(self, sample_ids: Iterable[object]) -> None:
         """Reject mutation events outside the declared eligible universe."""
         event_samples = pd.Index(sample_ids).unique()

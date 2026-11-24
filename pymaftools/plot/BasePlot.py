@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Any
 
 import matplotlib.pyplot as plt
@@ -223,7 +224,7 @@ class BasePlot:
             )
 
         path = os.fspath(filename)
-        format = path.split(".")[-1].lower()
+        format = Path(path).suffix.lstrip(".").lower() or None
 
         # Prepare save arguments
         save_kwargs: dict[str, Any] = {
@@ -231,8 +232,9 @@ class BasePlot:
             "bbox_inches": bbox_inches,
             "pad_inches": pad_inches,
             "transparent": transparent,
-            "format": format,
         }
+        if format is not None:
+            save_kwargs["format"] = format
 
         # Only add pil_kwargs for formats that support it (not SVG/PDF)
         if format in ["tiff", "tif"]:

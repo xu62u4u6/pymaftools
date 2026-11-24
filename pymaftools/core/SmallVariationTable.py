@@ -43,8 +43,33 @@ class SmallVariationTable(PivotTable):
         "hotspot": lambda s: (s == "Y").any(),
         "COSMIC": lambda s: s.notna().any(),
         "IMPACT": lambda s: s.mode().iloc[0] if not s.mode().empty else pd.NA,
-        "GENE_PHENO": lambda s: (s == 1).any(),
+        "GENE_PHENO": lambda s: pd.to_numeric(s, errors="coerce").eq(1).any(),
     }
+
+    @classmethod
+    def _aggregate_gene_level_metadata(cls, frame: pd.DataFrame) -> pd.DataFrame:
+        """Aggregate mutation annotations by the gene labels in ``frame.index``."""
+        groups = frame.groupby(level=0, sort=True).size().index
+        aggregated = pd.DataFrame(index=groups)
+        for column, aggregate in cls._GENE_LEVEL_AGG.items():
+            if column not in frame.columns:
+                continue
+            values = frame[column]
+            if column == "hotspot":
+                result = values.eq("Y").groupby(level=0, sort=True).any()
+            elif column == "COSMIC":
+                result = values.notna().groupby(level=0, sort=True).any()
+            elif column == "GENE_PHENO":
+                result = (
+                    pd.to_numeric(values, errors="coerce")
+                    .eq(1)
+                    .groupby(level=0, sort=True)
+                    .any()
+                )
+            else:
+                result = values.groupby(level=0, sort=True).agg(aggregate)
+            aggregated[column] = result
+        return aggregated
 
     def to_gene_level(self) -> "SmallVariationTable":
         """
@@ -86,10 +111,8 @@ class SmallVariationTable(PivotTable):
         present_gene_cols = [c for c in self._GENE_LEVEL_COLS if c in fm.columns]
         gene_fm = fm[present_gene_cols].groupby(level=0).first()
 
-        # Aggregated cols
-        for col, agg_fn in self._GENE_LEVEL_AGG.items():
-            if col in fm.columns:
-                gene_fm[col] = fm[col].groupby(level=0).agg(agg_fn)
+        aggregated = self._aggregate_gene_level_metadata(fm)
+        gene_fm[aggregated.columns] = aggregated
 
         result.feature_metadata = gene_fm.reindex(result.index)
         if self.observation_mask is not None:

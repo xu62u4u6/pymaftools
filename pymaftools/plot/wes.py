@@ -749,6 +749,14 @@ def plot_cohort_comparison_forest(
 
     from . import style
 
+    required_columns = {"gene", "odds_ratio", "adjusted_p_value"}
+    missing_columns = sorted(required_columns.difference(compare_result.columns))
+    if missing_columns:
+        raise ValueError(
+            "compare_result is missing required column(s): "
+            f"{missing_columns}. Pass the DataFrame returned by "
+            "maf.compare_cohorts(other)."
+        )
     if compare_result.empty:
         raise ValueError("compare_result is empty.")
     data = compare_result.dropna(subset=["odds_ratio"]).head(top).copy()

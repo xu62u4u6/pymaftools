@@ -2,6 +2,7 @@
 Tests for Cohort functionality
 """
 
+import numpy as np
 import pytest
 import pandas as pd
 from pymaftools.core.Cohort import Cohort
@@ -97,6 +98,22 @@ class TestCohortSubsetting:
         # Check that metadata was also subset
         assert subset_cohort.sample_metadata.shape[0] == 2
         assert list(subset_cohort.sample_metadata.index) == subset_samples
+
+    @pytest.mark.parametrize("mask_kind", ["series", "array"])
+    def test_subset_boolean_mask_resolves_sample_ids(self, sample_cohort, mask_kind):
+        values = [True, False, True, False]
+        mask = (
+            pd.Series(values, index=sample_cohort.sample_IDs)
+            if mask_kind == "series"
+            else np.array(values)
+        )
+        expected = sample_cohort.sample_IDs[values]
+
+        subset = sample_cohort.subset(samples=mask)
+
+        assert subset.sample_IDs.equals(expected)
+        assert subset.sample_metadata.index.equals(expected)
+        assert all(table.columns.equals(expected) for table in subset.tables.values())
 
 class TestCohortPersistence:
     """Test saving and loading cohorts"""

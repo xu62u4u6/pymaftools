@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Literal
 
 import numpy as np
+import pandas as pd
 from scipy.stats import f_oneway, kruskal, mannwhitneyu, ttest_ind
 from statsmodels.stats.multitest import multipletests
 
@@ -64,7 +65,14 @@ def filter_by_statistical_test(
 
     two_group_only = {"ttest", "mann_whitney"}
     pt = table.copy()
-    numeric = pt.astype(float)
+    try:
+        numeric = pd.DataFrame(pt).apply(pd.to_numeric, errors="raise")
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            "filter_by_statistical_test() requires a numeric table. For "
+            "categorical mutation calls, use mutation_enrichment_test() or "
+            "convert explicitly with to_binary_table()."
+        ) from exc
     groups_series = pt.sample_metadata[group_col]
     unique_groups = groups_series.dropna().unique()
 
@@ -79,6 +87,9 @@ def filter_by_statistical_test(
         group_data = [row[groups_series == g].dropna().values for g in unique_groups]
         if any(len(g) < 2 for g in group_data):
             p_values.append(np.nan)
+            continue
+        if method == "kruskal" and np.unique(np.concatenate(group_data)).size == 1:
+            p_values.append(1.0)
             continue
         _, pval = test_funcs[method](group_data)
         p_values.append(pval)
