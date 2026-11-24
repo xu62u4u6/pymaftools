@@ -565,36 +565,36 @@ def plot_cluster_feature_importance(
 
     top_data = table.nlargest(top_n, "mean_importance").copy()
     top_data["Cluster"] = [f"C{i}" for i in top_data.index]
-
-    long_df = top_data[["Cluster", "unique_chr_arm", count_col] + importance_cols].melt(
-        id_vars=["Cluster", "unique_chr_arm", count_col],
-        value_vars=importance_cols,
-        var_name="Fold",
-        value_name="Importance",
-    )
+    positions = np.arange(len(top_data), dtype=float)
 
     plt.figure(figsize=(14, 7))
+    plt.bar(
+        positions,
+        top_data["mean_importance"].to_numpy(dtype=float),
+        width=0.6,
+        color="skyblue",
+        zorder=0,
+    )
 
-    sns.barplot(
-        data=top_data, x="Cluster", y="mean_importance", color="skyblue", zorder=0
+    n_cols = len(importance_cols)
+    offsets = (
+        np.linspace(-0.12, 0.12, n_cols) if n_cols > 1 else np.zeros(1, dtype=float)
     )
-    sns.stripplot(
-        data=long_df,
-        x="Cluster",
-        y="Importance",
-        color="gray",
-        alpha=0.6,
-        jitter=0.1,
-        zorder=1,
-    )
+    for col_idx, col in enumerate(importance_cols):
+        plt.scatter(
+            positions + offsets[col_idx],
+            top_data[col].to_numpy(dtype=float),
+            color="gray",
+            alpha=0.6,
+            s=25,
+            zorder=1,
+        )
 
     new_labels = [
         f"\n\n{row['Cluster']}\narm: {row['unique_chr_arm']}\nn={row[count_col]}"
         for _, row in top_data.iterrows()
     ]
-    plt.xticks(
-        ticks=np.arange(len(top_data)), labels=new_labels, rotation=45, ha="right"
-    )
+    plt.xticks(ticks=positions, labels=new_labels, rotation=45, ha="right")
 
     plt.ylabel("Feature Importance")
     plt.title("Top Cluster Feature Importances\n(Dots = Per-Fold, Bar = Mean)")
