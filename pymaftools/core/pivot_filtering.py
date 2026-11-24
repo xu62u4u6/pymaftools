@@ -89,7 +89,7 @@ def filter_by_statistical_test(
             p_values.append(np.nan)
             continue
         if method == "kruskal" and np.unique(np.concatenate(group_data)).size == 1:
-            p_values.append(1.0)
+            p_values.append(np.nan)
             continue
         _, pval = test_funcs[method](group_data)
         p_values.append(pval)

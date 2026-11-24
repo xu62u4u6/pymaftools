@@ -610,7 +610,6 @@ class TestAnnDataInterop:
         assert np.allclose(original, recovered)
 
     def test_to_anndata_rejects_out_of_order_metadata(self, sample_pivot_table):
-        pytest.importorskip("anndata")
         sample_pivot_table.sample_metadata = sample_pivot_table.sample_metadata.iloc[
             ::-1
         ]
@@ -760,18 +759,42 @@ def test_filter_by_statistical_test_rejects_categorical_mutations():
 
 
 def test_filter_by_statistical_test_handles_constant_kruskal_rows():
-    table = PivotTable(
-        [[1.0, 1.0, 1.0, 1.0]],
-        index=["constant"],
-        columns=["S1", "S2", "S3", "S4"],
+    samples = [f"S{i}" for i in range(8)]
+    groups = ["A"] * 4 + ["B"] * 4
+    signal_rows = pd.DataFrame(
+        [
+            [0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+            [0.1, 0.2, 0.1, 0.3, 0.2, 0.1, 0.3, 0.2],
+            [1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+        ],
+        index=["G_signal", "G_null1", "G_null2"],
+        columns=samples,
     )
-    table.sample_metadata["group"] = ["A", "A", "B", "B"]
+    base_table = PivotTable(signal_rows)
+    base_table.sample_metadata["group"] = groups
+    base_result = base_table.filter_by_statistical_test(
+        "group", method="kruskal", alpha=1.01
+    )
+
+    zero_rows = pd.DataFrame(
+        0.0,
+        index=[f"const_{i}" for i in range(20)],
+        columns=samples,
+    )
+    padded_table = PivotTable(pd.concat([signal_rows, zero_rows]))
+    padded_table.sample_metadata["group"] = groups
 
     with warnings.catch_warnings():
         warnings.simplefilter("error")
-        result = table.filter_by_statistical_test("group", method="kruskal")
+        padded_result = padded_table.filter_by_statistical_test(
+            "group", method="kruskal", alpha=1.01
+        )
 
-    assert result.empty
+    assert list(padded_result.index) == list(base_result.index)
+    pd.testing.assert_series_equal(
+        padded_result.feature_metadata["adjusted_p_value"],
+        base_result.feature_metadata["adjusted_p_value"],
+    )
 
 
 def test_add_exon_size_writes_feature_metadata(monkeypatch):
