@@ -227,9 +227,15 @@ def read_star_counts(
     for case_id, filepath in case_files:
         df = pd.read_csv(filepath, sep="	", comment="#")
 
-        # Extract STAR QC rows into sample metadata
+        # Extract STAR QC rows from a raw count column (TPM/FPKM columns leave QC rows NaN)
         qc_mask = df["gene_id"].isin(qc_prefixes)
-        qc_rows = df.loc[qc_mask].set_index("gene_id")[value_column]
+        raw_count_cols = ("unstranded", "stranded_first", "stranded_second")
+        qc_col = (
+            value_column
+            if value_column in raw_count_cols
+            else next((c for c in raw_count_cols if c in df.columns), value_column)
+        )
+        qc_rows = df.loc[qc_mask].set_index("gene_id")[qc_col]
         qc_dict[case_id] = qc_rows
 
         df = df[~qc_mask]
@@ -394,7 +400,7 @@ def seg_to_cytoband_table(
 
     sample_meta = pd.DataFrame({"case_id": matrix.columns}, index=matrix.columns)
 
-    table = CopyNumberVariationTable(matrix)
+    table = CopyNumberVariationTable(matrix, value_scale="log2_ratio")
     table.feature_metadata = feature_meta
     table.sample_metadata = sample_meta
 
@@ -492,7 +498,7 @@ def read_gene_level_cnv(
         index=list(series_dict.keys()),
     )
 
-    table = CopyNumberVariationTable(matrix)
+    table = CopyNumberVariationTable(matrix, value_scale="absolute_cn")
     table.feature_metadata = feature_meta.reindex(matrix.index)
     table.sample_metadata = sample_meta
 

@@ -465,10 +465,11 @@ class Cohort:
                             "table_name": table_name,
                             "class_name": type(table).__name__,
                             "storage_key": f"tables/table_{index:06d}",
+                            "value_scale": getattr(table, "value_scale", None) or "",
                         }
                         for index, (table_name, table) in enumerate(self.tables.items())
                     ],
-                    columns=["table_name", "class_name", "storage_key"],
+                    columns=["table_name", "class_name", "storage_key", "value_scale"],
                 )
                 store.put("table_registry", table_registry)
 
@@ -559,6 +560,12 @@ class Cohort:
                         table_cls = PivotTable
 
                 pivot = table_cls(data)
+                if "value_scale" in table_registry.columns and hasattr(
+                    pivot, "value_scale"
+                ):
+                    raw_scale = row["value_scale"]
+                    if pd.notna(raw_scale) and str(raw_scale):
+                        pivot.value_scale = str(raw_scale)
                 pivot.sample_metadata = sample_metadata
                 pivot.feature_metadata = feature_metadata
                 if sample_manifest_key in keys:

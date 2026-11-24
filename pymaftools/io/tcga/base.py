@@ -222,7 +222,19 @@ class TCGATableBuilder(ABC):
         files = self.select_files(resolved_files)
 
         table = self.read_and_merge(files)
-        table.sample_metadata = self.build_sample_metadata(table, files)
+        provenance_meta = self.build_sample_metadata(table, files)
+        existing_meta = getattr(table, "sample_metadata", None)
+        if existing_meta is not None and not existing_meta.empty:
+            extra_cols = [
+                col
+                for col in existing_meta.columns
+                if col not in provenance_meta.columns
+            ]
+            if extra_cols:
+                provenance_meta = provenance_meta.join(
+                    existing_meta[extra_cols].reindex(provenance_meta.index)
+                )
+        table.sample_metadata = provenance_meta
 
         print(
             f"[{self.__class__.__name__}] "

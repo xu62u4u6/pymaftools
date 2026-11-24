@@ -272,9 +272,32 @@ class PivotTable(pd.DataFrame):
                         else:
                             setattr(self, attr, None)
                     else:
-                        setattr(self, attr, source_val.copy())
+                        setattr(
+                            self,
+                            attr,
+                            source_val.copy()
+                            if hasattr(source_val, "copy")
+                            else source_val,
+                        )
                 elif attr in {"observation_mask", "sample_manifest"}:
                     setattr(self, attr, None)
+                elif attr not in {"feature_metadata", "sample_metadata"}:
+                    setattr(self, attr, source_val)
+
+    def _carry_subclass_metadata(self, target: "PivotTable") -> None:
+        """Propagate subclass-specific scalar ``_metadata`` fields (e.g. ``_value_scale``)."""
+        if type(target) is not type(self):
+            return
+        base_attrs = {
+            "feature_metadata",
+            "sample_metadata",
+            "observation_mask",
+            "sample_manifest",
+        }
+        for attr in self._metadata:
+            if attr not in base_attrs and hasattr(self, attr):
+                val = getattr(self, attr)
+                setattr(target, attr, val.copy() if hasattr(val, "copy") else val)
 
     @property
     def plot(self) -> "PivotStatsPlot":
@@ -667,6 +690,7 @@ class PivotTable(pd.DataFrame):
         pivot_table.sample_manifest = (
             None if self.sample_manifest is None else self.sample_manifest.copy()
         )
+        self._carry_subclass_metadata(pivot_table)
         return pivot_table
 
     @classmethod
@@ -820,6 +844,7 @@ class PivotTable(pd.DataFrame):
             sample_manifest=self.sample_manifest,
         )
         _carry_inputs_attr(self, new)
+        self._carry_subclass_metadata(new)
         return new
 
     def subset(
@@ -949,6 +974,7 @@ class PivotTable(pd.DataFrame):
                 observation_mask=result.observation_mask,
                 sample_manifest=result.sample_manifest,
             )
+            self._carry_subclass_metadata(result)
         return result
 
     def reindex(
@@ -1036,7 +1062,7 @@ class PivotTable(pd.DataFrame):
             **kwargs,
         )
 
-        return self._from_dataframe(
+        new = self._from_dataframe(
             reindexed_df,
             self.feature_metadata,
             self.sample_metadata,
@@ -1045,6 +1071,9 @@ class PivotTable(pd.DataFrame):
             observation_mask=self.observation_mask,
             sample_manifest=self.sample_manifest,
         )
+        _carry_inputs_attr(self, new)
+        self._carry_subclass_metadata(new)
+        return new
 
     @staticmethod
     def merge(

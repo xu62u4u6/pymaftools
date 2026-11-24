@@ -33,6 +33,41 @@ class CopyNumberVariationTable(PivotTable):
     PivotTable : Base class providing generic pivot-table operations.
     """
 
+    VALID_VALUE_SCALES: tuple[str, ...] = (
+        "gistic_discrete",
+        "absolute_cn",
+        "log2_ratio",
+    )
+    """Recognised CNV value encodings for :attr:`value_scale`."""
+
+    _metadata: list[str] = [*PivotTable._metadata, "_value_scale"]
+
+    def __init__(
+        self,
+        data=None,
+        *args,
+        value_scale: str | None = None,
+        **kwargs,
+    ) -> None:
+        super().__init__(data, *args, **kwargs)
+        if value_scale is None and isinstance(data, CopyNumberVariationTable):
+            value_scale = data.value_scale
+        self.value_scale = value_scale
+
+    @property
+    def value_scale(self) -> str | None:
+        """Encoding of numeric values: ``'gistic_discrete'``, ``'absolute_cn'``, ``'log2_ratio'``, or ``None``."""
+        return getattr(self, "_value_scale", None)
+
+    @value_scale.setter
+    def value_scale(self, value: str | None) -> None:
+        if value is not None and value not in self.VALID_VALUE_SCALES:
+            raise ValueError(
+                f"Invalid value_scale {value!r}. Expected one of "
+                f"{list(self.VALID_VALUE_SCALES)} or None."
+            )
+        self._value_scale = value
+
     @property
     def plot(self) -> "CopyNumberVariationTablePlot":
         """Access CNV-specific plotting (e.g. ``band_ratio``) plus shared plots."""
@@ -45,10 +80,22 @@ class CopyNumberVariationTable(PivotTable):
         threshold: float | None = None,
         comparison: str = "abs_gt",
     ) -> PivotTable:
-        """Convert discrete GISTIC calls or thresholded numeric CNV values.
+        """Convert discrete GISTIC calls, integer absolute CN, or thresholded CNV values.
 
-        Standard GISTIC calls (-2 through 2) are events whenever non-zero.
-        Continuous copy-number values require an explicit threshold.
+        Behaviour when ``threshold=None`` depends on :attr:`value_scale`:
+
+        - ``'gistic_discrete'``: values in ``{-2, -1, 0, 1, 2}`` are events when
+          ``!= 0`` (``0`` = diploid/neutral).
+        - ``'absolute_cn'``: non-negative integer copy numbers (e.g. ASCAT3) are
+          events when ``!= 2`` (``2`` = diploid/neutral, ``0``/``1`` = deletion,
+          ``>=3`` = gain/amplification). Fractional absolute CN requires an
+          explicit ``threshold``.
+        - ``'log2_ratio'``: always requires an explicit ``threshold``.
+        - ``None`` (unspecified): ``{-2, -1, 0, 1, 2}`` containing at least one
+          negative call is treated as GISTIC discrete (``!= 0``); ``{0, 1}``
+          delegates to binary conversion; non-negative values containing ``2``
+          (e.g. ``{0, 1, 2}``) raise ``ValueError`` because GISTIC (``0`` =
+          neutral) and absolute CN (``2`` = diploid) have opposite semantics.
         """
         if threshold is None:
             numeric_columns = [
@@ -61,19 +108,94 @@ class CopyNumberVariationTable(PivotTable):
                 pd.DataFrame(self.loc[:, numeric_columns]).to_numpy().ravel()
             )
             numeric_values = numeric_values[pd.notna(numeric_values)]
-            if len(numeric_values) and set(numeric_values).issubset({-2, -1, 0, 1, 2}):
-                binary_data = self.notna() & self.ne(0)
-                return self._from_dataframe(
-                    binary_data.astype(bool),
-                    self.feature_metadata,
-                    self.sample_metadata,
-                    observation_mask=self.observation_mask,
-                    sample_manifest=self.sample_manifest,
-                )
-        return super().to_binary_table(threshold=threshold, comparison=comparison)
+
+            if len(numeric_values):
+                scale = self.value_scale
+                if scale == "absolute_cn":
+                    numeric_arr = np.asarray(numeric_values, dtype=float)
+                    if (
+                        np.all(np.isfinite(numeric_arr))
+                        and np.all(numeric_arr >= 0)
+                        and np.all(np.isclose(numeric_arr, np.round(numeric_arr)))
+                    ):
+                        binary_data = self.notna() & self.ne(2)
+                        result = self._from_dataframe(
+                            binary_data.astype(bool),
+                            self.feature_metadata,
+                            self.sample_metadata,
+                            observation_mask=self.observation_mask,
+                            sample_manifest=self.sample_manifest,
+                        )
+                        result.value_scale = None
+                        return result
+                    raise ValueError(
+                        "Continuous absolute copy-number data requires an explicit "
+                        "threshold, for example to_binary_table(threshold=2.5, "
+                        "comparison='gt') or to_binary_table(threshold=1.5, "
+                        "comparison='lt')."
+                    )
+                if scale == "log2_ratio":
+                    raise ValueError(
+                        "Log2-ratio CNV data requires an explicit threshold, "
+                        "for example to_binary_table(threshold=0.3, "
+                        "comparison='abs_gt')."
+                    )
+                if scale == "gistic_discrete":
+                    if not set(numeric_values).issubset({-2, -1, 0, 1, 2}):
+                        raise ValueError(
+                            "Table marked value_scale='gistic_discrete' contains "
+                            "values outside {-2, -1, 0, 1, 2}; pass an explicit "
+                            "threshold=... or update table.value_scale."
+                        )
+                    binary_data = self.notna() & self.ne(0)
+                    result = self._from_dataframe(
+                        binary_data.astype(bool),
+                        self.feature_metadata,
+                        self.sample_metadata,
+                        observation_mask=self.observation_mask,
+                        sample_manifest=self.sample_manifest,
+                    )
+                    result.value_scale = None
+                    return result
+
+                # scale is None: infer only when unambiguous.
+                val_set = set(numeric_values)
+                if val_set.issubset({-2, -1, 0, 1, 2}) and not val_set.issubset({0, 1}):
+                    if any(v < 0 for v in val_set):
+                        binary_data = self.notna() & self.ne(0)
+                        result = self._from_dataframe(
+                            binary_data.astype(bool),
+                            self.feature_metadata,
+                            self.sample_metadata,
+                            observation_mask=self.observation_mask,
+                            sample_manifest=self.sample_manifest,
+                        )
+                        result.value_scale = None
+                        return result
+                    display_values = [
+                        v.item() if hasattr(v, "item") else v for v in sorted(val_set)
+                    ]
+                    raise ValueError(
+                        f"Ambiguous non-negative CNV values {display_values} with "
+                        "value_scale=None: these could be GISTIC discrete calls "
+                        "(0 = neutral, 2 = amplification) or absolute copy numbers "
+                        "(2 = diploid, 0 = homozygous deletion). Set "
+                        "table.value_scale = 'gistic_discrete' or 'absolute_cn', "
+                        "or call to_binary_table(threshold=..., comparison=...) "
+                        "explicitly."
+                    )
+
+        result = super().to_binary_table(threshold=threshold, comparison=comparison)
+        if isinstance(result, CopyNumberVariationTable):
+            result.value_scale = None
+        return result
 
     @classmethod
-    def from_pivot_table(cls, table: PivotTable) -> "CopyNumberVariationTable":
+    def from_pivot_table(
+        cls,
+        table: PivotTable,
+        value_scale: str | None = None,
+    ) -> "CopyNumberVariationTable":
         """
         Create a CopyNumberVariationTable object from a PivotTable object, preserving all metadata.
 
@@ -81,6 +203,10 @@ class CopyNumberVariationTable(PivotTable):
         ----------
         table : PivotTable
             A PivotTable object containing sample_metadata and feature_metadata attributes.
+        value_scale : str, optional
+            Explicit value scale (``'gistic_discrete'``, ``'absolute_cn'``,
+            ``'log2_ratio'``). Defaults to ``table.value_scale`` when ``table``
+            is already a ``CopyNumberVariationTable``, otherwise ``None``.
 
         Returns
         -------
@@ -94,7 +220,21 @@ class CopyNumberVariationTable(PivotTable):
                 "PivotTable must have sample_metadata and feature_metadata attributes."
             )
 
-        cnv_table = cls(table.values, index=table.index, columns=table.columns)
+        resolved_scale = (
+            value_scale
+            if value_scale is not None
+            else (
+                table.value_scale
+                if isinstance(table, CopyNumberVariationTable)
+                else None
+            )
+        )
+        cnv_table = cls(
+            table.values,
+            index=table.index,
+            columns=table.columns,
+            value_scale=resolved_scale,
+        )
         cnv_table.sample_metadata = table.sample_metadata.copy()
         cnv_table.feature_metadata = table.feature_metadata.copy()
         cnv_table.observation_mask = (
@@ -135,7 +275,9 @@ class CopyNumberVariationTable(PivotTable):
         order = [arm for arm in canonical if arm in df.index] + [
             arm for arm in df.index if arm not in canonical
         ]
-        table = CopyNumberVariationTable(df).reindex(index=order)
+        table = CopyNumberVariationTable(df, value_scale="log2_ratio").reindex(
+            index=order
+        )
         table.feature_metadata["Chromosome"] = table.index.str.replace(
             "p", ""
         ).str.replace("q", "")
@@ -409,6 +551,7 @@ class CopyNumberVariationTable(PivotTable):
         thresholded_cnv = self.apply(
             lambda col: classify_cnv_column(col, cutoffs), axis=0
         )
+        thresholded_cnv.value_scale = "gistic_discrete"
         return thresholded_cnv
 
     @staticmethod
@@ -445,11 +588,13 @@ class CopyNumberVariationTable(PivotTable):
         all_data_by_genes_table = CopyNumberVariationTable.read_gistic_gene_level(
             all_data_by_genes_file
         )
+        all_data_by_genes_table.value_scale = "log2_ratio"
         sample_cutoff_df = read_sample_cutoff_file(sample_cutoffs_file)
         thresholded_cnv_table = CopyNumberVariationTable.read_gistic_gene_level(
             all_thresholded_by_genes_file,
             feature_columns=["Gene Symbol", "Gene ID", "Cytoband", "Locus ID"],
         )
+        thresholded_cnv_table.value_scale = "gistic_discrete"
         broad_values_by_arm_table = CopyNumberVariationTable.read_gistic_arm_level(
             broad_values_by_arm_file
         )
@@ -709,7 +854,7 @@ class CopyNumberVariationTable(PivotTable):
         )[["gene_name", "chromosome", "start", "end"]]
 
         # create CopyNumberVariationTable object
-        table = CopyNumberVariationTable(cnv_matrix)
+        table = CopyNumberVariationTable(cnv_matrix, value_scale="absolute_cn")
         table = table.add_feature_metadata(feature_metadata, fill_value=np.nan)
         table._validate_metadata()
 
