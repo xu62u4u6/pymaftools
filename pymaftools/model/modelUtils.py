@@ -331,11 +331,14 @@ def to_importance_table(all_importance_df: pd.DataFrame, omic: str) -> PivotTabl
     """
     Convert long-format importance data to a sorted PivotTable.
 
-    Features not selected in a given ``(seed, fold)`` run are treated as having
+    Features absent from a recorded ``(seed, fold)`` run are treated as having
     ``0.0`` importance rather than being skipped, avoiding upward selection bias
     for unstable features. ``feature_metadata`` records both ``mean`` (across
-    all seeds, with unselected runs counted as zero) and ``selection_freq``
-    (fraction of ``(seed, fold)`` runs in which the feature was selected).
+    all seeds, with absent runs counted as zero) and ``selection_freq``
+    (fraction of recorded ``(seed, fold)`` runs in which the feature appeared in
+    the importance output; for dense models such as Random Forest this is
+    ``1.0``). Note that the denominator counts distinct ``(seed, fold)`` pairs
+    present in ``all_importance_df`` for ``omic``.
 
     Parameters
     ----------

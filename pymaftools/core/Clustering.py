@@ -717,18 +717,14 @@ def plot_clustering_metrics_and_find_best_k(
     expected_ari = f"mean_ari_{n_folds}_fold"
     if expected_ari in plot_df.columns:
         ari_col = expected_ari
+    elif "mean_ari" in plot_df.columns:
+        ari_col = "mean_ari"
     else:
-        ari_candidates = [
-            col
-            for col in plot_df.columns
-            if re.fullmatch(r"mean_ari(?:_\d+_fold)?", str(col))
-        ]
-        if not ari_candidates:
-            raise ValueError(
-                f"metric_df must contain {expected_ari!r} (or 'mean_ari'); "
-                f"available columns: {list(plot_df.columns)}"
-            )
-        ari_col = ari_candidates[0]
+        raise ValueError(
+            f"metric_df has {n_folds} silhouette folds and must contain "
+            f"{expected_ari!r} (or 'mean_ari'); available columns: "
+            f"{list(plot_df.columns)}"
+        )
 
     fig, ax = plt.subplots(figsize=(12, 6))
 

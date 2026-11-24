@@ -420,3 +420,31 @@ def test_run_model_evaluation_with_evaluate_func_none_returns_none_metrics():
     assert result["RF"]["metrics"] is None
     assert not all_imp.empty
     assert set(all_imp["feature"]) == {"g1", "g2", "g3"}
+
+
+def test_omics_stacking_model_fit_validates_groups_index_and_cardinality():
+    from pymaftools.model.StackingModel import OmicsStackingModel
+
+    rng = np.random.default_rng(13)
+    samples = [f"s{i}" for i in range(12)]
+    snv = PivotTable(
+        pd.DataFrame(rng.normal(size=(2, 12)), index=["TP53", "KRAS"], columns=samples)
+    )
+    cnv = PivotTable(
+        pd.DataFrame(rng.normal(size=(2, 12)), index=["MYC", "EGFR"], columns=samples)
+    )
+    model = OmicsStackingModel(
+        {"SNV": snv, "CNV": cnv}, class_order=["A", "B"], cv=3, random_state=0
+    )
+    X = model.prepare_features()
+    y = np.array(["A"] * 6 + ["B"] * 6)
+
+    wrong_index_groups = pd.Series(
+        [f"P{i // 2}" for i in range(12)], index=list(reversed(samples))
+    )
+    with pytest.raises(ValueError, match="groups index must match X index"):
+        model.fit(X, y, groups=wrong_index_groups)
+
+    too_few_groups = pd.Series(["P0"] * 6 + ["P1"] * 6, index=samples)
+    with pytest.raises(ValueError, match="at least 3 unique groups"):
+        model.fit(X, y, groups=too_few_groups)

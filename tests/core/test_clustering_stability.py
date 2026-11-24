@@ -2,6 +2,7 @@
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from pymaftools.core.Clustering import (
     align_cluster_label_dict,
@@ -223,3 +224,7 @@ def test_plot_clustering_metrics_dynamic_folds_and_explicit_format(tmp_path):
     assert list(metric_df.columns) == original_cols
     assert out_file.exists()
     assert out_file.read_bytes().startswith(b"\x89PNG")
+
+    mismatched_df = metric_df.rename(columns={"mean_ari_3_fold": "mean_ari_5_fold"})
+    with pytest.raises(ValueError, match="mean_ari_3_fold"):
+        plot_clustering_metrics_and_find_best_k(mismatched_df, filename=str(out_file))
