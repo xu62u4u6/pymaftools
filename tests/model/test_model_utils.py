@@ -13,17 +13,29 @@ from pymaftools.model.modelUtils import (
 
 
 def test_evaluate_model_returns_metric_dict():
-    rng = np.random.default_rng(42)
-    X = pd.DataFrame(rng.normal(size=(30, 6)), columns=[f"f{i}" for i in range(6)])
-    y = pd.Series([0] * 15 + [1] * 15)
+    from sklearn.metrics import accuracy_score, f1_score, roc_auc_score
 
-    model = RandomForestClassifier(n_estimators=20, random_state=42)
-    model.fit(X, y)
+    class _FixedBinaryModel:
+        classes_ = np.array([0, 1])
 
-    metrics = evaluate_model(model, X, y)
+        def predict_proba(self, X):
+            probs = np.array([0.1, 0.2, 0.7, 0.3, 0.8, 0.9])
+            return np.column_stack([1.0 - probs, probs])
 
-    assert {"acc", "f1", "auc"}.issubset(metrics.keys())
-    assert all(0.0 <= metrics[k] <= 1.0 for k in ["acc", "f1", "auc"])
+        def predict(self, X):
+            return (self.predict_proba(X)[:, 1] >= 0.5).astype(int)
+
+    X_test = pd.DataFrame({"f0": np.arange(6)})
+    y_test = pd.Series([0, 0, 0, 1, 1, 1])
+    model = _FixedBinaryModel()
+
+    metrics = evaluate_model(model, X_test, y_test)
+    y_pred = model.predict(X_test)
+    y_prob = model.predict_proba(X_test)[:, 1]
+
+    assert metrics["acc"] == pytest.approx(accuracy_score(y_test, y_pred))
+    assert metrics["f1"] == pytest.approx(f1_score(y_test, y_pred, average="weighted"))
+    assert metrics["auc"] == pytest.approx(roc_auc_score(y_test, y_prob))
 
 
 def test_get_importance_returns_series_with_feature_names():
@@ -38,6 +50,7 @@ def test_get_importance_returns_series_with_feature_names():
 
     assert isinstance(importance, pd.Series)
     assert list(importance.index) == ["A", "B", "C", "D"]
+    assert importance.sum() == pytest.approx(1.0)
 
 
 def test_to_importance_table_returns_sorted_pivot_table():
@@ -54,8 +67,9 @@ def test_to_importance_table_returns_sorted_pivot_table():
     table = to_importance_table(all_importance_df, "SNV")
 
     assert isinstance(table, PivotTable)
-    assert list(table.index)[0] == "TP53"
-    assert "mean" in table.feature_metadata.columns
+    assert list(table.index) == ["TP53", "KRAS"]
+    assert table.feature_metadata.loc["TP53", "mean"] == pytest.approx(0.85)
+    assert table.feature_metadata.loc["KRAS", "mean"] == pytest.approx(0.25)
     assert table.shape[1] == 2
 
 
@@ -64,6 +78,18 @@ def test_cross_validate_importance_accepts_array_groups():
     X = pd.DataFrame(rng.normal(size=(18, 4)), columns=list("ABCD"))
     y = pd.Series([0, 1] * 9, index=X.index)
     groups = np.repeat(np.arange(9), 2)
+    group_series = pd.Series(groups, index=X.index)
+
+    seen_test_groups: list[set[int]] = []
+
+    def recording_evaluate(model, X_test, y_test):
+        test_groups = set(group_series.loc[X_test.index].tolist())
+        # Each group has 2 samples; every test fold must contain complete groups.
+        for g in test_groups:
+            group_members = set(group_series[group_series == g].index)
+            assert group_members.issubset(set(X_test.index))
+        seen_test_groups.append(test_groups)
+        return evaluate_model(model, X_test, y_test)
 
     importance, metrics = cross_validate_importance(
         X,
@@ -76,11 +102,14 @@ def test_cross_validate_importance_accepts_array_groups():
         n_splits=3,
         verbose=False,
         groups=groups,
-        evaluate_func=evaluate_model,
+        evaluate_func=recording_evaluate,
     )
 
-    assert not importance.empty
-    assert metrics is not None
+    assert len(seen_test_groups) == 3
+    # Disjoint test folds covering all 9 groups -> zero group leakage across splits.
+    assert set().union(*seen_test_groups) == set(range(9))
+    assert sum(len(g) for g in seen_test_groups) == 9
+    assert set(importance["feature"]) == set("ABCD")
     assert len(metrics) == 3
 
 

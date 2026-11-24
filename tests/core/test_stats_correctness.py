@@ -182,7 +182,15 @@ def test_interaction_plot_reuses_corrected_stats_and_blanks_untested_pairs():
     fig, stats = plot_somatic_interactions(masked)
 
     pd.testing.assert_frame_equal(stats, somatic_interactions(masked))
-    assert fig.axes
+    ax = fig.axes[0]
+    labels = [tick.get_text() for tick in ax.get_xticklabels()]
+    i_g1, i_g2, i_g3 = labels.index("G1"), labels.index("G2"), labels.index("G3")
+    mesh_data = ax.collections[0].get_array().reshape(len(labels), len(labels))
+    # Upper-triangle cell for untested (G1, G2) must be masked; tested (G1, G3) must be visible.
+    row_u, col_u = min(i_g1, i_g2), max(i_g1, i_g2)
+    row_t, col_t = min(i_g1, i_g3), max(i_g1, i_g3)
+    assert np.ma.is_masked(mesh_data[row_u, col_u])
+    assert not np.ma.is_masked(mesh_data[row_t, col_t])
     plt.close(fig)
 
 

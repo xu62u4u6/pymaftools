@@ -66,7 +66,8 @@ def test_get_gene_description_df(monkeypatch):
 
     assert isinstance(df, pd.DataFrame)
     assert list(df.columns) == ["Gene", "Description"]
-    assert set(df["Gene"]) == {"TP53", "KRAS"}
+    assert list(df["Gene"]) == ["TP53", "KRAS"]
+    assert dict(zip(df["Gene"], df["Description"])) == {"TP53": "p53", "KRAS": "kras"}
 
 
 def test_reduce_to_canonical_transcript_prefers_canonical():

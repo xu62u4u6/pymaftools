@@ -113,12 +113,13 @@ def test_to_gene_table_matches_to_pivot_table_alias():
     """to_gene_table is canonical; to_pivot_table is a backward-compatible alias."""
     maf = MAF(_build_maf_df())
 
+    from tests._helpers import assert_pivot_equal
+
     gene_table = maf.to_gene_table()
     aliased = maf.to_pivot_table()
 
     assert isinstance(gene_table, PivotTable)
-    assert set(gene_table.index) == set(aliased.index)
-    assert set(gene_table.columns) == set(aliased.columns)
+    assert_pivot_equal(gene_table, aliased)
 
 
 def test_to_gene_table_matches_explicit_mutation_level_collapse():
@@ -286,9 +287,9 @@ def test_to_base_change_pivot_table_computes_ti_tv():
     base_change = maf.to_base_change_pivot_table()
 
     assert isinstance(base_change, PivotTable)
-    assert "ti" in base_change.sample_metadata.columns
-    assert "tv" in base_change.sample_metadata.columns
-    assert "ti/tv" in base_change.sample_metadata.columns
+    assert base_change.sample_metadata.loc["s1", "ti"] == 4
+    assert base_change.sample_metadata.loc["s1", "tv"] == 8
+    assert base_change.sample_metadata.loc["s1", "ti/tv"] == pytest.approx(0.5)
 
 
 def test_read_csv_reindex_and_sigprofiler_export(tmp_path):
