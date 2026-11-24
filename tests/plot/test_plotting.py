@@ -138,6 +138,20 @@ class TestPlotSaving:
 
         assert high_dpi.stat().st_size > low_dpi.stat().st_size
 
+    @pytest.mark.plot
+    def test_save_extensionless_path_inside_dotted_directory(self, tmp_path):
+        plot = BasePlot()
+        plot.fig, ax = plt.subplots(figsize=(4, 3))
+        ax.plot([0, 1], [1, 0])
+        dotted_dir = tmp_path / "dir.v1"
+        dotted_dir.mkdir()
+        save_path = dotted_dir / "figure"
+
+        plot.save(save_path)
+
+        assert (dotted_dir / "figure.png").is_file()
+        plot.close()
+
 
 class TestPlotValidation:
     """Error handling for invalid plotting inputs."""

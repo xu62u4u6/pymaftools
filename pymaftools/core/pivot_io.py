@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import closing
+from io import StringIO
 import sqlite3
 from pathlib import Path
 from typing import Any
@@ -272,6 +273,7 @@ def read_h5(table_cls, base_table_cls, h5_path: str | Path):
 
 def to_anndata(table, **kwargs: Any):
     """Convert a PivotTable-like object to AnnData."""
+    table._validate_metadata()
     try:
         import anndata
     except ImportError:
@@ -287,10 +289,36 @@ def to_anndata(table, **kwargs: Any):
 
         X = _np.array(X, dtype=object)
 
+    layers = dict(kwargs.pop("layers", {}))
+    uns = dict(kwargs.pop("uns", {}))
+    if table.observation_mask is not None:
+        if "observation_mask" in layers:
+            raise ValueError(
+                "layers['observation_mask'] is reserved for the attached "
+                "pymaftools ObservationMask; remove the caller-provided key."
+            )
+        layers["observation_mask"] = table.observation_mask.to_frame().T.to_numpy(
+            dtype=bool
+        )
+    if table.sample_manifest is not None:
+        manifest_key = "pymaftools_sample_manifest"
+        if manifest_key in uns:
+            raise ValueError(
+                f"uns['{manifest_key}'] is reserved for the attached "
+                "pymaftools SampleManifest; remove the caller-provided key."
+            )
+        uns[manifest_key] = table.sample_manifest.to_frame().to_json(
+            orient="table", date_format="iso"
+        )
+    if layers:
+        kwargs["layers"] = layers
+    if uns:
+        kwargs["uns"] = uns
+
     return anndata.AnnData(
         X=X,
-        obs=table.sample_metadata.copy(),
-        var=table.feature_metadata.copy(),
+        obs=table.sample_metadata.reindex(table.columns).copy(),
+        var=table.feature_metadata.reindex(table.index).copy(),
         **kwargs,
     )
 
@@ -320,5 +348,30 @@ def from_anndata(table_cls, adata):
     table = table_cls(data)
     table.feature_metadata = adata.var.copy()
     table.sample_metadata = adata.obs.copy()
+    if "observation_mask" in adata.layers:
+        from .ObservationMask import ObservationMask
+
+        mask_values = adata.layers["observation_mask"]
+        if sp.issparse(mask_values):
+            mask_values = mask_values.toarray()
+        table.observation_mask = ObservationMask(
+            pd.DataFrame(
+                np.asarray(mask_values, dtype=bool).T,
+                index=table.index,
+                columns=table.columns,
+            )
+        )
+    manifest_key = "pymaftools_sample_manifest"
+    if manifest_key in adata.uns:
+        from .SampleManifest import SampleManifest
+
+        payload = adata.uns[manifest_key]
+        if not isinstance(payload, str):
+            raise ValueError(
+                f"AnnData uns['{manifest_key}'] must be a JSON string written "
+                "by PivotTable.to_anndata()."
+            )
+        manifest_frame = pd.read_json(StringIO(payload), orient="table")
+        table.sample_manifest = SampleManifest(manifest_frame)
     table._validate_metadata()
     return table

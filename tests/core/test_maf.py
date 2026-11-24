@@ -292,6 +292,67 @@ def test_to_base_change_pivot_table_computes_ti_tv():
     assert base_change.sample_metadata.loc["s1", "ti/tv"] == pytest.approx(0.5)
 
 
+def test_sort_by_chrom_uses_natural_genomic_order():
+    maf = MAF(
+        pd.DataFrame(
+            {
+                "Chromosome": ["chr10", "chr2", "X", "chr1", "chrM", "Y", "MT"],
+                "Start_Position": [1, 2, 1, 5, 3, 1, 4],
+                "End_Position": [1, 2, 1, 5, 3, 1, 4],
+            }
+        )
+    )
+
+    sorted_maf = maf.sort_by_chrom()
+
+    assert sorted_maf["Chromosome"].tolist() == [
+        "chr1",
+        "chr2",
+        "chr10",
+        "X",
+        "Y",
+        "chrM",
+        "MT",
+    ]
+
+
+@pytest.mark.parametrize("variant_type", ["SNP", "DEL"])
+def test_base_change_table_is_complete_and_handles_zero_transversions(variant_type):
+    maf = MAF(
+        pd.DataFrame(
+            {
+                "Reference_Allele": ["A"],
+                "Tumor_Seq_Allele2": ["G"],
+                "Variant_Type": [variant_type],
+                "sample_ID": ["s1"],
+            }
+        )
+    )
+
+    base_change = maf.to_base_change_pivot_table()
+
+    assert base_change.shape == (12, 1)
+    assert base_change.loc["A→G", "s1"] == (1 if variant_type == "SNP" else 0)
+    assert base_change.loc["T→C", "s1"] == 0
+    assert base_change.sample_metadata.loc["s1", "tv"] == 0
+    assert pd.isna(base_change.sample_metadata.loc["s1", "ti/tv"])
+
+
+def test_gene_level_annotations_accept_string_gene_pheno_and_match_paths():
+    maf = MAF(_build_maf_df().iloc[:2].copy())
+    maf["GENE_PHENO"] = ["0", "1"]
+    maf["hotspot"] = ["N", "Y"]
+    maf["COSMIC"] = [pd.NA, "COSM1"]
+
+    direct = maf.to_gene_table()
+    collapsed = maf.to_mutation_table().to_gene_level()
+
+    for table in (direct, collapsed):
+        assert bool(table.feature_metadata.loc["TP53", "GENE_PHENO"])
+        assert bool(table.feature_metadata.loc["TP53", "hotspot"])
+        assert bool(table.feature_metadata.loc["TP53", "COSMIC"])
+
+
 def test_read_csv_reindex_and_sigprofiler_export(tmp_path):
     maf_df = _build_maf_df()
     csv_path = tmp_path / "maf.tsv"

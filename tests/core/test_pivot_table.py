@@ -2,6 +2,9 @@
 Tests for PivotTable core functionality
 """
 
+import sys
+import types
+import warnings
 from typing import get_type_hints
 
 import pytest
@@ -13,6 +16,8 @@ from typing_extensions import Self
 from pymaftools.core.PivotTable import PivotTable
 from pymaftools.core.CopyNumberVariationTable import CopyNumberVariationTable
 from pymaftools.core.SmallVariationTable import SmallVariationTable
+from pymaftools.core.ObservationMask import ObservationMask
+from pymaftools.core.SampleManifest import SampleManifest
 
 
 class TestPivotTableBasics:
@@ -604,6 +609,101 @@ class TestAnnDataInterop:
         recovered = table2.values.astype(float)
         assert np.allclose(original, recovered)
 
+    def test_to_anndata_rejects_out_of_order_metadata(self, sample_pivot_table):
+        sample_pivot_table.sample_metadata = sample_pivot_table.sample_metadata.iloc[
+            ::-1
+        ]
+
+        with pytest.raises(
+            ValueError, match="sample_metadata.*different order.*reindex"
+        ):
+            sample_pivot_table.to_anndata()
+
+    def test_scientific_context_roundtrips_with_anndata_contract(self, monkeypatch):
+        class StubAnnData:
+            def __init__(self, X, obs=None, var=None, layers=None, uns=None, **kwargs):
+                self.X = X
+                self.obs = obs
+                self.var = var
+                self.obs_names = obs.index
+                self.var_names = var.index
+                self.layers = {} if layers is None else layers
+                self.uns = {} if uns is None else uns
+
+        module = types.ModuleType("anndata")
+        module.AnnData = StubAnnData
+        monkeypatch.setitem(sys.modules, "anndata", module)
+        table = PivotTable([[True, False]], index=["G1"], columns=["S1", "S2"])
+        table.observation_mask = ObservationMask(
+            pd.DataFrame([[True, False]], index=table.index, columns=table.columns)
+        )
+        table.sample_manifest = SampleManifest(
+            pd.DataFrame(
+                {
+                    "patient_id": ["P1", "P2"],
+                    "eligible": [True, True],
+                },
+                index=table.columns,
+            )
+        )
+
+        adata = table.to_anndata(uns={"caller_key": "kept"})
+        restored = PivotTable.from_anndata(adata)
+
+        assert adata.uns["caller_key"] == "kept"
+        assert restored.observation_mask.to_frame().equals(
+            table.observation_mask.to_frame()
+        )
+        pd.testing.assert_frame_equal(
+            restored.sample_manifest.to_frame().astype("string"),
+            table.sample_manifest.to_frame().astype("string"),
+        )
+
+    def test_scientific_context_roundtrips_through_h5ad(self, tmp_path):
+        anndata = pytest.importorskip("anndata")
+        table = PivotTable(
+            [[1.0, 0.0], [0.0, 1.0]],
+            index=["G1", "G2"],
+            columns=["S1", "S2"],
+        )
+        table.sample_metadata["group"] = ["A", "B"]
+        table.feature_metadata["kind"] = ["driver", "passenger"]
+        table.observation_mask = ObservationMask(
+            pd.DataFrame(
+                [[True, False], [True, True]],
+                index=table.index,
+                columns=table.columns,
+            )
+        )
+        table.sample_manifest = SampleManifest(
+            pd.DataFrame(
+                {
+                    "patient_id": ["P1", "P2", "P3"],
+                    "eligible": [True, True, False],
+                    "exclusion_reason": [pd.NA, pd.NA, "failed_qc"],
+                },
+                index=["S1", "S2", "S3"],
+            )
+        )
+        adata = table.to_anndata(
+            layers={"caller_layer": np.ones((2, 2))},
+            uns={"caller_key": "kept"},
+        )
+        path = tmp_path / "context.h5ad"
+        adata.write_h5ad(path)
+
+        restored = PivotTable.from_anndata(anndata.read_h5ad(path))
+
+        assert "caller_layer" in adata.layers
+        assert adata.uns["caller_key"] == "kept"
+        assert restored.observation_mask.to_frame().equals(
+            table.observation_mask.to_frame()
+        )
+        pd.testing.assert_frame_equal(
+            restored.sample_manifest.to_frame().astype("string"),
+            table.sample_manifest.to_frame().astype("string"),
+        )
+
     def test_from_anndata_sparse(self):
         """Test conversion from sparse AnnData"""
         anndata = pytest.importorskip("anndata")
@@ -635,6 +735,66 @@ class TestAnnDataInterop:
         monkeypatch.setattr(builtins, "__import__", mock_import)
         with pytest.raises(ImportError, match="anndata is required"):
             sample_pivot_table.to_anndata()
+
+
+def test_filter_by_statistical_test_rejects_categorical_mutations():
+    table = SmallVariationTable(
+        pd.DataFrame(
+            {
+                "S1": ["Missense_Mutation"],
+                "S2": ["Multi_Hit"],
+                "S3": [False],
+                "S4": [False],
+            },
+            index=["TP53"],
+        )
+    )
+    table.sample_metadata["group"] = ["A", "A", "B", "B"]
+
+    with pytest.raises(
+        ValueError,
+        match=r"mutation_enrichment_test\(\).*to_binary_table\(\)",
+    ):
+        table.filter_by_statistical_test("group")
+
+
+def test_filter_by_statistical_test_handles_constant_kruskal_rows():
+    samples = [f"S{i}" for i in range(8)]
+    groups = ["A"] * 4 + ["B"] * 4
+    signal_rows = pd.DataFrame(
+        [
+            [0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0],
+            [0.1, 0.2, 0.1, 0.3, 0.2, 0.1, 0.3, 0.2],
+            [1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+        ],
+        index=["G_signal", "G_null1", "G_null2"],
+        columns=samples,
+    )
+    base_table = PivotTable(signal_rows)
+    base_table.sample_metadata["group"] = groups
+    base_result = base_table.filter_by_statistical_test(
+        "group", method="kruskal", alpha=1.01
+    )
+
+    zero_rows = pd.DataFrame(
+        0.0,
+        index=[f"const_{i}" for i in range(20)],
+        columns=samples,
+    )
+    padded_table = PivotTable(pd.concat([signal_rows, zero_rows]))
+    padded_table.sample_metadata["group"] = groups
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        padded_result = padded_table.filter_by_statistical_test(
+            "group", method="kruskal", alpha=1.01
+        )
+
+    assert list(padded_result.index) == list(base_result.index)
+    pd.testing.assert_series_equal(
+        padded_result.feature_metadata["adjusted_p_value"],
+        base_result.feature_metadata["adjusted_p_value"],
+    )
 
 
 def test_add_exon_size_writes_feature_metadata(monkeypatch):

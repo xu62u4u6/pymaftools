@@ -66,9 +66,10 @@ def mutation_enrichment_test(
             raise ValueError(
                 "Mutation enrichment requires every eligible SampleManifest "
                 "sample to be present in the table, including zero-event "
-                f"samples; missing: {missing_eligible.tolist()}. Create and "
-                "attach a new manifest to declare an intentional analysis "
-                "subset."
+                f"samples; missing: {missing_eligible.tolist()}. For an "
+                "intentional subgroup, attach "
+                "table.sample_manifest.subset(table.columns) before running "
+                "the test."
             )
 
     if analysis_unit == "patient":

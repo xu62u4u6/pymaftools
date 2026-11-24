@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from contextlib import closing
 import pandas as pd
 import copy
@@ -211,7 +212,7 @@ class Cohort:
         if table_name in self.tables:
             del self.tables[table_name]
 
-    def subset(self, samples: list[str] | None = None) -> Cohort:
+    def subset(self, samples: Iterable[object] | pd.Series | None = None) -> Cohort:
         """
         Create a new Cohort containing only the specified samples.
 
@@ -233,7 +234,11 @@ class Cohort:
 
         if cohort.sample_metadata is not None:
             cohort.sample_metadata = cohort.sample_metadata.loc[samples, :].copy()
-        cohort.sample_IDs = samples
+            cohort.sample_IDs = cohort.sample_metadata.index.copy()
+        elif cohort.tables:
+            cohort.sample_IDs = next(iter(cohort.tables.values())).columns.copy()
+        else:
+            cohort.sample_IDs = pd.Index(samples)
         return cohort
 
     def copy(self, deep: bool = True) -> Cohort:

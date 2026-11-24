@@ -82,6 +82,17 @@ def test_sample_manifest_exposes_repeated_patient_counts():
     manifest.assert_independent(analysis_unit="sample")
 
 
+def test_sample_manifest_subset_preserves_order_and_revalidates():
+    subset = _manifest().subset(["S2", "S1"])
+
+    assert subset.samples.tolist() == ["S2", "S1"]
+    assert subset.to_frame()["patient_id"].tolist() == ["P2", "P1"]
+    with pytest.raises(ValueError, match="unknown sample.*UNKNOWN"):
+        _manifest().subset(["UNKNOWN"])
+    with pytest.raises(ValueError, match="must be unique"):
+        _manifest().subset(["S1", "S1"])
+
+
 def test_observation_mask_excludes_unobserved_cells_from_denominator():
     table = PivotTable(
         [["Missense_Mutation", False, False]],
@@ -305,8 +316,35 @@ def test_enrichment_rejects_omitted_eligible_zero_event_samples():
     )
     table = table.with_scientific_context(sample_manifest=manifest)
 
-    with pytest.raises(ValueError, match="every eligible SampleManifest sample"):
+    with pytest.raises(
+        ValueError, match=r"sample_manifest\.subset\(table\.columns\)"
+    ):
         table.mutation_enrichment_test("group", "A", "B", minimum_mutations=0)
+
+
+def test_frequency_warns_for_missing_manifest_samples_but_uses_table_columns():
+    manifest = SampleManifest(
+        pd.DataFrame(
+            {
+                "patient_id": ["P1", "P2", "P3", "P4", "P5"],
+                "eligible": [True] * 5,
+            },
+            index=["S1", "S2", "S3", "S4", "S5"],
+        )
+    )
+    table = PivotTable(
+        [[True, False, True, False]],
+        index=["TP53"],
+        columns=["S1", "S2", "S3", "S4"],
+    ).with_scientific_context(sample_manifest=manifest)
+
+    with pytest.warns(
+        UserWarning,
+        match=r"1 eligible SampleManifest sample.*S5.*SampleManifest\.subset",
+    ):
+        result = table.add_freq()
+
+    assert result.feature_metadata.loc["TP53", "freq"] == pytest.approx(0.5)
 
 
 def test_enrichment_rejects_identical_groups():

@@ -37,6 +37,17 @@ def _composite_index(frame: pd.DataFrame, columns: list[str]) -> pd.Index:
     return pd.Index(joined.to_numpy(dtype=object), dtype=object)
 
 
+def _chromosome_sort_key(chromosome: object) -> tuple[int, str]:
+    """Return a natural human-genome sort key for a chromosome label."""
+    label = str(chromosome)
+    normalized = label[3:] if label.lower().startswith("chr") else label
+    normalized = normalized.upper()
+    if normalized.isdigit() and 1 <= int(normalized) <= 22:
+        return (int(normalized), "")
+    special = {"X": 23, "Y": 24, "M": 25, "MT": 25}
+    return (special.get(normalized, 99), normalized)
+
+
 class MAF(pd.DataFrame):
     """
     A pandas DataFrame subclass for Mutation Annotation Format (MAF) files.
@@ -804,11 +815,10 @@ class MAF(pd.DataFrame):
             if column in feature_metadata.columns
         ]
         gene_metadata = feature_metadata[present_gene_columns].groupby(level=0).first()
-        for column, aggregate in SmallVariationTable._GENE_LEVEL_AGG.items():
-            if column in feature_metadata.columns:
-                gene_metadata[column] = (
-                    feature_metadata[column].groupby(level=0).agg(aggregate)
-                )
+        aggregated = SmallVariationTable._aggregate_gene_level_metadata(
+            feature_metadata
+        )
+        gene_metadata[aggregated.columns] = aggregated
         result.feature_metadata = gene_metadata.reindex(result.index)
 
         if sample_manifest is not None:
@@ -1029,7 +1039,20 @@ class MAF(pd.DataFrame):
         MAF
             MAF sorted by Chromosome, Start_Position, and End_Position.
         """
-        return self.sort_values(by=["Chromosome", "Start_Position", "End_Position"])
+        chromosome_keys = self["Chromosome"].map(_chromosome_sort_key)
+        sortable = self.assign(
+            _chromosome_order=chromosome_keys.map(lambda key: key[0]),
+            _chromosome_label=chromosome_keys.map(lambda key: key[1]),
+        )
+        return sortable.sort_values(
+            by=[
+                "_chromosome_order",
+                "_chromosome_label",
+                "Start_Position",
+                "End_Position",
+            ],
+            kind="stable",
+        ).drop(columns=["_chromosome_order", "_chromosome_label"])
 
     @staticmethod
     def merge_mafs(mafs: list[MAF], *, allow_mixed_builds: bool = False) -> MAF:
@@ -1204,6 +1227,21 @@ class MAF(pd.DataFrame):
         base_change["Base_Change"] = (
             base_change["Reference_Allele"] + "→" + base_change["Tumor_Seq_Allele2"]
         )
+        canonical_base_changes = [
+            "A→G",
+            "C→T",
+            "G→A",
+            "T→C",
+            "A→C",
+            "A→T",
+            "C→A",
+            "C→G",
+            "G→C",
+            "G→T",
+            "T→A",
+            "T→G",
+        ]
+        sample_ids = pd.Index(maf["sample_ID"].dropna().unique())
         pivot_table = base_change.pivot_table(
             values="Reference_Allele",
             index="sample_ID",
@@ -1211,6 +1249,11 @@ class MAF(pd.DataFrame):
             aggfunc="count",
             fill_value=0,
         )
+        pivot_table = pivot_table.reindex(
+            index=sample_ids,
+            columns=canonical_base_changes,
+            fill_value=0,
+        ).fillna(0)
         pivot_table = PivotTable(pivot_table.T)
         pivot_table.sample_metadata["ti"] = pivot_table.loc[
             ["A→G", "C→T", "G→A", "T→C"]
@@ -1218,8 +1261,9 @@ class MAF(pd.DataFrame):
         pivot_table.sample_metadata["tv"] = pivot_table.loc[
             ["A→C", "A→T", "C→A", "C→G", "G→C", "G→T", "T→A", "T→G"]
         ].sum()
-        pivot_table.sample_metadata["ti/tv"] = (
-            pivot_table.sample_metadata.ti / pivot_table.sample_metadata.tv
+        transversions = pivot_table.sample_metadata.tv
+        pivot_table.sample_metadata["ti/tv"] = pivot_table.sample_metadata.ti.div(
+            transversions.where(transversions.ne(0))
         )
         return pivot_table
 

@@ -3,12 +3,32 @@
 from __future__ import annotations
 
 from typing import Optional
+import warnings
 
 import pandas as pd
 
 
-def calculate_feature_frequency(table, observation_mask=None) -> pd.Series:
-    """Calculate feature frequency across samples."""
+def _warn_if_manifest_is_incomplete(table) -> None:
+    manifest = table.sample_manifest
+    if manifest is None:
+        return
+    missing = manifest.eligible_samples.difference(table.columns)
+    if missing.empty:
+        return
+    examples = missing[:3].tolist()
+    warnings.warn(
+        f"Frequency uses the {len(table.columns)} sample(s) in table.columns, "
+        f"but {len(missing)} eligible SampleManifest sample(s) are missing "
+        f"(examples: {examples}). If this is an intentional subgroup, use "
+        "SampleManifest.subset(), for example "
+        "table.sample_manifest = table.sample_manifest.subset(table.columns), "
+        "before calculating frequencies.",
+        UserWarning,
+        stacklevel=3,
+    )
+
+
+def _calculate_feature_frequency(table, observation_mask=None) -> pd.Series:
     if observation_mask is None:
         observation_mask = table.observation_mask
     if observation_mask is not None:
@@ -21,6 +41,12 @@ def calculate_feature_frequency(table, observation_mask=None) -> pd.Series:
     return binary_table.sum(axis=1).astype(float) / binary_table.shape[1]
 
 
+def calculate_feature_frequency(table, observation_mask=None) -> pd.Series:
+    """Calculate feature frequency across samples."""
+    _warn_if_manifest_is_incomplete(table)
+    return _calculate_feature_frequency(table, observation_mask=observation_mask)
+
+
 def add_freq(
     table,
     base_table_cls,
@@ -30,6 +56,7 @@ def add_freq(
 ):
     """Add overall and optional group-specific frequency columns."""
     table._validate_metadata()
+    _warn_if_manifest_is_incomplete(table)
 
     if group_col is not None:
         if groups:
@@ -59,12 +86,12 @@ def add_freq(
                 features=group_table.index,
                 samples=group_table.columns,
             )
-        freq_data[f"{group}_freq"] = group_table.calculate_feature_frequency(
-            observation_mask=group_mask
+        freq_data[f"{group}_freq"] = _calculate_feature_frequency(
+            group_table, observation_mask=group_mask
         )
 
-    freq_data["freq"] = pivot_table.calculate_feature_frequency(
-        observation_mask=effective_mask
+    freq_data["freq"] = _calculate_feature_frequency(
+        pivot_table, observation_mask=effective_mask
     )
     pivot_table.feature_metadata[freq_data.columns] = freq_data
     return pivot_table
