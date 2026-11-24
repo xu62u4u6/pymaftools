@@ -1468,8 +1468,8 @@ class MAF(pd.DataFrame):
     def compare_cohorts(
         self,
         other: MAF,
-        cohort1_name: str = "Cohort1",
-        cohort2_name: str = "Cohort2",
+        cohort1_name: str | None = None,
+        cohort2_name: str | None = None,
         min_mutated: int = 1,
         *,
         name1: str | None = None,
@@ -1481,10 +1481,12 @@ class MAF(pd.DataFrame):
         ----------
         other : MAF
             Comparison cohort MAF.
-        cohort1_name : str, default "Cohort1"
-            Label prefix for this cohort's count and frequency columns.
-        cohort2_name : str, default "Cohort2"
-            Label prefix for ``other`` cohort's count and frequency columns.
+        cohort1_name : str, optional
+            Label prefix for this cohort's count and frequency columns
+            (defaults to ``"Cohort1"``).
+        cohort2_name : str, optional
+            Label prefix for ``other`` cohort's count and frequency columns
+            (defaults to ``"Cohort2"``).
         min_mutated : int, default 1
             Minimum mutated samples in at least one cohort to include a gene.
         name1, name2 : str, optional

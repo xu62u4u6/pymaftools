@@ -224,6 +224,33 @@ sample is reported with ``tested=False``, missing ``odds_ratio`` / ``p_value``,
 and ``interaction="Not tested"``; it is excluded from the BH family, whose size
 is recorded in ``tested_family_size``, and left blank in the heatmap.
 
+Exploratory plots and cohort comparison
+---------------------------------------
+
+``PivotTable.plot`` exposes exploratory statistical plots alongside
+:meth:`~pymaftools.plot.PivotStatsPlot.PivotStatsPlot.oncoplot`:
+
+.. code-block:: python
+
+   # PCA on a categorical SmallVariationTable needs to_binary=True
+   pca_df, explained_var, pca_obj = table.plot.pca(
+       color_col="subtype", to_binary=True
+   )
+
+   # Annotated group comparison boxplot over sample_metadata columns
+   ax = table.plot.boxplot(group_col="subtype", test_col="mutations_count")
+
+At the raw MAF layer, cohort-level summary statistics and two-cohort Fisher
+comparisons live directly on :class:`~pymaftools.core.MAF.MAF`:
+
+.. code-block:: python
+
+   stats = maf.summary_stats()
+   comparison = maf_luad.compare_cohorts(
+       maf_lusc, cohort1_name="LUAD", cohort2_name="LUSC"
+   )
+   fig = maf_luad.plot.forest(comparison, top=20)
+
 Multi-omics integration
 ------------------------
 

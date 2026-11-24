@@ -176,3 +176,155 @@ def test_somatic_interactions_warns_on_pervasive_cooccurrence():
     frame = pd.DataFrame(data, index=[f"S{i}" for i in range(200)]).T
     with pytest.warns(UserWarning, match="mutation burden"):
         SmallVariationTable(frame).somatic_interactions(top=6)
+
+
+@pytest.mark.parametrize("bad_top", [0, -3, True])
+def test_somatic_interactions_rejects_invalid_top(table, bad_top):
+    with pytest.raises(ValueError, match="top"):
+        table.somatic_interactions(top=bad_top)
+
+
+@pytest.mark.parametrize("bad_alpha", [0.0, 1.0, -0.1, 5.0, True])
+def test_somatic_interactions_rejects_invalid_alpha(table, bad_alpha):
+    with pytest.raises(ValueError, match="alpha"):
+        table.somatic_interactions(alpha=bad_alpha)
+
+
+def test_somatic_interactions_single_gene_preserves_schema_and_provenance(table):
+    from pymaftools.provenance import get_provenance
+
+    single = table.head(1)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        stats = single.somatic_interactions(top=5)
+    assert stats.empty
+    assert {
+        "gene1",
+        "gene2",
+        "odds_ratio",
+        "p_value",
+        "adjusted_p_value",
+        "interaction",
+    }.issubset(stats.columns)
+    prov = get_provenance(stats)
+    assert prov is not None
+    assert prov["analysis"] == "somatic_interactions"
+
+
+def test_somatic_interactions_warning_points_to_caller(table):
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        table.somatic_interactions(top=4)
+    user_warnings = [w for w in caught if issubclass(w.category, UserWarning)]
+    assert user_warnings
+    assert user_warnings[0].filename == __file__
+
+    with warnings.catch_warnings(record=True) as caught_plot:
+        warnings.simplefilter("always")
+        fig, _ = table.plot.somatic_interactions(top=4)
+    plt.close(fig)
+    plot_warnings = [w for w in caught_plot if issubclass(w.category, UserWarning)]
+    assert plot_warnings
+    assert plot_warnings[0].filename == __file__
+
+
+def test_compare_cohorts_rejects_conflicting_aliases_and_bad_min_mutated():
+    from pymaftools.provenance import get_provenance
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        maf = load_example_maf()
+
+    with pytest.raises(ValueError, match="cohort1_name"):
+        maf.compare_cohorts(maf, cohort1_name="A", name1="X")
+    with pytest.raises(ValueError, match="cohort2_name"):
+        maf.compare_cohorts(maf, cohort2_name="B", name2="Y")
+    with pytest.raises(ValueError, match="min_mutated"):
+        maf.compare_cohorts(maf, min_mutated=0)
+
+    empty = maf.compare_cohorts(
+        maf, cohort1_name="A", cohort2_name="B", min_mutated=999
+    )
+    assert empty.empty
+    assert list(empty.columns) == [
+        "gene",
+        "A_mutated",
+        "B_mutated",
+        "A_freq",
+        "B_freq",
+        "odds_ratio",
+        "p_value",
+        "adjusted_p_value",
+    ]
+    assert get_provenance(empty) is not None
+
+
+def test_pca_on_non_numeric_table_hints_to_binary(table):
+    with pytest.raises(ValueError, match="to_binary=True"):
+        table.pca()
+    with pytest.raises(ValueError, match="to_binary=True"):
+        table.plot.pca(color_col="mutations_count")
+
+
+@pytest.mark.plot
+def test_pivot_stats_plot_validates_metadata_columns_upfront(table):
+    # Typo in color_col must list available columns before touching PCA matrix
+    with pytest.raises(ValueError, match="mutations_count"):
+        table.plot.pca(color_col="nonexistent_col")
+    with pytest.raises(ValueError, match="mutations_count"):
+        table.plot.pca(
+            color_col="mutations_count", shape_col="nonexistent_shape", to_binary=True
+        )
+    with pytest.raises(ValueError, match="mutations_count"):
+        table.plot.boxplot(group_col="nonexistent_group")
+
+    groups = pd.Series(["A", "B"] * 3, index=table.columns, name="subtype")
+    labelled = table.add_sample_metadata(groups)
+    with pytest.raises(ValueError, match="mutations_count"):
+        labelled.plot.boxplot(group_col="subtype", test_col="nonexistent_metric")
+
+
+@pytest.mark.plot
+def test_pivot_stats_plot_save_summary_reports_domain_metadata(table, tmp_path):
+    import json
+
+    groups = pd.Series(["A", "B"] * 3, index=table.columns, name="subtype")
+    labelled = table.add_sample_metadata(groups)
+
+    pca_plotter = labelled.plot
+    pca_plotter.pca(color_col="subtype", to_binary=True)
+    pca_out = tmp_path / "pca.png"
+    pca_plotter.save(pca_out, summary=True)
+    pca_summary = pca_plotter.summary()
+    pca_plotter.close()
+    assert pca_summary["plot_type"] == "pca"
+    assert pca_summary["color_col"] == "subtype"
+    assert len(pca_summary["explained_variance_ratio"]) == 2
+    assert json.loads(pca_out.with_suffix(".json").read_text())["plot_type"] == "pca"
+
+    box_plotter = labelled.plot
+    box_plotter.boxplot(group_col="subtype", test_col="mutations_count")
+    box_out = tmp_path / "box.png"
+    box_plotter.save(box_out, summary=True)
+    box_summary = box_plotter.summary()
+    box_plotter.close()
+    assert box_summary["plot_type"] == "boxplot"
+    assert box_summary["groups"] == {"A": 3, "B": 3}
+    assert (
+        json.loads(box_out.with_suffix(".json").read_text())["plot_type"] == "boxplot"
+    )
+
+    int_plotter = labelled.plot
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        int_plotter.somatic_interactions(top=4)
+    int_out = tmp_path / "interactions.png"
+    int_plotter.save(int_out, summary=True)
+    int_summary = int_plotter.summary()
+    int_plotter.close()
+    assert int_summary["plot_type"] == "somatic_interactions"
+    assert int_summary["n_pairs"] == 6
+    assert (
+        json.loads(int_out.with_suffix(".json").read_text())["plot_type"]
+        == "somatic_interactions"
+    )
