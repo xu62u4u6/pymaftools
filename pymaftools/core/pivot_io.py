@@ -6,21 +6,139 @@ from contextlib import closing
 import sqlite3
 from pathlib import Path
 from typing import Any
+import warnings
 
+import numpy as np
 import pandas as pd
 
 from ._atomic import atomic_output_path
+
+_SQLITE_FALSE_SENTINEL = "__PYMAFTOOLS_FALSE__"
+_SQLITE_TRUE_SENTINEL = "__PYMAFTOOLS_TRUE__"
+_LEGACY_SQLITE_FALSE_SENTINELS = frozenset({_SQLITE_FALSE_SENTINEL, "WT"})
+
+
+def quote_sql_identifier(name: str) -> str:
+    """Safely double-quote a SQLite table or column identifier."""
+    return '"' + str(name).replace('"', '""') + '"'
+
+
+def warn_sqlite_unpersisted_attributes(table, *, table_name: str | None = None) -> None:
+    """Warn if table carries attributes that SQLite format cannot persist."""
+    dropped = [
+        attr
+        for attr in ("observation_mask", "sample_manifest", "value_scale")
+        if getattr(table, attr, None) is not None
+    ]
+    if dropped:
+        prefix = (
+            f"Table {table_name!r}" if table_name is not None else type(table).__name__
+        )
+        warnings.warn(
+            f"{prefix} has {', '.join(dropped)} attached, which SQLite I/O "
+            "does not persist. Use to_h5() / read_h5() to keep these attributes.",
+            UserWarning,
+            stacklevel=3,
+        )
+
+
+def _is_missing_scalar(value: Any) -> bool:
+    return (
+        value is None
+        or value is pd.NA
+        or (isinstance(value, (float, np.floating)) and bool(np.isnan(value)))
+    )
+
+
+def encode_sqlite_data(df: pd.DataFrame) -> pd.DataFrame:
+    """Encode Python/NumPy booleans distinctly from numeric 0/1 for SQLite.
+
+    SQLite has no native boolean column type and pandas ``to_sql`` coerces
+    ``bool`` inside mixed ``object`` columns to the text string ``'0'``/``'1'``.
+    Encoding only true boolean values (never numeric ``0``/``0.0``) avoids both
+    flipping wildtype ``False`` cells into truthy ``'0'`` strings and corrupting
+    numeric zeros into ``False``.
+    """
+    encoded = pd.DataFrame(df).copy()
+    for col in encoded.columns:
+        series = encoded[col]
+        if pd.api.types.is_bool_dtype(series.dtype):
+            encoded[col] = pd.Series(
+                [
+                    None
+                    if _is_missing_scalar(v)
+                    else (_SQLITE_TRUE_SENTINEL if bool(v) else _SQLITE_FALSE_SENTINEL)
+                    for v in series.tolist()
+                ],
+                index=series.index,
+                dtype=object,
+            )
+        elif pd.api.types.is_object_dtype(series.dtype):
+            values = series.tolist()
+            if any(isinstance(v, (bool, np.bool_)) for v in values):
+                encoded[col] = pd.Series(
+                    [
+                        (_SQLITE_TRUE_SENTINEL if bool(v) else _SQLITE_FALSE_SENTINEL)
+                        if isinstance(v, (bool, np.bool_))
+                        else v
+                        for v in values
+                    ],
+                    index=series.index,
+                    dtype=object,
+                )
+            else:
+                non_null = [v for v in values if not _is_missing_scalar(v)]
+                if non_null and all(
+                    isinstance(v, (int, float, np.number))
+                    and not isinstance(v, (bool, np.bool_))
+                    for v in non_null
+                ):
+                    encoded[col] = pd.to_numeric(series)
+    return encoded
+
+
+def decode_sqlite_data(df: pd.DataFrame) -> pd.DataFrame:
+    """Restore boolean sentinels (and legacy ``'WT'``) read back from SQLite."""
+    decoded = df.copy()
+    for col in decoded.columns:
+        series = decoded[col]
+        if not (
+            pd.api.types.is_object_dtype(series.dtype)
+            or pd.api.types.is_string_dtype(series.dtype)
+        ):
+            continue
+        values = series.tolist()
+        if not any(
+            isinstance(v, str)
+            and (v in _LEGACY_SQLITE_FALSE_SENTINELS or v == _SQLITE_TRUE_SENTINEL)
+            for v in values
+        ):
+            continue
+        restored = [
+            False
+            if isinstance(v, str) and v in _LEGACY_SQLITE_FALSE_SENTINELS
+            else True
+            if isinstance(v, str) and v == _SQLITE_TRUE_SENTINEL
+            else v
+            for v in values
+        ]
+        if restored and all(isinstance(v, bool) for v in restored):
+            decoded[col] = pd.Series(restored, index=series.index, dtype=bool)
+        else:
+            decoded[col] = pd.Series(restored, index=series.index, dtype=object)
+    return decoded
 
 
 def to_sqlite(table, db_path: str) -> None:
     """Save a PivotTable-like object to SQLite."""
     db_path = Path(db_path)
+    warn_sqlite_unpersisted_attributes(table)
     table_to_save = table.copy().rename_index_and_columns()
-    table_to_save = table_to_save.replace(False, "WT")
+    data_to_save = encode_sqlite_data(table_to_save)
     with atomic_output_path(db_path) as temporary_path:
         with closing(sqlite3.connect(str(temporary_path))) as conn:
             with conn:
-                table_to_save.to_sql("data", conn, index=True)
+                data_to_save.to_sql("data", conn, index=True)
                 table_to_save.sample_metadata.to_sql(
                     "sample_metadata", conn, index=True
                 )
@@ -74,8 +192,8 @@ def read_sqlite(table_cls, db_path: str):
             "SELECT * FROM 'feature_metadata'", conn, index_col="feature"
         )
 
+    data = decode_sqlite_data(data)
     table = table_cls(data)
-    table = table.replace("WT", False)
     table.sample_metadata = sample_metadata
     table.feature_metadata = feature_metadata
     table._validate_metadata()

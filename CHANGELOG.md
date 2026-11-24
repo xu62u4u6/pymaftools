@@ -142,6 +142,13 @@ removal release.
   `fpkm_unstranded`, `fpkm_uq_unstranded`), STAR QC rows are read from the raw
   `unstranded` column; when raw counts or QC rows are absent, `mapping_rate` is
   `NA` instead of `1.0`.
+* **Deprecated SQLite I/O no longer corrupts wildtype `False` or numeric `0`.**
+  `PivotTable.to_sqlite()` / `Cohort.to_sqlite()` now encode only true boolean
+  values (never numeric `0`/`0.0`) using explicit sentinels, restore table
+  subclasses in `Cohort.read_sqlite()`, safely quote SQLite table identifiers,
+  remain backward-compatible with legacy `"WT"` `.db` files, and warn if
+  `observation_mask`, `sample_manifest`, or `value_scale` is attached (use
+  `to_h5()` to persist those).
 * **TCGA clinical event tables keep every row.** `drug`, `radiation`,
   `follow_up` and `nte` (several rows per patient) were cut to the first row
   per patient, losing later regimens and deaths. They now drop only exact

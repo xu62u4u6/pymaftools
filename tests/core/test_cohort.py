@@ -144,13 +144,57 @@ class TestCohortPersistence:
         assert loaded_cohort.name == cohort.name
         assert set(loaded_cohort.tables.keys()) == set(cohort.tables.keys())
 
-        # Check that data is preserved
+        # Check that table subclasses and values are preserved
         for table_name in cohort.tables:
             original_table = cohort.tables[table_name]
             loaded_table = loaded_cohort.tables[table_name]
 
+            assert type(loaded_table) is type(original_table)
             assert original_table.shape == loaded_table.shape
-            # Note: Values might differ slightly due to False->WT->False conversion
+            pd.testing.assert_frame_equal(
+                pd.DataFrame(loaded_table),
+                pd.DataFrame(original_table),
+                check_names=False,
+            )
+
+    def test_sqlite_preserves_mixed_snv_wildtype_and_quoted_table_names(
+        self, tmp_path
+    ):
+        from pymaftools.core.ObservationMask import ObservationMask
+        from pymaftools.core.SmallVariationTable import SmallVariationTable
+
+        snv = SmallVariationTable(
+            pd.DataFrame(
+                {"s1": [False, "Missense_Mutation"], "s2": [False, False]},
+                index=["g1", "g2"],
+            )
+        )
+        mask = ObservationMask.fully_observed(snv)
+        snv_masked = snv.with_scientific_context(observation_mask=mask)
+
+        cohort = Cohort("iss004")
+        cohort.add_table(snv_masked, "quoted'snv")
+
+        db_path = tmp_path / "cohort.db"
+        with (
+            pytest.warns(DeprecationWarning, match="to_h5"),
+            pytest.warns(UserWarning, match="observation_mask.*to_h5"),
+        ):
+            cohort.to_sqlite(str(db_path))
+
+        with pytest.warns(DeprecationWarning, match="read_h5"):
+            loaded = Cohort.read_sqlite(str(db_path))
+
+        restored = loaded.tables["quoted'snv"]
+        assert isinstance(restored, SmallVariationTable)
+        assert restored.loc["g1", "s1"] is False
+        assert restored.loc["g2", "s1"] == "Missense_Mutation"
+        assert restored.loc["g1", "s2"] == False  # noqa: E712
+        pd.testing.assert_frame_equal(
+            pd.DataFrame(restored.to_binary_table()),
+            pd.DataFrame(snv.to_binary_table()),
+            check_names=False,
+        )
 
     def test_sql_registry_generation(self, sample_cohort):
         """Test SQL registry generation"""
