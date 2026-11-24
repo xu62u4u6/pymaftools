@@ -95,6 +95,7 @@ def build_uuid_to_case_mapping(
                 "file_id,cases.submitter_id,cases.samples.submitter_id,"
                 "cases.samples.sample_type,associated_entities"
             ),
+            "expand": "associated_entities,cases.samples",
             "size": len(batch),
             "format": "json",
         }
@@ -206,12 +207,7 @@ def resolve_files_to_cases(
     if not key_to_path:
         return []
 
-    if sample_type == "Primary Tumor":
-        uuid_to_case = build_uuid_to_case_mapping(manifest_path)
-    else:
-        uuid_to_case = build_uuid_to_case_mapping(
-            manifest_path, sample_type=sample_type
-        )
+    uuid_to_case = build_uuid_to_case_mapping(manifest_path, sample_type=sample_type)
 
     # Build filename→uuid lookup for flat layout
     manifest = read_manifest(manifest_path)

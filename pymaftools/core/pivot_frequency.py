@@ -101,7 +101,7 @@ def add_mutation_density(
     table,
     *,
     col: str = "mutation_density_per_kb",
-    size_col: str = "exon_size",
+    size_col: str | None = None,
     metric: str = "cds_length",
     observation_mask=None,
     force_download: bool = False,
@@ -110,10 +110,11 @@ def add_mutation_density(
     table._validate_metadata()
     _warn_if_manifest_is_incomplete(table)
 
+    resolved_size_col = metric if size_col is None else size_col
     pivot_table = table.copy()
-    if size_col not in pivot_table.feature_metadata.columns:
+    if resolved_size_col not in pivot_table.feature_metadata.columns:
         pivot_table = pivot_table.add_exon_size(
-            col=size_col,
+            col=resolved_size_col,
             metric=metric,
             force_download=force_download,
         )
@@ -122,9 +123,16 @@ def add_mutation_density(
         pivot_table.observation_mask if observation_mask is None else observation_mask
     )
     freq = _calculate_feature_frequency(pivot_table, observation_mask=effective_mask)
-    sizes = pd.to_numeric(pivot_table.feature_metadata[size_col], errors="coerce")
+    sizes = pd.to_numeric(
+        pivot_table.feature_metadata[resolved_size_col], errors="coerce"
+    )
     valid_kb = sizes.where(sizes > 0) / 1000.0
     pivot_table.feature_metadata[col] = (freq / valid_kb).astype(float)
+    pivot_table.attrs["mutation_density"] = {
+        "col": col,
+        "size_col": resolved_size_col,
+        "metric": metric,
+    }
     return pivot_table
 
 

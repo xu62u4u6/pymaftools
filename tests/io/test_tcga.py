@@ -691,6 +691,23 @@ class TestGDCClientOffline:
         filter_fields = [c["content"]["field"] for c in filters_obj["content"]]
         assert "platform" in filter_fields
 
+    @patch("pymaftools.io.tcga.client.requests.post")
+    def test_query_files_stops_when_server_repeats_same_page(self, mock_post):
+        repeated = MagicMock()
+        repeated.raise_for_status = MagicMock()
+        repeated.json.return_value = {
+            "data": {
+                "hits": [{"file_id": "f1"}, {"file_id": "f2"}],
+                "pagination": {"total": 10, "count": 2, "from": 0},
+            }
+        }
+        mock_post.side_effect = [repeated, repeated]
+
+        client = GDCClient()
+        hits = client._query_files("TCGA-LUAD", "Masked Somatic Mutation", size=2)
+        assert [h["file_id"] for h in hits] == ["f1", "f2"]
+        assert mock_post.call_count == 2
+
 
 # ------------------------------------------------------------------ #
 #  Integration tests (online, requires network)

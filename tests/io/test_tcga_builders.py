@@ -619,9 +619,13 @@ def test_mutation_builder_respects_sample_type_and_keeps_zero_mutation_samples(
         "TCGA-01-0001",
         "TCGA-01-0002",
     ]
-    gene_table = primary_maf.to_gene_table()
+    gene_table = primary_maf.to_gene_table(sample_manifest=primary_maf.sample_manifest)
     assert list(gene_table.columns) == ["TCGA-01-0001", "TCGA-01-0002"]
     assert gene_table.calculate_feature_frequency()["TP53"] == pytest.approx(0.5)
+
+    with pytest.warns(UserWarning, match="sample_manifest=maf.sample_manifest"):
+        implicit_table = primary_maf.to_gene_table()
+    assert list(implicit_table.columns) == ["TCGA-01-0001"]
 
     metastatic_maf = TCGAMutationBuilder(
         tmp_path, mapping, sample_type="Metastatic"

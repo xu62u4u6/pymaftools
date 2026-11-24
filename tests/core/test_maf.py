@@ -700,3 +700,77 @@ def test_counts_by_functional_group_and_tmb_prefix_compat():
     assert list(prefixed.columns) == [f"tmb_{col}" for col in FUNCTIONAL_ORDER]
     assert prefixed.loc["S1", "tmb_Missense"] == 1
     assert prefixed.loc["S1", "tmb_Truncating"] == 1
+
+
+def test_de_novo_start_maps_to_five_prime_utr_not_coding():
+    maf = MAF(
+        {
+            "Hugo_Symbol": ["TP53", "KRAS"],
+            "Chromosome": ["chr17", "chr12"],
+            "Start_Position": [10, 20],
+            "End_Position": [10, 20],
+            "Reference_Allele": ["C", "G"],
+            "Tumor_Seq_Allele1": ["C", "G"],
+            "Tumor_Seq_Allele2": ["T", "A"],
+            "Variant_Classification": [
+                "De_novo_Start_InFrame",
+                "De_novo_Start_OutOfFrame",
+            ],
+            "sample_ID": ["S1", "S1"],
+        }
+    )
+    normalized = maf.normalize_variant_classifications()
+    assert normalized["Variant_Classification"].tolist() == ["5'UTR", "5'UTR"]
+    assert len(normalized.filter_maf(MAF.nonsynonymous_types)) == 0
+    assert normalized.counts_by_functional_group.loc["S1", "Truncating"] == 0
+
+
+def test_filter_events_ignores_vep_population_af_when_tumor_counts_present():
+    maf = MAF(
+        {
+            "Hugo_Symbol": ["TP53", "KRAS"],
+            "Chromosome": ["chr17", "chr12"],
+            "Start_Position": [1, 2],
+            "End_Position": [1, 2],
+            "Reference_Allele": ["C", "G"],
+            "Tumor_Seq_Allele1": ["C", "G"],
+            "Tumor_Seq_Allele2": ["T", "A"],
+            "Variant_Classification": ["Missense_Mutation", "Missense_Mutation"],
+            "AF": [float("nan"), float("nan")],  # VEP 1000G population AF
+            "t_alt_count": [20, 1],
+            "t_depth": [100, 100],
+            "sample_ID": ["S1", "S1"],
+        }
+    )
+    kept = maf.filter_events(min_vaf=0.05)
+    assert kept["Hugo_Symbol"].tolist() == ["TP53"]
+
+
+def test_sliced_maf_does_not_resurrect_dropped_manifest_samples():
+    from pymaftools.core.SampleManifest import SampleManifest
+
+    maf = MAF(
+        {
+            "Hugo_Symbol": ["TP53", "TP53", "KRAS"],
+            "Chromosome": ["chr17", "chr17", "chr12"],
+            "Start_Position": [1, 1, 2],
+            "End_Position": [1, 1, 2],
+            "Reference_Allele": ["C", "C", "G"],
+            "Tumor_Seq_Allele1": ["C", "C", "G"],
+            "Tumor_Seq_Allele2": ["T", "T", "A"],
+            "Variant_Classification": ["Missense_Mutation"] * 3,
+            "sample_ID": ["A", "C", "B"],
+        }
+    )
+    maf.sample_manifest = SampleManifest(
+        pd.DataFrame(
+            {"patient_id": ["P1", "P2", "P3", "P4"], "eligible": [True] * 4},
+            index=pd.Index(["A", "B", "C", "D"], name="sample_ID"),
+        )
+    )
+
+    sub = maf[maf["sample_ID"].isin(["A", "B"])]
+    with pytest.warns(UserWarning, match="sliced subsets never resurrect"):
+        gene_table = sub.to_gene_table()
+    assert list(gene_table.columns) == ["A", "B"]
+    assert gene_table.calculate_feature_frequency()["TP53"] == pytest.approx(0.5)

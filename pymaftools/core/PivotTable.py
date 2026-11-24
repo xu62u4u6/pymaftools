@@ -1513,7 +1513,7 @@ class PivotTable(pd.DataFrame):
     def add_mutation_density(
         self,
         col: str = "mutation_density_per_kb",
-        size_col: str = "exon_size",
+        size_col: str | None = None,
         metric: str = "cds_length",
         observation_mask=None,
         force_download: bool = False,
@@ -1529,9 +1529,12 @@ class PivotTable(pd.DataFrame):
         ----------
         col : str, default "mutation_density_per_kb"
             ``feature_metadata`` column to write the density values into.
-        size_col : str, default "exon_size"
-            ``feature_metadata`` column holding gene length in bp. Populated
-            via :meth:`add_exon_size` if not already present.
+        size_col : str or None, default None
+            ``feature_metadata`` column holding gene length in bp. Defaults to
+            ``metric`` (e.g. ``"cds_length"`` or ``"transcript_length"``) so
+            calling :meth:`add_exon_size` with ``"transcript_length"`` never
+            silently overrides a ``metric="cds_length"`` density calculation.
+            Populated via :meth:`add_exon_size` if not already present.
         metric : str, default "cds_length"
             Size metric passed to :meth:`add_exon_size` when ``size_col`` is
             not already present (``"cds_length"`` or ``"transcript_length"``).
@@ -1544,7 +1547,8 @@ class PivotTable(pd.DataFrame):
         -------
         PivotTable
             A copy with ``feature_metadata[col]`` populated (``NaN`` for genes
-            with missing or non-positive size).
+            with missing or non-positive size) and provenance recorded in
+            ``table.attrs["mutation_density"]``.
         """
         from . import pivot_frequency
 

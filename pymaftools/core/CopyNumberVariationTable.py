@@ -93,11 +93,14 @@ class CopyNumberVariationTable(PivotTable):
         - ``'absolute_cn'``: non-negative integer copy numbers (e.g. ASCAT3) are
           compared against a neutral copy-number baseline. By default this
           assumes a diploid autosomal baseline (``2``); pass ``ploidy`` (sample
-          column or Series) for non-diploid / whole-genome-doubled tumors
-          (autosomal neutral = ``max(1, round(ploidy))``) and ``sex`` plus
-          chromosome metadata (``chrom_col`` or ``feature_metadata['chromosome']``)
-          for sex-chromosome baselines (male chrX/chrY = ``max(1, round(ploidy/2))``,
-          female chrX = ``max(1, round(ploidy))``, female chrY = ``0``).
+          column, Series, or mapping) for non-diploid / whole-genome-doubled
+          tumors (autosomal neutral = ``max(1, floor(ploidy + 0.5))`` using
+          half-up rounding) and ``sex`` plus chromosome metadata (``chrom_col``
+          or ``feature_metadata['chromosome']``) for sex-chromosome baselines
+          (male chrX/chrY = ``max(1, floor(ploidy / 2 + 0.5))``, female chrX =
+          ``max(1, floor(ploidy + 0.5))``, female chrY = ``0``). Note that
+          pseudoautosomal region (PAR1/PAR2) genes on male chrX/chrY are
+          normally diploid (CN=2) and should be handled separately if present.
           Fractional absolute CN requires an explicit ``threshold``.
         - ``'log2_ratio'``: always requires an explicit ``threshold``.
         - ``None`` (unspecified): ``{-2, -1, 0, 1, 2}`` containing at least one
@@ -268,8 +271,12 @@ class CopyNumberVariationTable(PivotTable):
                     f"ploidy must be positive finite numbers for every sample; "
                     f"invalid sample(s): {bad}."
                 )
-            autosomal_neutral = np.maximum(1, np.rint(ploidy_numeric)).astype(int)
-            haploid_neutral = np.maximum(1, np.rint(ploidy_numeric / 2.0)).astype(int)
+            autosomal_neutral = np.maximum(1, np.floor(ploidy_numeric + 0.5)).astype(
+                int
+            )
+            haploid_neutral = np.maximum(
+                1, np.floor(ploidy_numeric / 2.0 + 0.5)
+            ).astype(int)
         else:
             autosomal_neutral = pd.Series(2, index=self.columns, dtype=int)
             haploid_neutral = pd.Series(1, index=self.columns, dtype=int)
@@ -280,7 +287,7 @@ class CopyNumberVariationTable(PivotTable):
                 )
                 if (
                     meta_ploidy.notna().any()
-                    and (np.rint(meta_ploidy.dropna()) != 2).any()
+                    and (np.floor(meta_ploidy.dropna() + 0.5) != 2).any()
                 ):
                     warnings.warn(
                         "to_binary_table() assumes a diploid autosomal baseline (CN=2), "

@@ -206,6 +206,8 @@ def test_get_exon_size_treats_cached_nan_as_miss_and_warns_unresolved(
 
 
 def test_bundled_gene_sizes_cover_drivers_and_flags_offline(monkeypatch):
+    import pytest
+
     def fail_if_online(genes):
         raise AssertionError(f"Expected offline cache hit, got fetch for {genes}")
 
@@ -215,12 +217,21 @@ def test_bundled_gene_sizes_cover_drivers_and_flags_offline(monkeypatch):
     assert cds.notna().all()
     assert cds["TTN"] > cds["MUC16"] > cds["TP53"] > cds["KRAS"] > 0
 
-    flags = set(geneinfo.load_flags_genes())
-    assert {"TTN", "MUC16", "OBSCN", "SYNE1"}.issubset(flags)
+    # Non-coding gene present in the bundled full cache must NOT hit the network
+    with pytest.warns(UserWarning, match="ZNF73P"):
+        mixed = geneinfo.get_exon_size(["TP53", "ZNF73P"], metric="cds_length")
+    assert mixed["TP53"] == 1236
+    assert pd.isna(mixed["ZNF73P"])
+
+    flags = geneinfo.load_flags_genes()
+    assert len(flags) == 20
+    assert {"TTN", "MUC16", "OBSCN", "SYNE1"}.issubset(set(flags))
     assert "TP53" not in flags
+    assert "KMT2D" not in flags
 
 
 def test_pivot_table_add_mutation_density_and_flags_annotation(monkeypatch):
+    import pytest
     from pymaftools.core.SmallVariationTable import SmallVariationTable
 
     def fail_if_online(genes):
@@ -237,12 +248,24 @@ def test_pivot_table_add_mutation_density_and_flags_annotation(monkeypatch):
         },
         index=["TP53", "KRAS", "TTN", "MUC16"],
     )
-    annotated = table.add_mutation_density(metric="cds_length").add_flags_annotation()
+    # Pre-populating exon_size with transcript_length must NOT silently override
+    # metric='cds_length' in add_mutation_density().
+    annotated = (
+        table.add_exon_size(metric="transcript_length")
+        .add_mutation_density(metric="cds_length")
+        .add_flags_annotation()
+    )
 
     density = annotated.feature_metadata["mutation_density_per_kb"]
-    # TP53 and TTN both have freq=0.5, but TP53 has ~90x shorter CDS -> much higher density
-    assert density["TP53"] > density["TTN"] * 50
-    assert density["KRAS"] > density["MUC16"] * 50
+    assert density["TP53"] == pytest.approx(0.5 / (1236 / 1000.0))
+    assert density["TTN"] == pytest.approx(0.5 / (107976 / 1000.0))
+    assert density["KRAS"] == pytest.approx(0.25 / (570 / 1000.0))
+    assert density["MUC16"] == pytest.approx(0.25 / (43710 / 1000.0))
+    assert annotated.attrs["mutation_density"] == {
+        "col": "mutation_density_per_kb",
+        "size_col": "cds_length",
+        "metric": "cds_length",
+    }
     assert annotated.feature_metadata["is_flag_gene"].to_dict() == {
         "TP53": False,
         "KRAS": False,

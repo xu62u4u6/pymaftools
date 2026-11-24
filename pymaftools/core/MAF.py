@@ -558,9 +558,6 @@ class MAF(pd.DataFrame):
             return pd.to_numeric(frame[explicit_col], errors="coerce")
 
         if kind == "vaf":
-            for col in ("VAF", "t_vaf", "AF", "Tumor_VAF"):
-                if col in frame.columns:
-                    return pd.to_numeric(frame[col], errors="coerce")
             if {"t_alt_count", "t_depth"}.issubset(frame.columns):
                 alt = pd.to_numeric(frame["t_alt_count"], errors="coerce")
                 depth = pd.to_numeric(frame["t_depth"], errors="coerce")
@@ -570,10 +567,15 @@ class MAF(pd.DataFrame):
                 ref = pd.to_numeric(frame["t_ref_count"], errors="coerce")
                 total = alt + ref
                 return alt / total.where(total > 0)
+            for col in ("VAF", "t_vaf", "Tumor_VAF", "tumor_f"):
+                if col in frame.columns:
+                    return pd.to_numeric(frame[col], errors="coerce")
             raise ValueError(
-                "Cannot compute VAF: no 'VAF'/'t_vaf'/'AF' column or "
-                "('t_alt_count', 't_depth'/'t_ref_count') columns found. Pass "
-                f"vaf_col=... explicitly; available columns: {list(frame.columns)}."
+                "Cannot compute VAF: no ('t_alt_count', 't_depth'/'t_ref_count') "
+                "or explicit tumor VAF ('VAF'/'t_vaf'/'Tumor_VAF'/'tumor_f') "
+                "columns found (generic 'AF' is ignored because VEP uses it for "
+                "population allele frequency). Pass vaf_col=... explicitly; "
+                f"available columns: {list(frame.columns)}."
             )
 
         if kind == "depth":
@@ -944,7 +946,20 @@ class MAF(pd.DataFrame):
             and samples is None
             and self.sample_manifest is not None
         ):
-            sample_manifest = self.sample_manifest
+            event_samples = pd.Index(self["sample_ID"].dropna().unique())
+            omitted = self.sample_manifest.eligible_samples.difference(event_samples)
+            if not omitted.empty:
+                warnings.warn(
+                    f"MAF has an attached sample_manifest with {len(omitted)} "
+                    f"eligible sample(s) absent from current events (examples: "
+                    f"{omitted[:3].tolist()}); to_gene_table() does not "
+                    "implicitly apply it so sliced subsets never resurrect "
+                    "excluded samples as wild-type. Pass "
+                    "sample_manifest=maf.sample_manifest to retain zero-mutation "
+                    "samples for the full cohort, or pass a subsetted manifest.",
+                    UserWarning,
+                    stacklevel=2,
+                )
         sample_universe = None
         if samples is not None:
             sample_universe = pd.Index(pd.unique(pd.Index(list(samples))))
@@ -1159,7 +1174,20 @@ class MAF(pd.DataFrame):
             Pivot table indexed by individual mutations.
         """
         if sample_manifest is None and self.sample_manifest is not None:
-            sample_manifest = self.sample_manifest
+            event_samples = pd.Index(self["sample_ID"].dropna().unique())
+            omitted = self.sample_manifest.eligible_samples.difference(event_samples)
+            if not omitted.empty:
+                warnings.warn(
+                    f"MAF has an attached sample_manifest with {len(omitted)} "
+                    f"eligible sample(s) absent from current events (examples: "
+                    f"{omitted[:3].tolist()}); to_mutation_table() does not "
+                    "implicitly apply it so sliced subsets never resurrect "
+                    "excluded samples as wild-type. Pass "
+                    "sample_manifest=maf.sample_manifest to retain zero-mutation "
+                    "samples for the full cohort, or pass a subsetted manifest.",
+                    UserWarning,
+                    stacklevel=2,
+                )
         if sample_manifest is not None:
             from .SampleManifest import SampleManifest
 

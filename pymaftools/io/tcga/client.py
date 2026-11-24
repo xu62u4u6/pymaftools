@@ -385,6 +385,7 @@ class GDCClient:
             )
 
         all_hits: list[dict] = []
+        seen_file_ids: set[str] = set()
         offset = 0
         while True:
             payload = {
@@ -398,11 +399,21 @@ class GDCClient:
             r.raise_for_status()
             data = r.json()["data"]
             hits = data.get("hits") or []
-            all_hits.extend(hits)
-            pagination = data.get("pagination") or {}
-            total = pagination.get("total")
             if not hits:
                 break
+            new_hits = []
+            for hit in hits:
+                fid = hit.get("file_id")
+                if fid is not None:
+                    if fid in seen_file_ids:
+                        continue
+                    seen_file_ids.add(fid)
+                new_hits.append(hit)
+            if not new_hits:
+                break
+            all_hits.extend(new_hits)
+            pagination = data.get("pagination") or {}
+            total = pagination.get("total")
             if total is None:
                 if len(hits) < size:
                     break

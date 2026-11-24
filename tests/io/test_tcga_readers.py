@@ -400,11 +400,57 @@ class TestReadStarCounts:
 
         mapping = build_uuid_to_case_mapping(mock_manifest)
         assert mapping == {"uuid-2": "TCGA-AA-0001"}
+        posted_payload = mock_post.call_args.kwargs["json"]
+        assert "associated_entities" in posted_payload["expand"]
 
         normal_mapping = build_uuid_to_case_mapping(
             mock_manifest, sample_type="Solid Tissue Normal"
         )
         assert normal_mapping == {"uuid-1": "TCGA-AA-0001"}
+
+        # Tumor-normal paired somatic MAF hit (both 01A and 10A in cases.samples & associated_entities)
+        paired_resp = MagicMock()
+        paired_resp.raise_for_status = MagicMock()
+        paired_resp.json.return_value = {
+            "data": {
+                "hits": [
+                    {
+                        "file_id": "uuid-1",
+                        "cases": [
+                            {
+                                "submitter_id": "TCGA-AA-0001",
+                                "samples": [
+                                    {
+                                        "submitter_id": "TCGA-AA-0001-10A",
+                                        "sample_id": "blood-norm",
+                                        "sample_type": "Blood Derived Normal",
+                                    },
+                                    {
+                                        "submitter_id": "TCGA-AA-0001-01A",
+                                        "sample_id": "tum-sample",
+                                        "sample_type": "Primary Tumor",
+                                    },
+                                ],
+                            }
+                        ],
+                        "associated_entities": [
+                            {
+                                "entity_type": "aliquot",
+                                "entity_submitter_id": "TCGA-AA-0001-10A-01D-0000-01",
+                                "entity_id": "norm-aliquot",
+                            },
+                            {
+                                "entity_type": "aliquot",
+                                "entity_submitter_id": "TCGA-AA-0001-01A-01D-0000-01",
+                                "entity_id": "tum-aliquot",
+                            },
+                        ],
+                    }
+                ]
+            }
+        }
+        mock_post.return_value = paired_resp
+        assert build_uuid_to_case_mapping(mock_manifest) == {"uuid-1": "TCGA-AA-0001"}
 
     @patch("pymaftools.io.tcga_readers.build_uuid_to_case_mapping")
     def test_legacy_reader_emits_deprecation_warning(

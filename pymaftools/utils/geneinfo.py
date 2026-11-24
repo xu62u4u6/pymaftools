@@ -489,7 +489,12 @@ def get_exon_size(
     metric: str = "transcript_length",
     force_download: bool = False,
 ) -> pd.Series:
-    """Return the exon size (canonical-transcript length, in bp) per gene.
+    """Return the representative transcript/CDS size (in bp) per gene.
+
+    The bundled Ensembl BioMart cache (GRCh38 primary assembly) selects each
+    gene's longest coding transcript (longest ``cds_length``, breaking ties by
+    ``transcript_length``) and falls back to the longest transcript for
+    non-coding genes.
 
     Parameters
     ----------
@@ -505,15 +510,17 @@ def get_exon_size(
     -------
     pd.Series
         Indexed by the input symbols (order preserved), values are the size in
-        base pairs; genes absent from Ensembl (or lacking the requested metric,
-        e.g. non-coding genes for ``cds_length``) are ``NaN``.
+        base pairs; genes absent from Ensembl (or non-coding genes when
+        ``metric="cds_length"``) are ``NaN``.
 
     Notes
     -----
     Uses the bundled ``ensembl_gene_sizes.tsv`` cache when present; any
-    requested genes missing from it—or whose cached value for ``metric`` is
-    ``NaN``—are queried from Ensembl (a small filtered query, not the
-    genome-wide dump), so a partial cache never silently yields ``NaN``.
+    requested symbols absent from it—or all requested symbols when a legacy
+    cache lacks any non-null values for ``metric``—are queried from Ensembl
+    (a small filtered query, not the genome-wide dump). Non-coding genes
+    already present in a populated cache with ``cds_length=NaN`` are treated as
+    known non-coding genes and do not trigger network requests.
     """
     import warnings
 
@@ -524,10 +531,16 @@ def get_exon_size(
     genes = list(genes)
     if _GENE_SIZE_CACHE.exists() and not force_download:
         sizes = pd.read_csv(_GENE_SIZE_CACHE, sep="\t")
-        # Treat genes with missing/NaN values for the requested metric as cache
-        # misses so a cache populated without cds_length triggers a fetch.
-        valid_cached = set(sizes.dropna(subset=["hugo_symbol", metric])["hugo_symbol"])
-        missing = [g for g in genes if g not in valid_cached]
+        metric_populated = metric in sizes.columns and sizes[metric].notna().any()
+        if metric_populated:
+            # Symbol present with NaN cds_length in a populated cache is a known
+            # non-coding gene; only fetch symbols missing from the cache.
+            cached_symbols = set(sizes["hugo_symbol"].dropna())
+        else:
+            # Legacy partial cache (e.g. REST fallback without cds_length):
+            # treat all requested genes as misses for this metric.
+            cached_symbols = set()
+        missing = [g for g in genes if g not in cached_symbols]
         if missing:
             fetched = _fetch_gene_sizes(missing)
             sizes = pd.concat([sizes, fetched], ignore_index=True)
