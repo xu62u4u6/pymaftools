@@ -209,12 +209,22 @@ class TestPivotTableBasics:
         cnv = CopyNumberVariationTable(
             {"s1": [0, 2]}, index=["g1", "g2"], value_scale="absolute_cn"
         )
+        import warnings
+
         cnv_db = tmp_path / "cnv.db"
-        with (
-            pytest.warns(DeprecationWarning, match="to_h5"),
-            pytest.warns(UserWarning, match="value_scale.*to_h5"),
-        ):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
             cnv.to_sqlite(str(cnv_db))
+        assert any(
+            issubclass(w.category, DeprecationWarning) and "to_h5" in str(w.message)
+            for w in caught
+        )
+        assert any(
+            issubclass(w.category, UserWarning)
+            and "value_scale" in str(w.message)
+            and "to_h5" in str(w.message)
+            for w in caught
+        )
     
     def test_subset_functionality(self, sample_pivot_table):
         """Test subset method"""

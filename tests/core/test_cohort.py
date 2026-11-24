@@ -175,12 +175,22 @@ class TestCohortPersistence:
         cohort = Cohort("iss004")
         cohort.add_table(snv_masked, "quoted'snv")
 
+        import warnings
+
         db_path = tmp_path / "cohort.db"
-        with (
-            pytest.warns(DeprecationWarning, match="to_h5"),
-            pytest.warns(UserWarning, match="observation_mask.*to_h5"),
-        ):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
             cohort.to_sqlite(str(db_path))
+        assert any(
+            issubclass(w.category, DeprecationWarning) and "to_h5" in str(w.message)
+            for w in caught
+        )
+        assert any(
+            issubclass(w.category, UserWarning)
+            and "observation_mask" in str(w.message)
+            and "to_h5" in str(w.message)
+            for w in caught
+        )
 
         with pytest.warns(DeprecationWarning, match="read_h5"):
             loaded = Cohort.read_sqlite(str(db_path))
