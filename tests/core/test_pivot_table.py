@@ -163,9 +163,6 @@ class TestPivotTableBasics:
                     "obj_num": pd.Series(
                         [2.0, 0, 1], index=["g1", "g2", "g3"], dtype=object
                     ),
-                    "obj_mixed": pd.Series(
-                        [0.0, "x", 2.0], index=["g1", "g2", "g3"], dtype=object
-                    ),
                 },
                 index=["g1", "g2", "g3"],
             )
@@ -182,7 +179,40 @@ class TestPivotTableBasics:
         assert restored_mixed.dtypes["pure_bool"] == bool
         assert pd.DataFrame(restored_mixed)["pure_bool"].tolist() == [False, True, False]
         assert pd.DataFrame(restored_mixed)["obj_num"].tolist() == [2.0, 0.0, 1.0]
-        assert restored_mixed.loc["g1", "obj_mixed"] is not False
+
+        # Object columns mixing numbers with strings or booleans cannot round-trip
+        # through SQLite without silently coercing 0.0 -> "0.0"; fail loud and
+        # point to to_h5(), which preserves exact Python types.
+        for bad_col_name, bad_values in [
+            ("obj_mixed", [0.0, "x", 2.0]),
+            ("num_bool", [0.0, False, 1.0]),
+        ]:
+            bad_table = PivotTable(
+                pd.DataFrame(
+                    {bad_col_name: pd.Series(bad_values, index=["g1", "g2", "g3"], dtype=object)},
+                    index=["g1", "g2", "g3"],
+                )
+            )
+            bad_db = tmp_path / f"{bad_col_name}.db"
+            with pytest.warns(DeprecationWarning, match="to_h5"):
+                with pytest.raises(ValueError, match=f"{bad_col_name}.*to_h5"):
+                    bad_table.to_sqlite(str(bad_db))
+            assert not bad_db.exists()
+
+        # HDF5 preserves mixed numeric + string object columns without coercion.
+        h5_mixed = PivotTable(
+            pd.DataFrame(
+                {"s1": pd.Series([0.0, "x", 2.0], index=["g1", "g2", "g3"], dtype=object)},
+                index=["g1", "g2", "g3"],
+            )
+        )
+        h5_path = tmp_path / "mixed.h5"
+        h5_mixed.to_h5(h5_path)
+        restored_h5 = PivotTable.read_h5(h5_path)
+        assert restored_h5.loc["g1", "s1"] == 0.0
+        assert isinstance(restored_h5.loc["g1", "s1"], float)
+        assert restored_h5.loc["g2", "s1"] == "x"
+        assert restored_h5.loc["g3", "s1"] == 2.0
 
         # Legacy SQLite files encoding False as "WT" still decode to False.
         from contextlib import closing
