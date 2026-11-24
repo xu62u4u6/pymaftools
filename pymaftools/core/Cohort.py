@@ -322,7 +322,8 @@ class Cohort:
         Returns
         -------
         pd.DataFrame
-            Registry with columns: sql_table_name, cohort_name, table_name, type
+            Registry with columns: sql_table_name, cohort_name, table_name,
+            type, class_name
         """
         records = [
             {
@@ -330,6 +331,7 @@ class Cohort:
                 "cohort_name": self.name,
                 "table_name": table_name,
                 "type": type_name,
+                "class_name": type(self.tables[table_name]).__name__,
             }
             for table_name in self.tables.keys()
             for suffix, type_name in [
@@ -354,12 +356,17 @@ class Cohort:
         db_path : str
             Path to the output SQLite database file.
         """
+        from .pivot_io import encode_sqlite_data, warn_sqlite_unpersisted_attributes
+
         warn_deprecated(
             "Cohort.to_sqlite()",
             "Cohort.to_h5()",
             "HDF5 supports larger datasets.",
         )
         db_path = Path(db_path)
+
+        for table_name, table in self.tables.items():
+            warn_sqlite_unpersisted_attributes(table, table_name=table_name)
 
         registry = self.to_sql_registry()
         with atomic_output_path(db_path) as temporary_path:
@@ -374,7 +381,7 @@ class Cohort:
                         )
 
                         if kind == "data":
-                            table.to_sql(
+                            encode_sqlite_data(table).to_sql(
                                 sql_table_name, conn, if_exists="replace", index=True
                             )
                         elif kind == "sample_metadata":
@@ -408,6 +415,8 @@ class Cohort:
         Cohort
             Loaded Cohort object.
         """
+        from .pivot_io import decode_sqlite_data, quote_sql_identifier
+
         warn_deprecated("Cohort.read_sqlite()", "Cohort.read_h5()")
         with closing(sqlite3.connect(db_path)) as conn:
             registry_df = pd.read_sql("SELECT * FROM registry", conn)
@@ -416,23 +425,45 @@ class Cohort:
             cohort = cls(cohort_name)
 
             for table_name in registry_df["table_name"].unique():
-                data = pd.read_sql(
-                    f"SELECT * FROM '{table_name}'", conn, index_col="feature"
+                table_rows = registry_df[registry_df["table_name"] == table_name]
+                sql_names = dict(zip(table_rows["type"], table_rows["sql_table_name"]))
+                data_sql = quote_sql_identifier(sql_names.get("data", table_name))
+                sample_meta_sql = quote_sql_identifier(
+                    sql_names.get("sample_metadata", f"{table_name}__sample_metadata")
                 )
+                feature_meta_sql = quote_sql_identifier(
+                    sql_names.get("feature_metadata", f"{table_name}__feature_metadata")
+                )
+
+                data = pd.read_sql(
+                    f"SELECT * FROM {data_sql}", conn, index_col="feature"
+                )
+                data.columns.name = "sample"
+                data = decode_sqlite_data(data)
+
                 sample_metadata = pd.read_sql(
-                    f"SELECT * FROM '{table_name}__sample_metadata'",
+                    f"SELECT * FROM {sample_meta_sql}",
                     conn,
                     index_col="sample",
                 )
                 feature_metadata = pd.read_sql(
-                    f"SELECT * FROM '{table_name}__feature_metadata'",
+                    f"SELECT * FROM {feature_meta_sql}",
                     conn,
                     index_col="feature",
                 )
 
-                pivot = PivotTable(data)
+                table_cls = PivotTable
+                if "class_name" in table_rows.columns:
+                    raw_class_name = table_rows["class_name"].iloc[0]
+                    if pd.notna(raw_class_name):
+                        table_cls = PivotTable._subclass_registry.get(
+                            str(raw_class_name), PivotTable
+                        )
+
+                pivot = table_cls(data)
                 pivot.sample_metadata = sample_metadata
                 pivot.feature_metadata = feature_metadata
+                pivot._validate_metadata()
 
                 cohort.add_table(pivot, table_name)
         print(f"[Cohort] loaded from {db_path}")

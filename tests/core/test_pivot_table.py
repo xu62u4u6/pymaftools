@@ -131,6 +131,100 @@ class TestPivotTableBasics:
 
         assert len(connections) == 2
         assert all(connection.was_closed for connection in connections)
+
+    def test_sqlite_preserves_numeric_zeros_booleans_and_legacy_wt(self, tmp_path):
+        from pymaftools.core.CopyNumberVariationTable import CopyNumberVariationTable
+
+        # Numeric zeros (int and float) must never be coerced to False.
+        numeric = PivotTable(
+            pd.DataFrame({"s1": [0, 1], "s2": [2.0, 0.0]}, index=["g1", "g2"])
+        )
+        numeric_db = tmp_path / "numeric.db"
+        with pytest.warns(DeprecationWarning, match="to_h5"):
+            numeric.to_sqlite(str(numeric_db))
+        with pytest.warns(DeprecationWarning, match="read_h5"):
+            restored_num = PivotTable.read_sqlite(str(numeric_db))
+        assert restored_num.loc["g1", "s1"] == 0
+        assert not isinstance(restored_num.loc["g1", "s1"], (bool, np.bool_))
+        assert restored_num.loc["g2", "s2"] == pytest.approx(0.0)
+        assert not isinstance(restored_num.loc["g2", "s2"], (bool, np.bool_))
+
+        # Object columns containing numeric values stay numeric/non-False;
+        # true booleans in mixed or bool columns round-trip cleanly.
+        mixed = PivotTable(
+            pd.DataFrame(
+                {
+                    "snv": pd.Series(
+                        [False, "Missense_Mutation", True],
+                        index=["g1", "g2", "g3"],
+                        dtype=object,
+                    ),
+                    "pure_bool": [False, True, False],
+                    "obj_num": pd.Series(
+                        [2.0, 0, 1], index=["g1", "g2", "g3"], dtype=object
+                    ),
+                    "obj_mixed": pd.Series(
+                        [0.0, "x", 2.0], index=["g1", "g2", "g3"], dtype=object
+                    ),
+                },
+                index=["g1", "g2", "g3"],
+            )
+        )
+        mixed_db = tmp_path / "mixed.db"
+        with pytest.warns(DeprecationWarning, match="to_h5"):
+            mixed.to_sqlite(str(mixed_db))
+        with pytest.warns(DeprecationWarning, match="read_h5"):
+            restored_mixed = PivotTable.read_sqlite(str(mixed_db))
+
+        assert restored_mixed.loc["g1", "snv"] is False
+        assert restored_mixed.loc["g2", "snv"] == "Missense_Mutation"
+        assert restored_mixed.loc["g3", "snv"] is True
+        assert restored_mixed.dtypes["pure_bool"] == bool
+        assert pd.DataFrame(restored_mixed)["pure_bool"].tolist() == [False, True, False]
+        assert pd.DataFrame(restored_mixed)["obj_num"].tolist() == [2.0, 0.0, 1.0]
+        assert restored_mixed.loc["g1", "obj_mixed"] is not False
+
+        # Legacy SQLite files encoding False as "WT" still decode to False.
+        from contextlib import closing
+
+        legacy_db = tmp_path / "legacy.db"
+        with closing(sqlite3.connect(str(legacy_db))) as conn:
+            with conn:
+                pd.DataFrame(
+                    {"s1": ["WT", "Missense_Mutation"]},
+                    index=pd.Index(["g1", "g2"], name="feature"),
+                ).to_sql("data", conn, index=True)
+                pd.DataFrame(index=pd.Index(["s1"], name="sample")).to_sql(
+                    "sample_metadata", conn, index=True
+                )
+                pd.DataFrame(index=pd.Index(["g1", "g2"], name="feature")).to_sql(
+                    "feature_metadata", conn, index=True
+                )
+        with pytest.warns(DeprecationWarning, match="read_h5"):
+            legacy_table = PivotTable.read_sqlite(str(legacy_db))
+        assert legacy_table.loc["g1", "s1"] is False
+        assert legacy_table.loc["g2", "s1"] == "Missense_Mutation"
+
+        # Warn loudly if unpersisted attributes (like value_scale) are attached.
+        cnv = CopyNumberVariationTable(
+            {"s1": [0, 2]}, index=["g1", "g2"], value_scale="absolute_cn"
+        )
+        import warnings
+
+        cnv_db = tmp_path / "cnv.db"
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            cnv.to_sqlite(str(cnv_db))
+        assert any(
+            issubclass(w.category, DeprecationWarning) and "to_h5" in str(w.message)
+            for w in caught
+        )
+        assert any(
+            issubclass(w.category, UserWarning)
+            and "value_scale" in str(w.message)
+            and "to_h5" in str(w.message)
+            for w in caught
+        )
     
     def test_subset_functionality(self, sample_pivot_table):
         """Test subset method"""
