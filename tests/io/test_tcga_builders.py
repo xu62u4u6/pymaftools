@@ -565,3 +565,66 @@ def test_legacy_read_star_counts_tpm_reads_qc_from_raw_counts(tmp_path, monkeypa
 
     assert table.loc["ENSG000001", "TCGA-01-0001"] == pytest.approx(33.3)
     assert table.sample_metadata.loc["TCGA-01-0001", "N_unmapped"] == 250
+
+
+def test_mutation_builder_respects_sample_type_and_keeps_zero_mutation_samples(
+    tmp_path,
+):
+    import gzip
+
+    header = (
+        "Hugo_Symbol\tChromosome\tStart_Position\tEnd_Position\t"
+        "Reference_Allele\tTumor_Seq_Allele1\tTumor_Seq_Allele2\t"
+        "Variant_Classification\tTumor_Sample_Barcode\n"
+    )
+    mutated_path = tmp_path / "case1_tumor.wxs.aliquot_ensemble_masked.maf.gz"
+    with gzip.open(mutated_path, "wt", encoding="utf-8") as fh:
+        fh.write(
+            header
+            + "TP53\tchr17\t7675088\t7675088\tC\tC\tT\tMissense_Mutation\tTCGA-01-0001-01A\n"
+        )
+    empty_path = tmp_path / "case2_tumor.wxs.aliquot_ensemble_masked.maf.gz"
+    with gzip.open(empty_path, "wt", encoding="utf-8") as fh:
+        fh.write(header)
+    metastatic_path = tmp_path / "case3_met.wxs.aliquot_ensemble_masked.maf.gz"
+    with gzip.open(metastatic_path, "wt", encoding="utf-8") as fh:
+        fh.write(
+            header
+            + "KRAS\tchr12\t25245350\t25245350\tC\tC\tA\tMissense_Mutation\tTCGA-01-0003-06A\n"
+        )
+
+    mapping = pd.DataFrame(
+        {
+            "filename": [
+                mutated_path.name,
+                empty_path.name,
+                metastatic_path.name,
+            ],
+            "case_id": ["TCGA-01-0001", "TCGA-01-0002", "TCGA-01-0003"],
+            "sample_id": [
+                "TCGA-01-0001-01A",
+                "TCGA-01-0002-01A",
+                "TCGA-01-0003-06A",
+            ],
+            "sample_type": ["Primary Tumor", "Primary Tumor", "Metastatic"],
+        },
+        index=pd.Index(["f1", "f2", "f3"], name="file_id"),
+    )
+
+    primary_maf = TCGAMutationBuilder(
+        tmp_path, mapping, sample_type="Primary Tumor"
+    ).build()
+    assert primary_maf.sample_manifest is not None
+    assert primary_maf.sample_manifest.eligible_samples.tolist() == [
+        "TCGA-01-0001",
+        "TCGA-01-0002",
+    ]
+    gene_table = primary_maf.to_gene_table()
+    assert list(gene_table.columns) == ["TCGA-01-0001", "TCGA-01-0002"]
+    assert gene_table.calculate_feature_frequency()["TP53"] == pytest.approx(0.5)
+
+    metastatic_maf = TCGAMutationBuilder(
+        tmp_path, mapping, sample_type="Metastatic"
+    ).build()
+    assert metastatic_maf.sample_manifest.eligible_samples.tolist() == ["TCGA-01-0003"]
+    assert metastatic_maf["Hugo_Symbol"].tolist() == ["KRAS"]

@@ -184,3 +184,88 @@ def test_cnv_to_binary_table_gistic_discrete_log2_ratio_and_ambiguous_none():
     binary_signed = signed_gistic.to_binary_table()
     assert binary_signed.loc["CDKN2A"].tolist() == [True, True]
     assert binary_signed.loc["MYC"].tolist() == [False, True]
+
+
+def test_cnv_absolute_cn_ploidy_wgd_and_sex_chromosomes():
+    # #61: WGD tetraploid tumors and male/female chrX/chrY baselines.
+    cnv = CopyNumberVariationTable(
+        {
+            "male_diploid": [2, 1, 1, 0],
+            "female_diploid": [2, 2, 0, 1],
+            "male_wgd": [4, 2, 2, 6],
+        },
+        index=["TP53", "DMD", "SRY", "MYC"],
+        value_scale="absolute_cn",
+    )
+    cnv.feature_metadata["Chromosome"] = ["chr17", "chrX", "chrY", "chr8"]
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        binary = cnv.to_binary_table(
+            ploidy={"male_diploid": 2.0, "female_diploid": 2.0, "male_wgd": 4.0},
+            sex={
+                "male_diploid": "male",
+                "female_diploid": "female",
+                "male_wgd": "M",
+            },
+        )
+    assert not [w for w in caught if issubclass(w.category, UserWarning)]
+
+    # Autosomal TP53: 2 in diploid and 4 in WGD are both copy-neutral (False).
+    assert binary.loc["TP53"].tolist() == [False, False, False]
+    # chrX DMD: neutral is 1 (male diploid), 2 (female diploid), 2 (male WGD).
+    assert binary.loc["DMD"].tolist() == [False, False, False]
+    # chrY SRY: neutral is 1 (male diploid), 0 (female diploid), 2 (male WGD).
+    assert binary.loc["SRY"].tolist() == [False, False, False]
+    # Autosomal MYC: 0 (loss), 1 (loss), 6 (gain in WGD) are all altered (True).
+    assert binary.loc["MYC"].tolist() == [True, True, True]
+
+    # Mutations on chrX/chrY/WGD are still flagged when deviating from baseline.
+    altered = cnv.copy()
+    altered.loc["DMD", "male_diploid"] = 0  # chrX hemizygous deletion
+    altered.loc["DMD", "female_diploid"] = 1  # chrX heterozygous loss
+    altered.loc["SRY", "female_diploid"] = 1  # unexpected chrY copy in female
+    altered.loc["TP53", "male_wgd"] = 2  # relative loss in tetraploid tumor
+    binary_altered = altered.to_binary_table(
+        ploidy={"male_diploid": 2.0, "female_diploid": 2.0, "male_wgd": 4.0},
+        sex={
+            "male_diploid": "male",
+            "female_diploid": "female",
+            "male_wgd": "male",
+        },
+    )
+    assert binary_altered.loc["DMD", "male_diploid"]
+    assert binary_altered.loc["DMD", "female_diploid"]
+    assert binary_altered.loc["SRY", "female_diploid"]
+    assert binary_altered.loc["TP53", "male_wgd"]
+
+
+def test_cnv_absolute_cn_warns_without_ploidy_or_sex_and_validates_inputs():
+    cnv = CopyNumberVariationTable(
+        {"S1": [4, 4, 4, 2], "S2": [2, 2, 1, 1]},
+        index=["TP53", "EGFR", "DMD", "SRY"],
+        value_scale="absolute_cn",
+    )
+    cnv.feature_metadata["Chromosome"] = ["17", "7", "X", "Y"]
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        cnv.to_binary_table()
+    messages = [str(w.message) for w in caught if issubclass(w.category, UserWarning)]
+    assert any("ploidy" in msg for msg in messages)
+    assert any("sex-chromosome" in msg for msg in messages)
+
+    with pytest.raises(ValueError, match="ploidy must be positive"):
+        cnv.to_binary_table(ploidy={"S1": 0, "S2": 2})
+
+    with pytest.raises(ValueError, match="missing for sample"):
+        cnv.to_binary_table(ploidy={"S1": 2})
+
+    with pytest.raises(ValueError, match="Unrecognized sex value"):
+        cnv.to_binary_table(sex={"S1": "unknown", "S2": "male"})
+
+    no_chrom = CopyNumberVariationTable(
+        {"S1": [2], "S2": [2]}, index=["TP53"], value_scale="absolute_cn"
+    )
+    with pytest.raises(ValueError, match="chrom_col"):
+        no_chrom.to_binary_table(sex={"S1": "male", "S2": "female"})

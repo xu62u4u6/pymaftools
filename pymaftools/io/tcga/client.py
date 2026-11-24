@@ -45,6 +45,7 @@ DATA_TYPE_CONFIGS = {
     },
     "mutation": {
         "data_type": "Masked Somatic Mutation",
+        "workflow_type": "Aliquot Ensemble Somatic Variant Merging and Masking",
         "label": "Somatic Mutation (MAF)",
     },
     "cnv_seg": {
@@ -60,6 +61,7 @@ DATA_TYPE_CONFIGS = {
     "methylation": {
         "data_type": "Methylation Beta Value",
         "workflow_type": "SeSAMe Methylation Beta Estimation",
+        "platform": "Illumina Human Methylation 450",
         "label": "DNA Methylation (SeSAMe)",
     },
 }
@@ -147,12 +149,18 @@ def _tcga_entity_ids(aliquot_id: str) -> dict[str, str | None]:
 
 
 def _extract_biospecimen_metadata(hit: dict) -> dict[str, object]:
-    """Resolve the exact tumor aliquot associated with one GDC file.
+    """Resolve the exact aliquot associated with one GDC file.
 
     The GDC ``cases.samples`` tree contains every biospecimen for the case, so
-    selecting its first tumor sample can link a file to the wrong specimen.
+    selecting its first sample can link a file to the wrong specimen.
     ``associated_entities`` is the file-level relationship and is therefore
     the authoritative starting point.
+
+    When a file is associated with a single tumor aliquot (with or without a
+    paired normal aliquot, as in somatic MAF/CNV calls), it resolves as
+    ``"resolved_tumor_aliquot"``. When a file has no tumor aliquots and
+    exactly one normal aliquot (e.g. Solid Tissue Normal expression or
+    methylation), it resolves as ``"resolved_normal_aliquot"``.
     """
     cases = hit.get("cases") or []
     case = cases[0] if len(cases) == 1 else {}
@@ -168,15 +176,23 @@ def _extract_biospecimen_metadata(hit: dict) -> dict[str, object]:
     ]
     normal_entities = [entity for entity in associated if entity not in tumor_entities]
 
-    selected = tumor_entities[0] if len(tumor_entities) == 1 else None
+    selected = None
+    paired_normals = normal_entities
     if len(cases) != 1:
         status = "ambiguous_case"
-    elif len(tumor_entities) == 0:
-        status = "no_tumor_aliquot"
+    elif len(tumor_entities) == 1:
+        selected = tumor_entities[0]
+        status = "resolved_tumor_aliquot"
     elif len(tumor_entities) > 1:
         status = "ambiguous_tumor_aliquot"
+    elif len(normal_entities) == 1:
+        selected = normal_entities[0]
+        paired_normals = []
+        status = "resolved_normal_aliquot"
+    elif len(normal_entities) > 1:
+        status = "ambiguous_normal_aliquot"
     else:
-        status = "resolved_tumor_aliquot"
+        status = "no_aliquot"
 
     aliquot_id = selected.get("entity_submitter_id") if selected else None
     derived = (
@@ -205,7 +221,7 @@ def _extract_biospecimen_metadata(hit: dict) -> dict[str, object]:
         "aliquot_id": aliquot_id,
         "aliquot_uuid": selected.get("entity_id") if selected else None,
         "paired_normal_aliquot_ids": ";".join(
-            sorted(str(entity["entity_submitter_id"]) for entity in normal_entities)
+            sorted(str(entity["entity_submitter_id"]) for entity in paired_normals)
         ),
         "associated_entity_count": len(associated),
         "tumor_aliquot_count": len(tumor_entities),
@@ -325,6 +341,7 @@ class GDCClient:
         case_ids: Optional[list[str]] = None,
         fields: str = "file_id,file_name,file_size,md5sum,state,cases.submitter_id",
         size: int = 5000,
+        platform: Optional[str] = None,
     ) -> list[dict]:
         filters = {
             "op": "and",
@@ -349,6 +366,16 @@ class GDCClient:
                     },
                 }
             )
+        if platform:
+            filters["content"].append(
+                {
+                    "op": "=",
+                    "content": {
+                        "field": "platform",
+                        "value": platform,
+                    },
+                }
+            )
         if case_ids:
             filters["content"].append(
                 {
@@ -356,15 +383,33 @@ class GDCClient:
                     "content": {"field": "cases.submitter_id", "value": case_ids},
                 }
             )
-        payload = {
-            "filters": json.dumps(filters),
-            "fields": fields,
-            "size": size,
-            "format": "json",
-        }
-        r = requests.post(GDC_FILES_ENDPOINT, json=payload, timeout=60)
-        r.raise_for_status()
-        return r.json()["data"]["hits"]
+
+        all_hits: list[dict] = []
+        offset = 0
+        while True:
+            payload = {
+                "filters": json.dumps(filters),
+                "fields": fields,
+                "from": offset,
+                "size": size,
+                "format": "json",
+            }
+            r = requests.post(GDC_FILES_ENDPOINT, json=payload, timeout=60)
+            r.raise_for_status()
+            data = r.json()["data"]
+            hits = data.get("hits") or []
+            all_hits.extend(hits)
+            pagination = data.get("pagination") or {}
+            total = pagination.get("total")
+            if not hits:
+                break
+            if total is None:
+                if len(hits) < size:
+                    break
+            elif len(all_hits) >= total:
+                break
+            offset += len(hits)
+        return all_hits
 
     def _batch_query_metadata(self, file_ids: list[str]) -> list[dict]:
         """Batch query file and exact file-associated biospecimen metadata."""
@@ -462,6 +507,7 @@ class GDCClient:
                     project,
                     config["data_type"],
                     config.get("workflow_type"),
+                    platform=config.get("platform"),
                 )
                 for hit in hits:
                     records.append(
@@ -486,6 +532,7 @@ class GDCClient:
             cfg["data_type"],
             cfg.get("workflow_type"),
             fields="cases.submitter_id",
+            platform=cfg.get("platform"),
         )
         return {c["submitter_id"] for hit in hits for c in hit.get("cases", [])}
 
@@ -557,7 +604,12 @@ class GDCClient:
         for label, dt in self.data_types.items():
             label_hits = []
             for proj in projects:
-                hits = self._query_files(proj, dt["data_type"], dt.get("workflow_type"))
+                hits = self._query_files(
+                    proj,
+                    dt["data_type"],
+                    dt.get("workflow_type"),
+                    platform=dt.get("platform"),
+                )
                 label_hits.extend(hits)
                 print(f"  {proj} / {label}: {len(hits)} files")
 
@@ -696,7 +748,9 @@ class GDCClient:
         candidates = file_mapping.loc[
             file_mapping["sample_type"].eq(sample_type)
             & file_mapping["data_type"].isin(modalities)
-            & file_mapping["mapping_status"].eq("resolved_tumor_aliquot")
+            & file_mapping["mapping_status"].isin(
+                {"resolved_tumor_aliquot", "resolved_normal_aliquot"}
+            )
         ].copy()
         case_ids = sorted(file_mapping["case_id"].dropna().unique())
         selected_rows: list[pd.DataFrame] = []
@@ -1126,7 +1180,11 @@ class GDCClient:
         """Get file metadata for a project + data type, optionally filtered by cases."""
         cfg = self.data_types[data_type_key]
         hits = self._query_files(
-            project_id, cfg["data_type"], cfg.get("workflow_type"), case_ids=case_ids
+            project_id,
+            cfg["data_type"],
+            cfg.get("workflow_type"),
+            case_ids=case_ids,
+            platform=cfg.get("platform"),
         )
         rows = []
         for h in hits:

@@ -577,3 +577,126 @@ def test_read_maf_reports_missing_index_columns(tmp_path):
 
     with pytest.raises(ValueError, match="End_Position"):
         MAF.read_maf(path)
+
+
+def test_funcotator_normalization_and_filter_maf_alias_warning():
+    maf = MAF(
+        {
+            "Hugo_Symbol": ["TP53", "KRAS", "EGFR", "TTN"],
+            "Chromosome": ["chr17", "chr12", "chr7", "chr2"],
+            "Start_Position": [10, 20, 30, 40],
+            "End_Position": [10, 20, 31, 40],
+            "Reference_Allele": ["C", "G", "AT", "G"],
+            "Tumor_Seq_Allele1": ["C", "G", "AT", "G"],
+            "Tumor_Seq_Allele2": ["T", "A", "-", "A"],
+            "Variant_Classification": [
+                "MISSENSE",
+                "NONSENSE",
+                "FRAME_SHIFT_DEL",
+                "SILENT",
+            ],
+            "sample_ID": ["S1", "S1", "S1", "S1"],
+        }
+    )
+
+    with pytest.warns(UserWarning, match="normalize_variant_classifications"):
+        dropped = maf.filter_maf(MAF.nonsynonymous_types)
+    assert len(dropped) == 0
+
+    normalized = maf.normalize_variant_classifications()
+    assert normalized["Variant_Classification"].tolist() == [
+        "Missense_Mutation",
+        "Nonsense_Mutation",
+        "Frame_Shift_Del",
+        "Silent",
+    ]
+    kept = normalized.filter_maf(MAF.nonsynonymous_types)
+    assert kept["Hugo_Symbol"].tolist() == ["TP53", "KRAS", "EGFR"]
+
+
+def test_filter_events_and_tmb_audit_qc_thresholds():
+    from pymaftools.core.SampleManifest import SampleManifest
+
+    maf = MAF(
+        {
+            "Hugo_Symbol": ["TP53", "KRAS", "EGFR", "BRAF", "PIK3CA"],
+            "Chromosome": ["chr17", "chr12", "chr7", "chr7", "chr3"],
+            "Start_Position": [1, 2, 3, 4, 5],
+            "End_Position": [1, 2, 3, 4, 5],
+            "Reference_Allele": ["C", "G", "A", "T", "G"],
+            "Tumor_Seq_Allele1": ["C", "G", "A", "T", "G"],
+            "Tumor_Seq_Allele2": ["T", "A", "G", "A", "C"],
+            "Variant_Classification": ["Missense_Mutation"] * 5,
+            "FILTER": ["PASS"] * 5,
+            "t_alt_count": [10, 2, 1, 15, 8],
+            "t_depth": [100, 100, 10, 100, 40],
+            "gnomAD_AF": [0.0, 0.0, 0.0, 0.02, float("nan")],
+            "sample_ID": ["S1"] * 5,
+        }
+    )
+
+    filtered = maf.filter_events(min_vaf=0.05, min_depth=20, max_gnomad_af=0.001)
+    # TP53 (VAF=0.10, depth=100, gnomAD=0) and PIK3CA (VAF=0.20, depth=40, gnomAD=NaN) pass
+    assert filtered["Hugo_Symbol"].tolist() == ["TP53", "PIK3CA"]
+
+    manifest = SampleManifest(
+        pd.DataFrame(
+            {"patient_id": ["P1"], "eligible": [True], "callable_mb": [2.0]},
+            index=pd.Index(["S1"], name="sample_ID"),
+        )
+    )
+    audit = maf.calculate_tmb_audit(
+        manifest,
+        min_vaf=0.05,
+        min_depth=20,
+        max_gnomad_af=0.001,
+    )
+    assert audit.summary.loc["S1", "mutation_count"] == 2
+    assert audit.summary.loc["S1", "TMB"] == pytest.approx(1.0)
+    reasons = dict(
+        zip(audit.events["Hugo_Symbol"], audit.events["exclusion_reason"])
+    )
+    assert pd.isna(reasons["TP53"])
+    assert pd.isna(reasons["PIK3CA"])
+    assert reasons["KRAS"] == "low_vaf"
+    assert reasons["EGFR"] == "low_depth"
+    assert reasons["BRAF"] == "population_af"
+    assert audit.provenance.parameters["min_vaf"] == 0.05
+    assert audit.provenance.parameters["min_depth"] == 20
+    assert audit.provenance.parameters["max_gnomad_af"] == 0.001
+
+
+def test_counts_by_functional_group_and_tmb_prefix_compat():
+    from pymaftools.core.variant_groups import FUNCTIONAL_ORDER
+
+    maf = MAF(
+        {
+            "Hugo_Symbol": ["TP53", "KRAS", "EGFR", "TTN"],
+            "Chromosome": ["chr17", "chr12", "chr7", "chr2"],
+            "Start_Position": [1, 2, 3, 4],
+            "End_Position": [1, 2, 3, 4],
+            "Reference_Allele": ["C", "G", "A", "T"],
+            "Tumor_Seq_Allele1": ["C", "G", "A", "T"],
+            "Tumor_Seq_Allele2": ["T", "A", "G", "C"],
+            "Variant_Classification": [
+                "Missense_Mutation",
+                "Nonsense_Mutation",
+                "Silent",
+                "Missense_Mutation",
+            ],
+            "sample_ID": ["S1", "S1", "S1", "S2"],
+        }
+    )
+
+    counts = maf.counts_by_functional_group
+    assert list(counts.columns) == list(FUNCTIONAL_ORDER)
+    assert counts.loc["S1", "Missense"] == 1
+    assert counts.loc["S1", "Truncating"] == 1
+    assert counts.loc["S1", "Silent"] == 1
+    assert counts.loc["S2", "Missense"] == 1
+    assert counts.loc["S2", "Truncating"] == 0
+
+    prefixed = maf.tmb_by_functional_group
+    assert list(prefixed.columns) == [f"tmb_{col}" for col in FUNCTIONAL_ORDER]
+    assert prefixed.loc["S1", "tmb_Missense"] == 1
+    assert prefixed.loc["S1", "tmb_Truncating"] == 1

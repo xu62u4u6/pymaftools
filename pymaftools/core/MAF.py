@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import gzip
+import json
 import os
 import warnings
 from collections.abc import Iterable
+from functools import lru_cache
+from importlib.resources import files
 from typing import TYPE_CHECKING, Any, Literal
 
 import pandas as pd
@@ -18,6 +21,17 @@ if TYPE_CHECKING:
     from ..plot.MafPlot import MafPlot
     from .SampleManifest import SampleManifest
     from .TMBAudit import TMBAudit
+
+
+@lru_cache(maxsize=1)
+def _load_variant_classification_aliases() -> dict[str, str]:
+    """Load non-GDC -> GDC Variant_Classification aliases from bundled JSON."""
+    payload = json.loads(
+        (
+            files("pymaftools") / "data" / "variant_classification_aliases.json"
+        ).read_text(encoding="utf-8")
+    )
+    return dict(payload.get("aliases", {}))
 
 
 def _composite_index(frame: pd.DataFrame, columns: list[str]) -> pd.Index:
@@ -59,7 +73,7 @@ class MAF(pd.DataFrame):
     # Preserve builder-attached per-sample provenance as pandas propagates a
     # MAF through filtering and concatenation.  Raw MAFs are not PivotTables,
     # so this remains private until conversion to a gene-level table.
-    _metadata = ["_sample_metadata", "_ingest_report"]
+    _metadata = ["_sample_metadata", "_ingest_report", "_sample_manifest"]
 
     index_col = [
         "Hugo_Symbol",
@@ -433,6 +447,63 @@ class MAF(pd.DataFrame):
 
         return MafPlot(self)
 
+    @property
+    def sample_manifest(self) -> "SampleManifest | None":
+        """Optional sample universe attached by builders (e.g. ``TCGAMutationBuilder``)."""
+        return getattr(self, "_sample_manifest", None)
+
+    @sample_manifest.setter
+    def sample_manifest(self, value: "SampleManifest | None") -> None:
+        if value is not None:
+            from .SampleManifest import SampleManifest
+
+            if not isinstance(value, SampleManifest):
+                raise TypeError("sample_manifest must be a SampleManifest or None.")
+        self._sample_manifest = value
+
+    def normalize_variant_classifications(
+        self,
+        *,
+        aliases: dict[str, str] | None = None,
+        preserve_original_col: str | None = None,
+    ) -> MAF:
+        """Map non-GDC ``Variant_Classification`` aliases (e.g. Funcotator) to GDC labels.
+
+        Uses the bundled ``pymaftools/data/variant_classification_aliases.json``
+        table by default (mapping e.g. ``Start_Codon_SNP`` ->
+        ``Translation_Start_Site``, ``De_novo_Start_InFrame`` ->
+        ``In_Frame_Ins``), optionally merged with custom ``aliases``.
+
+        Parameters
+        ----------
+        aliases : dict of str to str, optional
+            Extra or overriding ``{source_label: canonical_label}`` mappings.
+        preserve_original_col : str, optional
+            If provided, copy the unmapped ``Variant_Classification`` values
+            into this column before normalizing.
+
+        Returns
+        -------
+        MAF
+            A copy with normalized ``Variant_Classification`` labels.
+        """
+        if "Variant_Classification" not in self.columns:
+            raise ValueError(
+                "MAF is missing required 'Variant_Classification' column; "
+                f"available columns: {list(self.columns)}."
+            )
+        mapping = _load_variant_classification_aliases()
+        if aliases:
+            mapping = {**mapping, **aliases}
+
+        normalized = self.copy()
+        if preserve_original_col is not None:
+            normalized[preserve_original_col] = normalized["Variant_Classification"]
+        normalized["Variant_Classification"] = normalized[
+            "Variant_Classification"
+        ].replace(mapping)
+        return normalized
+
     def filter_maf(self, mutation_types: list[str]) -> MAF:
         """
         Filter rows by variant classification.
@@ -447,7 +518,137 @@ class MAF(pd.DataFrame):
         MAF
             Filtered MAF containing only the specified mutation types.
         """
-        return self[self.Variant_Classification.isin(mutation_types)]
+        vc = self["Variant_Classification"]
+        keep_mask = vc.isin(mutation_types)
+        dropped_vc = vc[~keep_mask].dropna().astype(str)
+        if not dropped_vc.empty:
+            alias_map = _load_variant_classification_aliases()
+            target_set = set(mutation_types)
+            dropped_aliases = sorted(
+                label
+                for label in dropped_vc.unique()
+                if alias_map.get(label) in target_set
+            )
+            if dropped_aliases:
+                n_dropped = int(dropped_vc.isin(dropped_aliases).sum())
+                warnings.warn(
+                    f"filter_maf() dropped {n_dropped} event(s) with non-GDC "
+                    f"Variant_Classification alias(es) {dropped_aliases} that map "
+                    "to requested canonical classes. Call "
+                    "maf.normalize_variant_classifications() before filter_maf() "
+                    "to retain them.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+        return self[keep_mask]
+
+    @staticmethod
+    def _resolve_qc_series(
+        frame: pd.DataFrame,
+        kind: Literal["vaf", "depth", "gnomad"],
+        explicit_col: str | None = None,
+    ) -> pd.Series:
+        """Resolve a numeric VAF, depth, or population-AF Series from a MAF frame."""
+        if explicit_col is not None:
+            if explicit_col not in frame.columns:
+                raise ValueError(
+                    f"MAF is missing requested {kind} column {explicit_col!r}; "
+                    f"available columns: {list(frame.columns)}."
+                )
+            return pd.to_numeric(frame[explicit_col], errors="coerce")
+
+        if kind == "vaf":
+            for col in ("VAF", "t_vaf", "AF", "Tumor_VAF"):
+                if col in frame.columns:
+                    return pd.to_numeric(frame[col], errors="coerce")
+            if {"t_alt_count", "t_depth"}.issubset(frame.columns):
+                alt = pd.to_numeric(frame["t_alt_count"], errors="coerce")
+                depth = pd.to_numeric(frame["t_depth"], errors="coerce")
+                return alt / depth.where(depth > 0)
+            if {"t_alt_count", "t_ref_count"}.issubset(frame.columns):
+                alt = pd.to_numeric(frame["t_alt_count"], errors="coerce")
+                ref = pd.to_numeric(frame["t_ref_count"], errors="coerce")
+                total = alt + ref
+                return alt / total.where(total > 0)
+            raise ValueError(
+                "Cannot compute VAF: no 'VAF'/'t_vaf'/'AF' column or "
+                "('t_alt_count', 't_depth'/'t_ref_count') columns found. Pass "
+                f"vaf_col=... explicitly; available columns: {list(frame.columns)}."
+            )
+
+        if kind == "depth":
+            for col in ("t_depth", "DP", "depth", "Tumor_Depth"):
+                if col in frame.columns:
+                    return pd.to_numeric(frame[col], errors="coerce")
+            if {"t_alt_count", "t_ref_count"}.issubset(frame.columns):
+                alt = pd.to_numeric(frame["t_alt_count"], errors="coerce")
+                ref = pd.to_numeric(frame["t_ref_count"], errors="coerce")
+                return alt + ref
+            raise ValueError(
+                "Cannot determine read depth: no 't_depth'/'DP'/'depth' column or "
+                "('t_alt_count', 't_ref_count') columns found. Pass depth_col=... "
+                f"explicitly; available columns: {list(frame.columns)}."
+            )
+
+        for col in ("gnomAD_AF", "gnomADg_AF", "gnomADe_AF", "MAX_AF", "ExAC_AF"):
+            if col in frame.columns:
+                return pd.to_numeric(frame[col], errors="coerce")
+        raise ValueError(
+            "Cannot filter by population allele frequency: no 'gnomAD_AF'/"
+            "'gnomADg_AF'/'gnomADe_AF'/'MAX_AF'/'ExAC_AF' column found. Pass "
+            f"gnomad_col=... explicitly; available columns: {list(frame.columns)}."
+        )
+
+    def filter_events(
+        self,
+        *,
+        min_vaf: float | None = None,
+        min_depth: float | None = None,
+        max_gnomad_af: float | None = None,
+        vaf_col: str | None = None,
+        depth_col: str | None = None,
+        gnomad_col: str | None = None,
+    ) -> MAF:
+        """Filter MAF events by VAF, sequencing depth, and population allele frequency.
+
+        Missing values fail ``min_vaf`` and ``min_depth`` thresholds, whereas
+        missing/absent gnomAD allele frequencies are treated as unseen (``0.0``)
+        and retained under ``max_gnomad_af``.
+
+        Parameters
+        ----------
+        min_vaf : float, optional
+            Minimum tumor variant allele fraction (inclusive, in ``[0, 1]``).
+        min_depth : float, optional
+            Minimum tumor read depth (inclusive, ``>= 0``).
+        max_gnomad_af : float, optional
+            Maximum allowed population allele frequency (inclusive, in ``[0, 1]``).
+        vaf_col, depth_col, gnomad_col : str, optional
+            Explicit column names overriding standard MAF column auto-detection.
+
+        Returns
+        -------
+        MAF
+            Filtered MAF retaining events that pass every requested QC criterion.
+        """
+        if min_vaf is not None and not (0.0 <= min_vaf <= 1.0):
+            raise ValueError(f"min_vaf must be in [0, 1], got {min_vaf}.")
+        if min_depth is not None and min_depth < 0:
+            raise ValueError(f"min_depth must be >= 0, got {min_depth}.")
+        if max_gnomad_af is not None and not (0.0 <= max_gnomad_af <= 1.0):
+            raise ValueError(f"max_gnomad_af must be in [0, 1], got {max_gnomad_af}.")
+
+        keep = pd.Series(True, index=self.index)
+        if min_vaf is not None:
+            vaf = self._resolve_qc_series(self, "vaf", vaf_col)
+            keep &= vaf.notna() & (vaf >= min_vaf)
+        if min_depth is not None:
+            depth = self._resolve_qc_series(self, "depth", depth_col)
+            keep &= depth.notna() & (depth >= min_depth)
+        if max_gnomad_af is not None:
+            pop_af = self._resolve_qc_series(self, "gnomad", gnomad_col)
+            keep &= pop_af.isna() | (pop_af <= max_gnomad_af)
+        return self[keep]
 
     def calculate_tmb_audit(
         self,
@@ -461,6 +662,12 @@ class MAF(pd.DataFrame):
         variant_classifications: list[str] | None = None,
         genome_build_col: str | None = None,
         expected_genome_build: str | None = None,
+        min_vaf: float | None = None,
+        min_depth: float | None = None,
+        max_gnomad_af: float | None = None,
+        vaf_col: str | None = None,
+        depth_col: str | None = None,
+        gnomad_col: str | None = None,
         deduplicate: bool = True,
     ) -> "TMBAudit":
         """Calculate TMB with an event-level inclusion and exclusion ledger.
@@ -485,6 +692,13 @@ class MAF(pd.DataFrame):
             pass :attr:`MAF.nonsynonymous_types` explicitly.
         genome_build_col, expected_genome_build : str, optional
             Both must be provided together to enforce a single build.
+        min_vaf, min_depth, max_gnomad_af : float, optional
+            Optional event-level QC thresholds recorded in the ledger under
+            exclusion reasons ``"low_vaf"``, ``"low_depth"``, and
+            ``"population_af"``.
+        vaf_col, depth_col, gnomad_col : str, optional
+            Explicit column names for ``min_vaf``, ``min_depth``, and
+            ``max_gnomad_af``.
         deduplicate : bool, default True
             After all event filters, exclude repeated
             sample/coordinate/allele events from the numerator.
@@ -501,6 +715,12 @@ class MAF(pd.DataFrame):
             raise TypeError("sample_manifest must be a SampleManifest.")
         if "sample_ID" not in self.columns:
             raise ValueError("MAF must contain sample_ID for auditable TMB.")
+        if min_vaf is not None and not (0.0 <= min_vaf <= 1.0):
+            raise ValueError(f"min_vaf must be in [0, 1], got {min_vaf}.")
+        if min_depth is not None and min_depth < 0:
+            raise ValueError(f"min_depth must be >= 0, got {min_depth}.")
+        if max_gnomad_af is not None and not (0.0 <= max_gnomad_af <= 1.0):
+            raise ValueError(f"max_gnomad_af must be in [0, 1], got {max_gnomad_af}.")
 
         sample_manifest.validate_event_samples(self["sample_ID"])
         manifest = sample_manifest.eligible_frame()
@@ -558,6 +778,15 @@ class MAF(pd.DataFrame):
                 events[genome_build_col].astype(str) != str(expected_genome_build),
                 "genome_build",
             )
+        if min_vaf is not None:
+            vaf = self._resolve_qc_series(events, "vaf", vaf_col)
+            exclude(vaf.isna() | (vaf < min_vaf), "low_vaf")
+        if min_depth is not None:
+            depth = self._resolve_qc_series(events, "depth", depth_col)
+            exclude(depth.isna() | (depth < min_depth), "low_depth")
+        if max_gnomad_af is not None:
+            pop_af = self._resolve_qc_series(events, "gnomad", gnomad_col)
+            exclude(pop_af.notna() & (pop_af > max_gnomad_af), "population_af")
 
         if deduplicate:
             dedup_columns = ["sample_ID", *self.index_col]
@@ -606,6 +835,12 @@ class MAF(pd.DataFrame):
                 "variant_classifications": variant_classifications,
                 "genome_build_col": genome_build_col,
                 "expected_genome_build": expected_genome_build,
+                "min_vaf": min_vaf,
+                "min_depth": min_depth,
+                "max_gnomad_af": max_gnomad_af,
+                "vaf_col": vaf_col,
+                "depth_col": depth_col,
+                "gnomad_col": gnomad_col,
                 "deduplicate": deduplicate,
             },
             inputs=(
@@ -704,6 +939,12 @@ class MAF(pd.DataFrame):
 
         if sample_manifest is not None and samples is not None:
             raise ValueError("Pass either sample_manifest or samples, not both.")
+        if (
+            sample_manifest is None
+            and samples is None
+            and self.sample_manifest is not None
+        ):
+            sample_manifest = self.sample_manifest
         sample_universe = None
         if samples is not None:
             sample_universe = pd.Index(pd.unique(pd.Index(list(samples))))
@@ -917,6 +1158,8 @@ class MAF(pd.DataFrame):
         SmallVariationTable
             Pivot table indexed by individual mutations.
         """
+        if sample_manifest is None and self.sample_manifest is not None:
+            sample_manifest = self.sample_manifest
         if sample_manifest is not None:
             from .SampleManifest import SampleManifest
 
@@ -1000,19 +1243,16 @@ class MAF(pd.DataFrame):
         """
         return self.groupby(self.sample_ID).size()
 
-    # Prefix for the per-functional-group TMB columns stored in sample_metadata.
+    # Prefix for the per-functional-group mutation-count columns stored in sample_metadata.
     TMB_PREFIX = "tmb_"
 
     @property
-    def tmb_by_functional_group(self) -> pd.DataFrame:
-        """Per-sample mutation counts split by functional group.
+    def counts_by_functional_group(self) -> pd.DataFrame:
+        """Per-sample raw mutation counts split by functional group.
 
         Buckets ``Variant_Classification`` into the six coarse functional groups
-        (``core.variant_groups.FUNCTIONAL_GROUP``) and counts mutations per
-        sample per group. This is the stacked-TMB source that a single ``pivot``
-        cell cannot reconstruct (``to_mutation_table`` keeps only the *first*
-        class per gene x sample), so it is computed here while the raw events
-        are still in hand and cached into ``sample_metadata``.
+        (``core.variant_groups.FUNCTIONAL_GROUP``) and counts raw mutations per
+        sample per group (integer counts, *not* per-Mb TMB).
 
         Note: counts reflect *this MAF's* events. If the MAF was filtered (e.g.
         nonsynonymous-only) before conversion, the breakdown is of that subset.
@@ -1020,13 +1260,36 @@ class MAF(pd.DataFrame):
         Returns
         -------
         pd.DataFrame
-            Indexed by sample ID; columns ``tmb_<group>`` in FUNCTIONAL_ORDER
-            (``tmb_Truncating``, ``tmb_Splice``, ...), integer counts.
+            Indexed by sample ID; columns in ``FUNCTIONAL_ORDER``
+            (``Truncating``, ``Splice``, ``Inframe``, ``Missense``, ``Silent``,
+            ``Other``), integer counts.
         """
         groups = self.Variant_Classification.map(FUNCTIONAL_GROUP).fillna("Other")
-        counts = pd.crosstab(self.sample_ID, groups).reindex(
+        return pd.crosstab(self.sample_ID, groups).reindex(
             columns=FUNCTIONAL_ORDER, fill_value=0
         )
+
+    @property
+    def tmb_by_functional_group(self) -> pd.DataFrame:
+        """Per-sample raw mutation counts split by functional group with ``tmb_`` prefix.
+
+        Returns the same per-sample raw mutation counts as
+        :attr:`counts_by_functional_group` (integer event counts, **not**
+        per-Mb TMB rates), with column names prefixed by :attr:`TMB_PREFIX`
+        (``tmb_Truncating``, ``tmb_Splice``, ...) for ``sample_metadata``
+        storage and backward compatibility.
+
+        For clean functional-group column names without the ``tmb_`` prefix,
+        prefer :attr:`counts_by_functional_group`. For true per-Mb TMB rates
+        normalized by callable territory, use :meth:`calculate_tmb_audit`.
+
+        Returns
+        -------
+        pd.DataFrame
+            Indexed by sample ID; columns ``tmb_<group>`` in
+            ``FUNCTIONAL_ORDER``, integer mutation counts.
+        """
+        counts = self.counts_by_functional_group.copy()
         counts.columns = [f"{self.TMB_PREFIX}{g}" for g in counts.columns]
         return counts
 

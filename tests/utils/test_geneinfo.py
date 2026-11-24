@@ -148,3 +148,104 @@ def test_get_exon_size_invalid_metric_raises():
 
     with pytest.raises(ValueError, match="transcript_length"):
         geneinfo.get_exon_size(["TP53"], metric="bogus")
+
+
+def test_reduce_to_canonical_transcript_prefers_coding_over_longer_noncoding():
+    df = pd.DataFrame(
+        {
+            "hugo_symbol": ["TP53", "TP53", "LINC001"],
+            "ensembl_gene_id": ["ENSG_TP53", "ENSG_TP53", "ENSG_LINC"],
+            "transcript_length": [4000, 2512, 1800],
+            "cds_length": [None, 1182, None],
+        }
+    )
+    out = geneinfo._reduce_to_canonical_transcript(df).set_index("hugo_symbol")
+    assert out.loc["TP53", "cds_length"] == 1182
+    assert out.loc["TP53", "transcript_length"] == 2512
+    assert out.loc["LINC001", "transcript_length"] == 1800
+    assert pd.isna(out.loc["LINC001", "cds_length"])
+
+
+def test_get_exon_size_treats_cached_nan_as_miss_and_warns_unresolved(
+    tmp_path, monkeypatch
+):
+    import pytest
+
+    cache = tmp_path / "partial_sizes.tsv"
+    pd.DataFrame(
+        {
+            "hugo_symbol": ["TP53"],
+            "ensembl_gene_id": ["ENSG00000141510"],
+            "transcript_length": [2512],
+            "cds_length": [float("nan")],
+        }
+    ).to_csv(cache, sep="\t", index=False)
+    monkeypatch.setattr(geneinfo, "_GENE_SIZE_CACHE", cache)
+
+    fetched_calls = []
+
+    def fake_fetch(genes):
+        fetched_calls.append(list(genes))
+        return pd.DataFrame(
+            {
+                "hugo_symbol": ["TP53"],
+                "ensembl_gene_id": ["ENSG00000141510"],
+                "transcript_length": [2512],
+                "cds_length": [1182],
+            }
+        )
+
+    monkeypatch.setattr(geneinfo, "_fetch_gene_sizes", fake_fetch)
+
+    with pytest.warns(UserWarning, match="NOTAGENE"):
+        sizes = geneinfo.get_exon_size(["TP53", "NOTAGENE"], metric="cds_length")
+
+    assert fetched_calls == [["TP53", "NOTAGENE"]]
+    assert sizes["TP53"] == 1182
+    assert pd.isna(sizes["NOTAGENE"])
+
+
+def test_bundled_gene_sizes_cover_drivers_and_flags_offline(monkeypatch):
+    def fail_if_online(genes):
+        raise AssertionError(f"Expected offline cache hit, got fetch for {genes}")
+
+    monkeypatch.setattr(geneinfo, "_fetch_gene_sizes", fail_if_online)
+
+    cds = geneinfo.get_exon_size(["TP53", "KRAS", "TTN", "MUC16"], metric="cds_length")
+    assert cds.notna().all()
+    assert cds["TTN"] > cds["MUC16"] > cds["TP53"] > cds["KRAS"] > 0
+
+    flags = set(geneinfo.load_flags_genes())
+    assert {"TTN", "MUC16", "OBSCN", "SYNE1"}.issubset(flags)
+    assert "TP53" not in flags
+
+
+def test_pivot_table_add_mutation_density_and_flags_annotation(monkeypatch):
+    from pymaftools.core.SmallVariationTable import SmallVariationTable
+
+    def fail_if_online(genes):
+        raise AssertionError(f"Expected offline cache hit, got fetch for {genes}")
+
+    monkeypatch.setattr(geneinfo, "_fetch_gene_sizes", fail_if_online)
+
+    table = SmallVariationTable(
+        {
+            "S1": ["Missense_Mutation", False, "Missense_Mutation", False],
+            "S2": ["Missense_Mutation", "Missense_Mutation", "Missense_Mutation", "Missense_Mutation"],
+            "S3": [False, False, False, False],
+            "S4": [False, False, False, False],
+        },
+        index=["TP53", "KRAS", "TTN", "MUC16"],
+    )
+    annotated = table.add_mutation_density(metric="cds_length").add_flags_annotation()
+
+    density = annotated.feature_metadata["mutation_density_per_kb"]
+    # TP53 and TTN both have freq=0.5, but TP53 has ~90x shorter CDS -> much higher density
+    assert density["TP53"] > density["TTN"] * 50
+    assert density["KRAS"] > density["MUC16"] * 50
+    assert annotated.feature_metadata["is_flag_gene"].to_dict() == {
+        "TP53": False,
+        "KRAS": False,
+        "TTN": True,
+        "MUC16": True,
+    }

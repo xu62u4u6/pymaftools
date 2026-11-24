@@ -552,6 +552,145 @@ class TestGDCClientOffline:
         assert df.loc["TCGA-44-2655", "primary_diagnosis"] == "Adenocarcinoma, NOS"
         assert df.loc["TCGA-44-2655", "smoking_status"] == "Current smoker"
 
+    def test_data_type_configs_pin_mutation_workflow_and_methylation_platform(self):
+        assert (
+            DATA_TYPE_CONFIGS["mutation"]["workflow_type"]
+            == "Aliquot Ensemble Somatic Variant Merging and Masking"
+        )
+        assert (
+            DATA_TYPE_CONFIGS["methylation"]["platform"]
+            == "Illumina Human Methylation 450"
+        )
+
+    def test_extracts_normal_aliquot_and_aligns_solid_tissue_normal(self):
+        normal_hit = {
+            "cases": [
+                {
+                    "submitter_id": "TCGA-44-6147",
+                    "project": {"project_id": "TCGA-LUAD"},
+                    "samples": [
+                        {
+                            "submitter_id": "TCGA-44-6147-11A",
+                            "sample_id": "normal-sample-uuid",
+                            "sample_type": "Solid Tissue Normal",
+                        }
+                    ],
+                }
+            ],
+            "associated_entities": [
+                {
+                    "entity_type": "aliquot",
+                    "entity_submitter_id": "TCGA-44-6147-11A-01R-1755-07",
+                    "entity_id": "normal-aliquot-uuid",
+                }
+            ],
+        }
+        result = _extract_biospecimen_metadata(normal_hit)
+        assert result["mapping_status"] == "resolved_normal_aliquot"
+        assert result["sample_id"] == "TCGA-44-6147-11A"
+        assert result["sample_type"] == "Solid Tissue Normal"
+        assert result["aliquot_id"] == "TCGA-44-6147-11A-01R-1755-07"
+        assert result["associated_entity_count"] == 1
+        assert result["tumor_aliquot_count"] == 0
+
+        ambiguous_normal_hit = {
+            "cases": [{"submitter_id": "TCGA-44-6147", "samples": []}],
+            "associated_entities": [
+                {
+                    "entity_type": "aliquot",
+                    "entity_submitter_id": "TCGA-44-6147-11A-01R-1755-07",
+                    "entity_id": "n1",
+                },
+                {
+                    "entity_type": "aliquot",
+                    "entity_submitter_id": "TCGA-44-6147-11B-01R-1755-07",
+                    "entity_id": "n2",
+                },
+            ],
+        }
+        ambiguous = _extract_biospecimen_metadata(ambiguous_normal_hit)
+        assert ambiguous["mapping_status"] == "ambiguous_normal_aliquot"
+        assert ambiguous["sample_id"] is None
+
+        mapping = pd.DataFrame(
+            [
+                {
+                    "file_id": "norm-e",
+                    "case_id": "C1",
+                    "project": "TCGA-LUAD",
+                    "data_type": "expression",
+                    "sample_id": "C1-11A",
+                    "sample_type": "Solid Tissue Normal",
+                    "mapping_status": "resolved_normal_aliquot",
+                },
+                {
+                    "file_id": "norm-m",
+                    "case_id": "C1",
+                    "project": "TCGA-LUAD",
+                    "data_type": "methylation",
+                    "sample_id": "C1-11A",
+                    "sample_type": "Solid Tissue Normal",
+                    "mapping_status": "resolved_normal_aliquot",
+                },
+                {
+                    "file_id": "tum-e",
+                    "case_id": "C1",
+                    "project": "TCGA-LUAD",
+                    "data_type": "expression",
+                    "sample_id": "C1-01A",
+                    "sample_type": "Primary Tumor",
+                    "mapping_status": "resolved_tumor_aliquot",
+                },
+            ]
+        )
+        selected, report = GDCClient.align_specimens(
+            mapping,
+            ["expression", "methylation"],
+            sample_type="Solid Tissue Normal",
+        )
+        assert selected["file_id"].tolist() == ["norm-e", "norm-m"]
+        assert report.set_index("case_id")["status"].to_dict() == {"C1": "selected"}
+
+    @patch("pymaftools.io.tcga.client.requests.post")
+    def test_query_files_paginates_and_forwards_platform_filter(self, mock_post):
+        page1 = MagicMock()
+        page1.raise_for_status = MagicMock()
+        page1.json.return_value = {
+            "data": {
+                "hits": [{"file_id": "f1"}, {"file_id": "f2"}],
+                "pagination": {"total": 3, "count": 2, "from": 0},
+            }
+        }
+        page2 = MagicMock()
+        page2.raise_for_status = MagicMock()
+        page2.json.return_value = {
+            "data": {
+                "hits": [{"file_id": "f3"}],
+                "pagination": {"total": 3, "count": 1, "from": 2},
+            }
+        }
+        mock_post.side_effect = [page1, page2]
+
+        client = GDCClient()
+        hits = client._query_files(
+            "TCGA-LUAD",
+            "Methylation Beta Value",
+            platform="Illumina Human Methylation 450",
+            size=2,
+        )
+
+        import json
+
+        assert [h["file_id"] for h in hits] == ["f1", "f2", "f3"]
+        assert mock_post.call_count == 2
+        first_payload = mock_post.call_args_list[0].kwargs["json"]
+        second_payload = mock_post.call_args_list[1].kwargs["json"]
+        assert first_payload["from"] == 0
+        assert second_payload["from"] == 2
+        filters_obj = json.loads(first_payload["filters"])
+        filter_fields = [c["content"]["field"] for c in filters_obj["content"]]
+        assert "platform" in filter_fields
+
 
 # ------------------------------------------------------------------ #
 #  Integration tests (online, requires network)

@@ -95,3 +95,54 @@ def add_freq(
     )
     pivot_table.feature_metadata[freq_data.columns] = freq_data
     return pivot_table
+
+
+def add_mutation_density(
+    table,
+    *,
+    col: str = "mutation_density_per_kb",
+    size_col: str = "exon_size",
+    metric: str = "cds_length",
+    observation_mask=None,
+    force_download: bool = False,
+):
+    """Add length-normalized mutation density (mutated-sample frequency per kb)."""
+    table._validate_metadata()
+    _warn_if_manifest_is_incomplete(table)
+
+    pivot_table = table.copy()
+    if size_col not in pivot_table.feature_metadata.columns:
+        pivot_table = pivot_table.add_exon_size(
+            col=size_col,
+            metric=metric,
+            force_download=force_download,
+        )
+
+    effective_mask = (
+        pivot_table.observation_mask if observation_mask is None else observation_mask
+    )
+    freq = _calculate_feature_frequency(pivot_table, observation_mask=effective_mask)
+    sizes = pd.to_numeric(pivot_table.feature_metadata[size_col], errors="coerce")
+    valid_kb = sizes.where(sizes > 0) / 1000.0
+    pivot_table.feature_metadata[col] = (freq / valid_kb).astype(float)
+    return pivot_table
+
+
+def add_flags_annotation(
+    table,
+    *,
+    col: str = "is_flag_gene",
+    flags_genes=None,
+):
+    """Annotate whether each feature belongs to the FLAGS frequently mutated gene list."""
+    from ..utils.geneinfo import load_flags_genes
+
+    table._validate_metadata()
+    flag_set = set(load_flags_genes() if flags_genes is None else flags_genes)
+    pivot_table = table.copy()
+    pivot_table.feature_metadata[col] = pd.Series(
+        pivot_table.index.isin(flag_set),
+        index=pivot_table.index,
+        dtype=bool,
+    )
+    return pivot_table
