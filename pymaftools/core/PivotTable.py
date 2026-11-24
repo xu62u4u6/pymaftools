@@ -1510,6 +1510,88 @@ class PivotTable(pd.DataFrame):
         table.feature_metadata[col] = sizes.reindex(table.index).values
         return table
 
+    def add_mutation_density(
+        self,
+        col: str = "mutation_density_per_kb",
+        size_col: str | None = None,
+        metric: str = "cds_length",
+        observation_mask=None,
+        force_download: bool = False,
+    ) -> "PivotTable":
+        """Add length-normalized mutation density (mutated-sample frequency per kb).
+
+        Normalizes each feature's mutated-sample frequency by its coding or
+        exon length in kilobases (``freq / (size_bp / 1000)``), helping
+        separate compact drivers (e.g. ``TP53``, ``KRAS``) from long
+        passenger genes (e.g. ``TTN``, ``MUC16``).
+
+        Parameters
+        ----------
+        col : str, default "mutation_density_per_kb"
+            ``feature_metadata`` column to write the density values into.
+        size_col : str or None, default None
+            ``feature_metadata`` column holding gene length in bp. Defaults to
+            ``metric`` (e.g. ``"cds_length"`` or ``"transcript_length"``) so
+            calling :meth:`add_exon_size` with ``"transcript_length"`` never
+            silently overrides a ``metric="cds_length"`` density calculation.
+            Populated via :meth:`add_exon_size` if not already present.
+        metric : str, default "cds_length"
+            Size metric passed to :meth:`add_exon_size` when ``size_col`` is
+            not already present (``"cds_length"`` or ``"transcript_length"``).
+        observation_mask : ObservationMask or None, default None
+            Optional observation mask overriding the table's attached mask.
+        force_download : bool, default False
+            Passed to :meth:`add_exon_size` when fetching gene sizes.
+
+        Returns
+        -------
+        PivotTable
+            A copy with ``feature_metadata[col]`` populated (``NaN`` for genes
+            with missing or non-positive size) and provenance recorded in
+            ``table.attrs["mutation_density"]``.
+        """
+        from . import pivot_frequency
+
+        return pivot_frequency.add_mutation_density(
+            self,
+            col=col,
+            size_col=size_col,
+            metric=metric,
+            observation_mask=observation_mask,
+            force_download=force_download,
+        )
+
+    def add_flags_annotation(
+        self,
+        col: str = "is_flag_gene",
+        flags_genes: Optional[List[str]] = None,
+    ) -> "PivotTable":
+        """Annotate whether each feature is in the FLAGS gene list.
+
+        Uses the bundled Shyr et al. (2014) FLAGS (frequently mutated genes in
+        public exomes) list by default, or a custom ``flags_genes`` iterable.
+
+        Parameters
+        ----------
+        col : str, default "is_flag_gene"
+            Boolean ``feature_metadata`` column to write.
+        flags_genes : list of str or None, default None
+            Optional custom list of gene symbols. Defaults to the bundled
+            Shyr et al. (2014) FLAGS list.
+
+        Returns
+        -------
+        PivotTable
+            A copy with boolean ``feature_metadata[col]`` populated.
+        """
+        from . import pivot_frequency
+
+        return pivot_frequency.add_flags_annotation(
+            self,
+            col=col,
+            flags_genes=flags_genes,
+        )
+
     def sort_features(
         self,
         by: str | List[str] = "freq",

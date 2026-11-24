@@ -273,6 +273,8 @@ def symbol_to_ensembl(
     return {s: mapping.get(s) for s in symbols}
 
 
+_PRIMARY_CHROMOSOMES = ",".join([*(str(i) for i in range(1, 23)), "X", "Y", "MT"])
+
 # BioMart REST endpoint. We query it directly (instead of via pybiomart) so we
 # can pass ``redirect=no`` — Ensembl's mirror sites are periodically down and the
 # main site only serves BioMart when the mirror redirect is suppressed.
@@ -280,14 +282,18 @@ _BIOMART_URL = "https://www.ensembl.org/biomart/martservice"
 
 # transcript_is_canonical lives on a different BioMart attribute "page" and
 # cannot be queried alongside the length attributes; we represent each gene by
-# its LONGEST transcript (see _reduce_to_canonical_transcript, which still
-# prefers a canonical flag when one is supplied).
+# its longest coding transcript (falling back to longest transcript for
+# non-coding genes; see _reduce_to_canonical_transcript, which still prefers an
+# explicit canonical flag when one is supplied). Restricting to primary
+# assembly chromosomes avoids alternate-haplotype patch contigs shadowing
+# primary Ensembl gene IDs (e.g. MUC16).
 _GENE_SIZE_QUERY = (
     '<?xml version="1.0" encoding="UTF-8"?>'
     "<!DOCTYPE Query>"
     '<Query virtualSchemaName="default" formatter="TSV" header="0" '
     'uniqueRows="1" count="" datasetConfigVersion="0.6">'
     '<Dataset name="hsapiens_gene_ensembl" interface="default">'
+    f'<Filter name="chromosome_name" value="{_PRIMARY_CHROMOSOMES}"/>'
     '<Attribute name="ensembl_gene_id"/>'
     '<Attribute name="external_gene_name"/>'
     '<Attribute name="transcript_length"/>'
@@ -300,6 +306,24 @@ _SIZE_ATTRS = (
     '<Attribute name="transcript_length"/>'
     '<Attribute name="cds_length"/>'
 )
+
+_FLAGS_GENES_FILE = _DATA_DIR / "flags_genes.json"
+
+
+def load_flags_genes() -> list[str]:
+    """Load the bundled FLAGS (frequently mutated genes in public exomes) list.
+
+    Returns
+    -------
+    list[str]
+        HUGO gene symbols from Shyr et al. (2014) *BMC Medical Genomics*
+        stored in ``pymaftools/data/flags_genes.json``.
+    """
+    import json
+
+    with _FLAGS_GENES_FILE.open("r", encoding="utf-8") as fh:
+        payload = json.load(fh)
+    return list(payload["genes"])
 
 
 def _biomart_query(query_xml: str, retries: int = 4) -> str:
@@ -331,9 +355,10 @@ def load_gene_sizes(force: bool = False) -> pd.DataFrame:
     """Load per-gene transcript sizes, downloading from Ensembl if needed.
 
     Returns the cached table if present, otherwise queries the Ensembl BioMart
-    REST service for transcript/CDS length, reduces to one row per gene (its
-    longest transcript), caches the result to ``data/ensembl_gene_sizes.tsv``
-    and returns it.
+    REST service for transcript/CDS length on primary assembly chromosomes,
+    reduces to one row per gene (preferring coding transcripts with the longest
+    CDS, falling back to longest transcript for non-coding genes), caches the
+    result to ``data/ensembl_gene_sizes.tsv`` and returns it.
 
     Parameters
     ----------
@@ -410,26 +435,53 @@ def _fetch_gene_sizes(genes: list[str]) -> pd.DataFrame:
 def _reduce_to_canonical_transcript(df: pd.DataFrame) -> pd.DataFrame:
     """Collapse a transcript-level BioMart frame to one row per HUGO symbol.
 
-    Prefers the canonical transcript (``is_canonical`` truthy); otherwise falls
-    back to the longest transcript for that gene.
+    Prefers the canonical transcript (``is_canonical`` truthy); otherwise
+    prefers coding transcripts (non-null ``cds_length``) with the longest CDS
+    (breaking ties by ``transcript_length``), falling back to the longest
+    transcript for non-coding genes.
     """
     df = df.dropna(subset=["hugo_symbol", "transcript_length"]).copy()
+    df["hugo_symbol"] = df["hugo_symbol"].astype(str).str.strip()
+    df = df.loc[df["hugo_symbol"].ne("")]
+    df["transcript_length"] = pd.to_numeric(df["transcript_length"], errors="coerce")
+    df = df.dropna(subset=["transcript_length"])
     df["transcript_length"] = df["transcript_length"].astype(int)
+    if "cds_length" in df.columns:
+        df["cds_length"] = pd.to_numeric(df["cds_length"], errors="coerce").astype(
+            "Int64"
+        )
+    else:
+        df["cds_length"] = pd.Series(pd.NA, index=df.index, dtype="Int64")
 
     if "is_canonical" in df:
         canonical_mask = df["is_canonical"].notna() & df["is_canonical"].ne(0)
         canonical = df.loc[canonical_mask]
     else:
         canonical = df.iloc[0:0]
-    # genes without a canonical row fall back to their longest transcript
-    longest = df.sort_values("transcript_length").drop_duplicates(
-        subset=["hugo_symbol"], keep="last"
+
+    # Prefer coding transcripts over retained-intron/non-coding transcripts so
+    # protein-coding genes never lose cds_length to a longer non-coding isoform.
+    ranked = df.assign(
+        _has_cds=df["cds_length"].notna().astype(int),
+        _cds_rank=df["cds_length"].fillna(-1).astype(int),
+    )
+    longest = (
+        ranked.sort_values(
+            ["_has_cds", "_cds_rank", "transcript_length"],
+            kind="mergesort",
+        )
+        .drop_duplicates(subset=["hugo_symbol"], keep="last")
+        .drop(columns=["_has_cds", "_cds_rank"])
     )
     chosen = pd.concat([longest, canonical]).drop_duplicates(
         subset=["hugo_symbol"], keep="last"
     )
     cols = ["hugo_symbol", "ensembl_gene_id", "transcript_length", "cds_length"]
-    return chosen[[c for c in cols if c in chosen.columns]].reset_index(drop=True)
+    return (
+        chosen[[c for c in cols if c in chosen.columns]]
+        .sort_values("hugo_symbol", kind="mergesort")
+        .reset_index(drop=True)
+    )
 
 
 def get_exon_size(
@@ -437,7 +489,12 @@ def get_exon_size(
     metric: str = "transcript_length",
     force_download: bool = False,
 ) -> pd.Series:
-    """Return the exon size (canonical-transcript length, in bp) per gene.
+    """Return the representative transcript/CDS size (in bp) per gene.
+
+    The bundled Ensembl BioMart cache (GRCh38 primary assembly) selects each
+    gene's longest coding transcript (longest ``cds_length``, breaking ties by
+    ``transcript_length``) and falls back to the longest transcript for
+    non-coding genes.
 
     Parameters
     ----------
@@ -453,15 +510,20 @@ def get_exon_size(
     -------
     pd.Series
         Indexed by the input symbols (order preserved), values are the size in
-        base pairs; genes absent from Ensembl are ``NaN``.
+        base pairs; genes absent from Ensembl (or non-coding genes when
+        ``metric="cds_length"``) are ``NaN``.
 
     Notes
     -----
     Uses the bundled ``ensembl_gene_sizes.tsv`` cache when present; any
-    requested genes missing from it are still queried from Ensembl (a small
-    filtered query, not the genome-wide dump), so a partial cache never silently
-    yields NaN and a table's genes can be annotated without a full cache.
+    requested symbols absent from it—or all requested symbols when a legacy
+    cache lacks any non-null values for ``metric``—are queried from Ensembl
+    (a small filtered query, not the genome-wide dump). Non-coding genes
+    already present in a populated cache with ``cds_length=NaN`` are treated as
+    known non-coding genes and do not trigger network requests.
     """
+    import warnings
+
     if metric not in ("transcript_length", "cds_length"):
         raise ValueError(
             f"metric must be 'transcript_length' or 'cds_length', got {metric!r}."
@@ -469,20 +531,37 @@ def get_exon_size(
     genes = list(genes)
     if _GENE_SIZE_CACHE.exists() and not force_download:
         sizes = pd.read_csv(_GENE_SIZE_CACHE, sep="\t")
-        # The bundled cache may be partial (e.g. a fixture-scoped fallback built
-        # while BioMart was down). Fetch any genes it doesn't cover rather than
-        # silently returning NaN for them.
-        missing = [g for g in genes if g not in set(sizes["hugo_symbol"].dropna())]
+        metric_populated = metric in sizes.columns and sizes[metric].notna().any()
+        if metric_populated:
+            # Symbol present with NaN cds_length in a populated cache is a known
+            # non-coding gene; only fetch symbols missing from the cache.
+            cached_symbols = set(sizes["hugo_symbol"].dropna())
+        else:
+            # Legacy partial cache (e.g. REST fallback without cds_length):
+            # treat all requested genes as misses for this metric.
+            cached_symbols = set()
+        missing = [g for g in genes if g not in cached_symbols]
         if missing:
-            sizes = pd.concat([sizes, _fetch_gene_sizes(missing)], ignore_index=True)
+            fetched = _fetch_gene_sizes(missing)
+            sizes = pd.concat([sizes, fetched], ignore_index=True)
     else:
         sizes = _fetch_gene_sizes(genes)
-    mapping = (
-        sizes.dropna(subset=["hugo_symbol"])
-        .drop_duplicates(subset=["hugo_symbol"], keep="first")
-        .set_index("hugo_symbol")[metric]
-    )
-    return pd.Series([mapping.get(g) for g in genes], index=genes, name=metric)
+    valid_rows = sizes.dropna(subset=["hugo_symbol", metric])
+    mapping = valid_rows.drop_duplicates(subset=["hugo_symbol"], keep="last").set_index(
+        "hugo_symbol"
+    )[metric]
+    result = pd.Series([mapping.get(g) for g in genes], index=genes, name=metric)
+    unresolved = [g for g, val in result.items() if pd.isna(val)]
+    if unresolved:
+        examples = unresolved[:5]
+        suffix = " ..." if len(unresolved) > 5 else ""
+        warnings.warn(
+            f"get_exon_size(metric={metric!r}) could not resolve {len(unresolved)} "
+            f"gene(s) (examples: {examples}{suffix}); returning NaN for them.",
+            UserWarning,
+            stacklevel=2,
+        )
+    return result
 
 
 get_ncbi_gene_ID = deprecated_alias(

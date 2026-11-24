@@ -329,8 +329,136 @@ class TestReadStarCounts:
             "uuid-ccc": "TCGA-01-0002",
         }
 
-        table = read_star_counts(mock_star_dir, mock_manifest_for_star)
+        with pytest.raises(ValueError, match="Ambiguous multiple files per case"):
+            read_star_counts(mock_star_dir, mock_manifest_for_star)
+
+        with pytest.warns(UserWarning, match="keeping deterministically first file"):
+            table = read_star_counts(
+                mock_star_dir, mock_manifest_for_star, on_duplicate="first"
+            )
         assert table.shape[1] == 2
+        # Deterministic sort order selects uuid-aaa (100) over uuid-bbb (200)
+        assert table.loc["ENSG00000000003", "TCGA-01-0001"] == 100
+
+    @patch("pymaftools.io.tcga_readers.requests.post")
+    def test_build_uuid_to_case_mapping_excludes_mismatched_sample_type(
+        self, mock_post, mock_manifest
+    ):
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.json.return_value = {
+            "data": {
+                "hits": [
+                    {
+                        "file_id": "uuid-1",
+                        "cases": [
+                            {
+                                "submitter_id": "TCGA-AA-0001",
+                                "samples": [
+                                    {
+                                        "submitter_id": "TCGA-AA-0001-11A",
+                                        "sample_id": "norm-sample",
+                                        "sample_type": "Solid Tissue Normal",
+                                    }
+                                ],
+                            }
+                        ],
+                        "associated_entities": [
+                            {
+                                "entity_type": "aliquot",
+                                "entity_submitter_id": "TCGA-AA-0001-11A-01R-0000-01",
+                                "entity_id": "norm-aliquot",
+                            }
+                        ],
+                    },
+                    {
+                        "file_id": "uuid-2",
+                        "cases": [
+                            {
+                                "submitter_id": "TCGA-AA-0001",
+                                "samples": [
+                                    {
+                                        "submitter_id": "TCGA-AA-0001-01A",
+                                        "sample_id": "tum-sample",
+                                        "sample_type": "Primary Tumor",
+                                    }
+                                ],
+                            }
+                        ],
+                        "associated_entities": [
+                            {
+                                "entity_type": "aliquot",
+                                "entity_submitter_id": "TCGA-AA-0001-01A-01R-0000-01",
+                                "entity_id": "tum-aliquot",
+                            }
+                        ],
+                    },
+                ]
+            }
+        }
+        mock_post.return_value = mock_resp
+
+        mapping = build_uuid_to_case_mapping(mock_manifest)
+        assert mapping == {"uuid-2": "TCGA-AA-0001"}
+        posted_payload = mock_post.call_args.kwargs["json"]
+        assert "associated_entities" in posted_payload["expand"]
+
+        normal_mapping = build_uuid_to_case_mapping(
+            mock_manifest, sample_type="Solid Tissue Normal"
+        )
+        assert normal_mapping == {"uuid-1": "TCGA-AA-0001"}
+
+        # Tumor-normal paired somatic MAF hit (both 01A and 10A in cases.samples & associated_entities)
+        paired_resp = MagicMock()
+        paired_resp.raise_for_status = MagicMock()
+        paired_resp.json.return_value = {
+            "data": {
+                "hits": [
+                    {
+                        "file_id": "uuid-1",
+                        "cases": [
+                            {
+                                "submitter_id": "TCGA-AA-0001",
+                                "samples": [
+                                    {
+                                        "submitter_id": "TCGA-AA-0001-10A",
+                                        "sample_id": "blood-norm",
+                                        "sample_type": "Blood Derived Normal",
+                                    },
+                                    {
+                                        "submitter_id": "TCGA-AA-0001-01A",
+                                        "sample_id": "tum-sample",
+                                        "sample_type": "Primary Tumor",
+                                    },
+                                ],
+                            }
+                        ],
+                        "associated_entities": [
+                            {
+                                "entity_type": "aliquot",
+                                "entity_submitter_id": "TCGA-AA-0001-10A-01D-0000-01",
+                                "entity_id": "norm-aliquot",
+                            },
+                            {
+                                "entity_type": "aliquot",
+                                "entity_submitter_id": "TCGA-AA-0001-01A-01D-0000-01",
+                                "entity_id": "tum-aliquot",
+                            },
+                        ],
+                    }
+                ]
+            }
+        }
+        mock_post.return_value = paired_resp
+        assert build_uuid_to_case_mapping(mock_manifest) == {"uuid-1": "TCGA-AA-0001"}
+
+    @patch("pymaftools.io.tcga_readers.build_uuid_to_case_mapping")
+    def test_legacy_reader_emits_deprecation_warning(
+        self, mock_mapping, mock_star_dir, mock_manifest_for_star
+    ):
+        mock_mapping.return_value = {"uuid-aaa": "TCGA-01-0001"}
+        with pytest.warns(DeprecationWarning, match="TCGAExpressionBuilder"):
+            read_star_counts(mock_star_dir, mock_manifest_for_star)
 
     def test_empty_dir_raises(self, tmp_path, mock_manifest_for_star):
         with pytest.raises(FileNotFoundError, match="No STAR count files found"):

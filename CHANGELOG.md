@@ -49,6 +49,38 @@ producer-aware MAF input, and errors that say how to fix the call.
     p-values therefore change for multi-group cohorts.
   * `run_model_evaluation(..., evaluate_func=None)` now returns
     `all_metrics_df=None` instead of raising on empty concatenation.
+* **TCGA I/O & legacy reader defaults:**
+  * Legacy readers in `pymaftools.io.tcga_readers` (`read_star_counts`,
+    `read_seg_files`, `read_gene_level_cnv`, `read_maf_files`,
+    `read_methylation_betas`, `read_clinical`) now emit `DeprecationWarning`
+    pointing to `pymaftools.io.tcga.TCGA*Builder`, filter to
+    `sample_type="Primary Tumor"` by default, and raise `ValueError` on
+    ambiguous duplicate files per case (`on_duplicate="raise"`; pass
+    `on_duplicate="first"` to keep the lexicographically first file with a
+    warning).
+  * `GDCClient` (`DATA_TYPE_CONFIGS`) now pins
+    `workflow_type="Aliquot Ensemble Somatic Variant Merging and Masking"` for
+    `mutation` and `platform="Illumina Human Methylation 450"` for
+    `methylation` (override `data_types` for 27K or EPIC cohorts), paginates
+    past 5,000 GDC hits, and updates `_extract_biospecimen_metadata()`
+    `mapping_status` (`"no_tumor_aliquot"` → `"no_aliquot"`, adding
+    `"resolved_normal_aliquot"` and `"ambiguous_normal_aliquot"`).
+  * `TCGAMutationBuilder.read_and_merge(tumor_only=...)` now defaults to `None`
+    so it respects `self.sample_type` instead of hard-coding tumor-only; pass
+    `maf.to_gene_table(sample_manifest=maf.sample_manifest)` to retain
+    zero-mutation sequenced samples.
+* **Plot validity defaults:**
+  * `plot_rainfall()` now defaults to `color_by="substitution"` (canonical
+    SBS-6 SNV colors, requiring `Variant_Type`, `Reference_Allele`, and
+    `Tumor_Seq_Allele2`, and restricting to SNVs); pass
+    `color_by="classification"` for the previous variant-classification mode.
+  * `OncoPlot` simple-layout left tracks now render `left[0]` outermost to
+    match grouped layouts.
+  * `ExpressionTable.plot.volcano(label_col=...)` now raises `ValueError` when
+    the requested `label_col` is absent instead of silently skipping labels.
+  * `SignatureTable.read_signature()` adds an explicit `orientation` parameter
+    (defaulting to `"samples_by_signatures"` for SigProfiler compatibility;
+    pass `orientation="signatures_by_samples"` for pre-transposed tables).
 
 ### 🏷️ Name unification and deprecations
 

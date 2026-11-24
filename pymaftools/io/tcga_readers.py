@@ -11,6 +11,7 @@ extracted into shared helpers at the top of this module.
 from __future__ import annotations
 
 import json
+import warnings
 from pathlib import Path
 from typing import Literal
 
@@ -18,11 +19,13 @@ import numpy as np
 import pandas as pd
 import requests
 
+from .._deprecation import warn_deprecated
 from ..core.CopyNumberVariationTable import CopyNumberVariationTable
 from ..core.ExpressionTable import ExpressionTable
 from ..core.MAF import MAF
 from ..core.maf_io import read_leading_comments
 from ..core.PivotTable import PivotTable
+from .tcga.client import _extract_biospecimen_metadata
 from .tcga.clinical import _deduplicate_clinical
 
 
@@ -45,22 +48,30 @@ def read_manifest(manifest_path: str | Path) -> pd.DataFrame:
     pd.DataFrame
         Manifest with ``file_id`` as index.
     """
-    df = pd.read_csv(manifest_path, sep="	", dtype=str)
+    df = pd.read_csv(manifest_path, sep="\t", dtype=str)
     df = df.rename(columns={"id": "file_id"})
     return df.set_index("file_id")
 
 
-def build_uuid_to_case_mapping(manifest_path: str | Path) -> dict[str, str]:
+def build_uuid_to_case_mapping(
+    manifest_path: str | Path,
+    *,
+    sample_type: str | None = "Primary Tumor",
+) -> dict[str, str]:
     """
     Build a mapping from file_uuid to case_id using a manifest + GDC API.
 
-    The manifest only has file_id and filename. We query GDC to get the
-    associated case submitter_id for each file.
+    Queries GDC for both case and file-associated specimen metadata so files
+    with a mismatched ``sample_type`` (e.g. Solid Tissue Normal when reading a
+    Primary Tumor cohort) are excluded instead of silently mixed together.
 
     Parameters
     ----------
     manifest_path : str or Path
         Path to manifest TSV.
+    sample_type : str or None, default "Primary Tumor"
+        Expected GDC sample type to keep when specimen metadata is returned by
+        GDC. Pass ``None`` to disable sample-type filtering.
 
     Returns
     -------
@@ -80,7 +91,11 @@ def build_uuid_to_case_mapping(manifest_path: str | Path) -> dict[str, str]:
         }
         payload = {
             "filters": json.dumps(filters),
-            "fields": "file_id,cases.submitter_id",
+            "fields": (
+                "file_id,cases.submitter_id,cases.samples.submitter_id,"
+                "cases.samples.sample_type,associated_entities"
+            ),
+            "expand": "associated_entities,cases.samples",
             "size": len(batch),
             "format": "json",
         }
@@ -90,9 +105,24 @@ def build_uuid_to_case_mapping(manifest_path: str | Path) -> dict[str, str]:
         response.raise_for_status()
         for hit in response.json()["data"]["hits"]:
             file_id = hit["file_id"]
-            case_id = hit["cases"][0]["submitter_id"] if hit.get("cases") else None
-            if case_id:
-                mapping[file_id] = case_id
+            cases = hit.get("cases") or []
+            case_id = cases[0]["submitter_id"] if cases else None
+            if not case_id:
+                continue
+            if sample_type is not None:
+                if hit.get("associated_entities"):
+                    meta = _extract_biospecimen_metadata(hit)
+                    if meta.get("sample_type") != sample_type:
+                        continue
+                elif cases and cases[0].get("samples"):
+                    sample_types = {
+                        s.get("sample_type")
+                        for s in cases[0]["samples"]
+                        if s.get("sample_type")
+                    }
+                    if sample_types and sample_types != {sample_type}:
+                        continue
+            mapping[file_id] = case_id
 
     return mapping
 
@@ -118,11 +148,11 @@ def scan_gdc_directory(data_dir: str | Path, pattern: str) -> dict[str, Path]:
     Returns
     -------
     dict
-        ``{file_uuid: file_path}``.
+        ``{file_uuid: file_path}`` in deterministic path-sorted order.
     """
     data_dir = Path(data_dir)
     result = {}
-    for filepath in data_dir.rglob(pattern):
+    for filepath in sorted(data_dir.rglob(pattern), key=lambda p: str(p)):
         parent = filepath.parent.name
         if parent == "logs":
             continue
@@ -139,13 +169,15 @@ def resolve_files_to_cases(
     data_dir: str | Path,
     pattern: str,
     manifest_path: str | Path,
+    *,
+    sample_type: str | None = "Primary Tumor",
+    on_duplicate: Literal["raise", "first"] = "raise",
 ) -> list[tuple[str, Path]]:
     """
     Scan directory and resolve each file to its case_id.
 
     Combines ``scan_gdc_directory`` and ``build_uuid_to_case_mapping``
-    to produce a list of (case_id, file_path) pairs. Handles deduplication
-    when multiple files map to the same case (keeps the first found).
+    to produce a deterministic list of ``(case_id, file_path)`` pairs.
 
     Parameters
     ----------
@@ -155,17 +187,27 @@ def resolve_files_to_cases(
         Glob pattern for data files.
     manifest_path : str or Path
         Path to manifest TSV.
+    sample_type : str or None, default "Primary Tumor"
+        Expected GDC sample type to retain.
+    on_duplicate : {"raise", "first"}, default "raise"
+        How to handle cases with multiple matched files. ``"raise"`` fails loud
+        instead of silently picking an arbitrary aliquot; ``"first"`` keeps the
+        lexicographically first file with a ``UserWarning``.
 
     Returns
     -------
     list of (case_id, Path)
-        Deduplicated list sorted by case_id.
+        List sorted by case_id.
     """
+    if on_duplicate not in {"raise", "first"}:
+        raise ValueError(
+            f"on_duplicate must be 'raise' or 'first', got {on_duplicate!r}."
+        )
     key_to_path = scan_gdc_directory(data_dir, pattern)
     if not key_to_path:
         return []
 
-    uuid_to_case = build_uuid_to_case_mapping(manifest_path)
+    uuid_to_case = build_uuid_to_case_mapping(manifest_path, sample_type=sample_type)
 
     # Build filename→uuid lookup for flat layout
     manifest = read_manifest(manifest_path)
@@ -173,16 +215,46 @@ def resolve_files_to_cases(
     for file_id, row in manifest.iterrows():
         fname_to_uuid[row["filename"]] = file_id
 
-    seen_cases = {}
-    for key, filepath in key_to_path.items():
+    by_case: dict[str, list[Path]] = {}
+    for key, filepath in sorted(
+        key_to_path.items(), key=lambda item: (str(item[1]), item[0])
+    ):
         # key is either a UUID (gdc-client layout) or filename (flat layout)
         uuid = key if key in uuid_to_case else fname_to_uuid.get(key)
         if uuid:
             case_id = uuid_to_case.get(uuid)
-            if case_id and case_id not in seen_cases:
-                seen_cases[case_id] = filepath
+            if case_id:
+                by_case.setdefault(case_id, []).append(filepath)
 
-    return sorted(seen_cases.items(), key=lambda x: x[0])
+    resolved: list[tuple[str, Path]] = []
+    ambiguous: dict[str, list[Path]] = {}
+    for case_id in sorted(by_case):
+        paths = by_case[case_id]
+        if len(paths) > 1:
+            if on_duplicate == "raise":
+                ambiguous[case_id] = paths
+                continue
+            warnings.warn(
+                f"Case {case_id!r} matched {len(paths)} files; keeping "
+                f"deterministically first file {paths[0].name!r}. Prefer "
+                "pymaftools.io.tcga specimen-aligned builders.",
+                UserWarning,
+                stacklevel=2,
+            )
+        resolved.append((case_id, paths[0]))
+
+    if ambiguous:
+        preview = ", ".join(
+            f"{cid} ({len(paths)} files)" for cid, paths in list(ambiguous.items())[:5]
+        )
+        raise ValueError(
+            f"Ambiguous multiple files per case for {len(ambiguous)} case(s): "
+            f"{preview}. Use specimen-aligned builders in pymaftools.io.tcga "
+            "(GDCClient.align_specimens + TCGA*Builder), or pass "
+            "on_duplicate='first' to keep the lexicographically first file."
+        )
+
+    return resolved
 
 
 # ------------------------------------------------------------------ #
@@ -202,15 +274,30 @@ def read_star_counts(
         "fpkm_uq_unstranded",
     ] = "unstranded",
     strip_gene_version: bool = True,
+    *,
+    sample_type: str | None = "Primary Tumor",
+    on_duplicate: Literal["raise", "first"] = "raise",
 ) -> ExpressionTable:
     """
     Read STAR gene counts from a gdc-client download directory.
 
+    .. deprecated:: 0.6.0
+        Use :class:`pymaftools.io.tcga.TCGAExpressionBuilder` instead.
+
     Scans for ``*.augmented_star_gene_counts.tsv`` files, merges them
     into a gene × sample ExpressionTable.
     """
+    warn_deprecated(
+        "pymaftools.io.tcga_readers.read_star_counts()",
+        "pymaftools.io.tcga.TCGAExpressionBuilder",
+        stacklevel=2,
+    )
     case_files = resolve_files_to_cases(
-        data_dir, "*.augmented_star_gene_counts.tsv", manifest_path
+        data_dir,
+        "*.augmented_star_gene_counts.tsv",
+        manifest_path,
+        sample_type=sample_type,
+        on_duplicate=on_duplicate,
     )
 
     if not case_files:
@@ -285,10 +372,26 @@ def read_star_counts(
 def read_seg_files(
     data_dir: str | Path,
     manifest_path: str | Path,
+    *,
+    sample_type: str | None = "Primary Tumor",
+    on_duplicate: Literal["raise", "first"] = "raise",
 ) -> pd.DataFrame:
-    """Read TCGA masked segment files into a long-format DataFrame."""
+    """Read TCGA masked segment files into a long-format DataFrame.
+
+    .. deprecated:: 0.6.0
+        Use :class:`pymaftools.io.tcga.TCGACNVSegmentBuilder` instead.
+    """
+    warn_deprecated(
+        "pymaftools.io.tcga_readers.read_seg_files()",
+        "pymaftools.io.tcga.TCGACNVSegmentBuilder",
+        stacklevel=2,
+    )
     case_files = resolve_files_to_cases(
-        data_dir, "*.nocnv_grch38.seg.v2.txt", manifest_path
+        data_dir,
+        "*.nocnv_grch38.seg.v2.txt",
+        manifest_path,
+        sample_type=sample_type,
+        on_duplicate=on_duplicate,
     )
 
     if not case_files:
@@ -420,9 +523,15 @@ def read_gene_level_cnv(
     manifest_path: str | Path,
     value_column: str = "copy_number",
     strip_gene_version: bool = True,
+    *,
+    sample_type: str | None = "Primary Tumor",
+    on_duplicate: Literal["raise", "first"] = "raise",
 ) -> CopyNumberVariationTable:
     """
     Read TCGA gene-level copy number files into a gene × sample CopyNumberVariationTable.
+
+    .. deprecated:: 0.6.0
+        Use :class:`pymaftools.io.tcga.TCGACNVGeneBuilder` instead.
 
     Scans for ``*.gene_level_copy_number.v36.tsv`` files produced by the
     ASCAT3 pipeline available on GDC.
@@ -445,13 +554,26 @@ def read_gene_level_cnv(
         Gene × sample matrix with feature_metadata (gene_name, chromosome,
         start, end) and sample_metadata (case_id).
     """
+    warn_deprecated(
+        "pymaftools.io.tcga_readers.read_gene_level_cnv()",
+        "pymaftools.io.tcga.TCGACNVGeneBuilder",
+        stacklevel=2,
+    )
     # Support both ASCAT3 filename variants
     case_files = resolve_files_to_cases(
-        data_dir, "*.gene_level_copy_number.v36.tsv", manifest_path
+        data_dir,
+        "*.gene_level_copy_number.v36.tsv",
+        manifest_path,
+        sample_type=sample_type,
+        on_duplicate=on_duplicate,
     )
     if not case_files:
         case_files = resolve_files_to_cases(
-            data_dir, "*.gene_level.copy_number_variation.tsv", manifest_path
+            data_dir,
+            "*.gene_level.copy_number_variation.tsv",
+            manifest_path,
+            sample_type=sample_type,
+            on_duplicate=on_duplicate,
         )
 
     if not case_files:
@@ -518,9 +640,27 @@ def read_maf_files(
     data_dir: str | Path,
     manifest_path: str | Path,
     nonsynonymous_only: bool = False,
+    *,
+    sample_type: str | None = "Primary Tumor",
+    on_duplicate: Literal["raise", "first"] = "raise",
 ) -> MAF:
-    """Read TCGA masked MAF files and merge them into a single MAF object."""
-    case_files = resolve_files_to_cases(data_dir, "*.maf.gz", manifest_path)
+    """Read TCGA masked MAF files and merge them into a single MAF object.
+
+    .. deprecated:: 0.6.0
+        Use :class:`pymaftools.io.tcga.TCGAMutationBuilder` instead.
+    """
+    warn_deprecated(
+        "pymaftools.io.tcga_readers.read_maf_files()",
+        "pymaftools.io.tcga.TCGAMutationBuilder",
+        stacklevel=2,
+    )
+    case_files = resolve_files_to_cases(
+        data_dir,
+        "*.maf.gz",
+        manifest_path,
+        sample_type=sample_type,
+        on_duplicate=on_duplicate,
+    )
 
     if not case_files:
         raise FileNotFoundError(
@@ -563,10 +703,26 @@ def read_maf_files(
 def read_methylation_betas(
     data_dir: str | Path,
     manifest_path: str | Path,
+    *,
+    sample_type: str | None = "Primary Tumor",
+    on_duplicate: Literal["raise", "first"] = "raise",
 ) -> PivotTable:
-    """Read TCGA methylation beta files into a probe × sample PivotTable."""
+    """Read TCGA methylation beta files into a probe × sample PivotTable.
+
+    .. deprecated:: 0.6.0
+        Use :class:`pymaftools.io.tcga.TCGAMethylationBuilder` instead.
+    """
+    warn_deprecated(
+        "pymaftools.io.tcga_readers.read_methylation_betas()",
+        "pymaftools.io.tcga.TCGAMethylationBuilder",
+        stacklevel=2,
+    )
     case_files = resolve_files_to_cases(
-        data_dir, "*.methylation_array.sesame.level3betas.txt", manifest_path
+        data_dir,
+        "*.methylation_array.sesame.level3betas.txt",
+        manifest_path,
+        sample_type=sample_type,
+        on_duplicate=on_duplicate,
     )
 
     if not case_files:
@@ -608,7 +764,16 @@ def read_clinical(
     data_dir: str | Path,
     file_type: Literal["patient", "drug", "radiation", "follow_up", "nte"] = "patient",
 ) -> pd.DataFrame:
-    """Read TCGA BCR clinical TXT tables."""
+    """Read TCGA BCR clinical TXT tables.
+
+    .. deprecated:: 0.6.0
+        Use :class:`pymaftools.io.tcga.TCGAClinicalBuilder` instead.
+    """
+    warn_deprecated(
+        "pymaftools.io.tcga_readers.read_clinical()",
+        "pymaftools.io.tcga.TCGAClinicalBuilder",
+        stacklevel=2,
+    )
     file_map = scan_gdc_directory(data_dir, f"*_clinical_{file_type}_*.txt")
 
     if not file_map:

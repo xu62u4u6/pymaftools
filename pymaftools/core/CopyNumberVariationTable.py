@@ -79,6 +79,10 @@ class CopyNumberVariationTable(PivotTable):
         self,
         threshold: float | None = None,
         comparison: str = "abs_gt",
+        *,
+        ploidy: str | pd.Series | None = None,
+        sex: str | pd.Series | None = None,
+        chrom_col: str | None = None,
     ) -> PivotTable:
         """Convert discrete GISTIC calls, integer absolute CN, or thresholded CNV values.
 
@@ -87,9 +91,17 @@ class CopyNumberVariationTable(PivotTable):
         - ``'gistic_discrete'``: values in ``{-2, -1, 0, 1, 2}`` are events when
           ``!= 0`` (``0`` = diploid/neutral).
         - ``'absolute_cn'``: non-negative integer copy numbers (e.g. ASCAT3) are
-          events when ``!= 2`` (``2`` = diploid/neutral, ``0``/``1`` = deletion,
-          ``>=3`` = gain/amplification). Fractional absolute CN requires an
-          explicit ``threshold``.
+          compared against a neutral copy-number baseline. By default this
+          assumes a diploid autosomal baseline (``2``); pass ``ploidy`` (sample
+          column, Series, or mapping) for non-diploid / whole-genome-doubled
+          tumors (autosomal neutral = ``max(1, floor(ploidy + 0.5))`` using
+          half-up rounding) and ``sex`` plus chromosome metadata (``chrom_col``
+          or ``feature_metadata['chromosome']``) for sex-chromosome baselines
+          (male chrX/chrY = ``max(1, floor(ploidy / 2 + 0.5))``, female chrX =
+          ``max(1, floor(ploidy + 0.5))``, female chrY = ``0``). Note that
+          pseudoautosomal region (PAR1/PAR2) genes on male chrX/chrY are
+          normally diploid (CN=2) and should be handled separately if present.
+          Fractional absolute CN requires an explicit ``threshold``.
         - ``'log2_ratio'``: always requires an explicit ``threshold``.
         - ``None`` (unspecified): ``{-2, -1, 0, 1, 2}`` containing at least one
           negative call is treated as GISTIC discrete (``!= 0``); ``{0, 1}``
@@ -97,6 +109,13 @@ class CopyNumberVariationTable(PivotTable):
           (e.g. ``{0, 1, 2}``) raise ``ValueError`` because GISTIC (``0`` =
           neutral) and absolute CN (``2`` = diploid) have opposite semantics.
         """
+        if ploidy is not None or sex is not None or chrom_col is not None:
+            if threshold is not None or self.value_scale != "absolute_cn":
+                raise ValueError(
+                    "ploidy, sex, and chrom_col are only supported when "
+                    "value_scale='absolute_cn' and threshold=None."
+                )
+
         if threshold is None:
             numeric_columns = [
                 column
@@ -118,7 +137,12 @@ class CopyNumberVariationTable(PivotTable):
                         and np.all(numeric_arr >= 0)
                         and np.all(np.isclose(numeric_arr, np.round(numeric_arr)))
                     ):
-                        binary_data = self.notna() & self.ne(2)
+                        baseline = self._absolute_cn_neutral_baseline(
+                            ploidy=ploidy,
+                            sex=sex,
+                            chrom_col=chrom_col,
+                        )
+                        binary_data = self.notna() & self.ne(baseline)
                         result = self._from_dataframe(
                             binary_data.astype(bool),
                             self.feature_metadata,
@@ -189,6 +213,203 @@ class CopyNumberVariationTable(PivotTable):
         if isinstance(result, CopyNumberVariationTable):
             result.value_scale = None
         return result
+
+    def _absolute_cn_neutral_baseline(
+        self,
+        *,
+        ploidy: str | pd.Series | None = None,
+        sex: str | pd.Series | None = None,
+        chrom_col: str | None = None,
+    ) -> pd.DataFrame:
+        """Compute expected neutral integer copy number per (feature, sample)."""
+        resolved_chrom_col = chrom_col
+        if resolved_chrom_col is not None:
+            if resolved_chrom_col not in self.feature_metadata.columns:
+                raise ValueError(
+                    f"chrom_col={resolved_chrom_col!r} not found in feature_metadata; "
+                    f"available columns: {list(self.feature_metadata.columns)}."
+                )
+        else:
+            for candidate in ("chromosome", "Chromosome", "chr", "chrom"):
+                if candidate in self.feature_metadata.columns:
+                    resolved_chrom_col = candidate
+                    break
+
+        from collections.abc import Mapping
+
+        if ploidy is not None:
+            if isinstance(ploidy, str):
+                if ploidy not in self.sample_metadata.columns:
+                    raise ValueError(
+                        f"ploidy={ploidy!r} not found in sample_metadata; "
+                        f"available columns: {list(self.sample_metadata.columns)}."
+                    )
+                ploidy_series = self.sample_metadata[ploidy].reindex(self.columns)
+            elif isinstance(ploidy, (pd.Series, Mapping)):
+                ploidy_input = (
+                    ploidy if isinstance(ploidy, pd.Series) else pd.Series(ploidy)
+                )
+                missing = pd.Index(self.columns).difference(ploidy_input.index)
+                if not missing.empty:
+                    raise ValueError(
+                        f"ploidy is missing for sample(s): {missing.tolist()}."
+                    )
+                ploidy_series = ploidy_input.reindex(self.columns)
+            else:
+                raise TypeError(
+                    "ploidy must be a sample_metadata column name, Series, or mapping."
+                )
+            ploidy_numeric = pd.to_numeric(ploidy_series, errors="coerce")
+            invalid = (
+                ploidy_numeric.isna()
+                | ~np.isfinite(ploidy_numeric)
+                | (ploidy_numeric <= 0)
+            )
+            if invalid.any():
+                bad = ploidy_numeric.index[invalid].tolist()
+                raise ValueError(
+                    f"ploidy must be positive finite numbers for every sample; "
+                    f"invalid sample(s): {bad}."
+                )
+            autosomal_neutral = np.maximum(1, np.floor(ploidy_numeric + 0.5)).astype(
+                int
+            )
+            haploid_neutral = np.maximum(
+                1, np.floor(ploidy_numeric / 2.0 + 0.5)
+            ).astype(int)
+        else:
+            autosomal_neutral = pd.Series(2, index=self.columns, dtype=int)
+            haploid_neutral = pd.Series(1, index=self.columns, dtype=int)
+            if "ploidy" in self.sample_metadata.columns:
+                meta_ploidy = pd.to_numeric(
+                    self.sample_metadata["ploidy"].reindex(self.columns),
+                    errors="coerce",
+                )
+                if (
+                    meta_ploidy.notna().any()
+                    and (np.floor(meta_ploidy.dropna() + 0.5) != 2).any()
+                ):
+                    warnings.warn(
+                        "to_binary_table() assumes a diploid autosomal baseline (CN=2), "
+                        "but sample_metadata['ploidy'] contains non-diploid samples. "
+                        "Pass ploidy='ploidy' to adjust neutral baselines per sample.",
+                        UserWarning,
+                        stacklevel=3,
+                    )
+            else:
+                numeric_df = pd.DataFrame(self).apply(pd.to_numeric, errors="coerce")
+                medians = numeric_df.median(axis=0, skipna=True)
+                high_ploidy_samples = medians[medians >= 3].index.tolist()
+                if high_ploidy_samples:
+                    warnings.warn(
+                        "to_binary_table() assumes a diploid autosomal baseline (CN=2), "
+                        f"but sample(s) {high_ploidy_samples[:5]} have median copy number >= 3 "
+                        "(possible whole-genome doubling). Pass ploidy=... to use "
+                        "per-sample ploidy baselines.",
+                        UserWarning,
+                        stacklevel=3,
+                    )
+
+        baseline = pd.DataFrame(
+            np.tile(autosomal_neutral.to_numpy(dtype=int), (len(self.index), 1)),
+            index=self.index,
+            columns=self.columns,
+            dtype=int,
+        )
+
+        if sex is not None:
+            if resolved_chrom_col is None:
+                raise ValueError(
+                    "sex-aware absolute_cn binarization requires chromosome metadata "
+                    "in feature_metadata (e.g. feature_metadata['chromosome']) or "
+                    "an explicit chrom_col=..., available columns: "
+                    f"{list(self.feature_metadata.columns)}."
+                )
+            if isinstance(sex, str):
+                if sex not in self.sample_metadata.columns:
+                    raise ValueError(
+                        f"sex={sex!r} not found in sample_metadata; "
+                        f"available columns: {list(self.sample_metadata.columns)}."
+                    )
+                sex_series = self.sample_metadata[sex].reindex(self.columns)
+            elif isinstance(sex, (pd.Series, Mapping)):
+                sex_input = sex if isinstance(sex, pd.Series) else pd.Series(sex)
+                missing = pd.Index(self.columns).difference(sex_input.index)
+                if not missing.empty:
+                    raise ValueError(
+                        f"sex is missing for sample(s): {missing.tolist()}."
+                    )
+                sex_series = sex_input.reindex(self.columns)
+            else:
+                raise TypeError(
+                    "sex must be a sample_metadata column name, Series, or mapping."
+                )
+
+            normalized_sex = {}
+            for sample_id, raw_value in sex_series.items():
+                if pd.isna(raw_value):
+                    raise ValueError(
+                        f"sex value for sample {sample_id!r} is missing; expected "
+                        "'male'/'M'/'XY' or 'female'/'F'/'XX'."
+                    )
+                token = str(raw_value).strip().lower()
+                if token in {"m", "male", "xy"}:
+                    normalized_sex[sample_id] = "male"
+                elif token in {"f", "female", "xx"}:
+                    normalized_sex[sample_id] = "female"
+                else:
+                    raise ValueError(
+                        f"Unrecognized sex value {raw_value!r} for sample {sample_id!r}; "
+                        "expected 'male'/'M'/'XY' or 'female'/'F'/'XX'."
+                    )
+
+            chrom_norm = (
+                self.feature_metadata[resolved_chrom_col]
+                .reindex(self.index)
+                .astype(str)
+                .str.strip()
+                .str.lower()
+                .str.removeprefix("chr")
+            )
+            is_x = chrom_norm.eq("x")
+            is_y = chrom_norm.eq("y")
+            male_cols = [s for s, v in normalized_sex.items() if v == "male"]
+            female_cols = [s for s, v in normalized_sex.items() if v == "female"]
+            if male_cols:
+                if is_x.any():
+                    baseline.loc[is_x, male_cols] = haploid_neutral.loc[
+                        male_cols
+                    ].to_numpy(dtype=int)
+                if is_y.any():
+                    baseline.loc[is_y, male_cols] = haploid_neutral.loc[
+                        male_cols
+                    ].to_numpy(dtype=int)
+            if female_cols and is_y.any():
+                baseline.loc[is_y, female_cols] = 0
+        elif resolved_chrom_col is not None:
+            chrom_norm = (
+                self.feature_metadata[resolved_chrom_col]
+                .reindex(self.index)
+                .astype(str)
+                .str.strip()
+                .str.lower()
+                .str.removeprefix("chr")
+            )
+            if chrom_norm.isin({"x", "y"}).any():
+                hint = (
+                    "Pass sex='sex' "
+                    if "sex" in self.sample_metadata.columns
+                    else "Pass sex=... "
+                )
+                warnings.warn(
+                    "to_binary_table() assumes a diploid autosomal baseline (CN=2) "
+                    "for chrX/chrY features, which marks normal male hemizygous "
+                    f"calls (CN=1) as events. {hint}to apply sex-chromosome baselines.",
+                    UserWarning,
+                    stacklevel=3,
+                )
+
+        return baseline
 
     @classmethod
     def from_pivot_table(

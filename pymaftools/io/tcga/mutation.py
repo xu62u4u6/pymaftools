@@ -31,10 +31,21 @@ class TCGAMutationBuilder(TCGATableBuilder):
 
     file_pattern = "*.maf.gz"
 
-    def read_and_merge(self, files: list[dict], tumor_only: bool = True) -> MAF:
+    def _target_sample_type(self, tumor_only: bool | None) -> str | None:
+        if tumor_only is False:
+            return None
+        if tumor_only is True:
+            return self.sample_type or "Primary Tumor"
+        return self.sample_type
+
+    def read_and_merge(self, files: list[dict], tumor_only: bool | None = None) -> MAF:
+        target_sample_type = self._target_sample_type(tumor_only)
         frames = []
         for f in files:
-            if tumor_only and f.get("sample_type") != "Primary Tumor":
+            if (
+                target_sample_type is not None
+                and f.get("sample_type") != target_sample_type
+            ):
                 continue
             df = pd.read_csv(
                 f["filepath"],
@@ -43,41 +54,88 @@ class TCGAMutationBuilder(TCGATableBuilder):
                 low_memory=False,
             )
             df["sample_ID"] = self.sample_identifier(f)
-            df["sample_type"] = f["sample_type"]
+            df["sample_type"] = f.get("sample_type")
             frames.append(df)
 
         if not frames:
-            sample_filter = "Primary Tumor" if tumor_only else "any sample type"
+            sample_filter = (
+                target_sample_type
+                if target_sample_type is not None
+                else "any sample type"
+            )
             raise ValueError(
                 f"No mutation files remained after selecting {sample_filter}."
             )
 
         merged = pd.concat(frames, ignore_index=True)
         maf = MAF(merged)
-        maf.index = maf.loc[:, MAF.index_col].apply(
-            lambda row: "|".join(row.astype(str)), axis=1
-        )
+        if not maf.empty:
+            maf.index = maf.loc[:, MAF.index_col].apply(
+                lambda row: "|".join(row.astype(str)), axis=1
+            )
         return maf
 
     def build_sample_metadata(self, table, files):
-        # MAF is flat, sample_metadata doesn't apply the same way
-        # Return a per-sample summary (Primary Tumor only)
+        # Return a per-sample summary matching self.sample_type (including zero-mutation files)
         meta_records = {}
         for f in files:
-            if f.get("sample_type") != "Primary Tumor":
+            if (
+                self.sample_type is not None
+                and f.get("sample_type") != self.sample_type
+            ):
                 continue
             identifier = self.sample_identifier(f)
             if identifier not in meta_records:
                 meta_records[identifier] = {
                     "case_id": f["case_id"],
                     "sample_id": f.get("sample_id"),
-                    "sample_type": f["sample_type"],
-                    "file_id": f["file_id"],
-                    "data_type": f["data_type"],
+                    "sample_type": f.get("sample_type"),
+                    "file_id": f.get("file_id"),
+                    "data_type": f.get("data_type"),
                 }
         metadata = pd.DataFrame(meta_records.values())
         metadata.index = pd.Index(meta_records.keys(), name=self.sample_key)
         return metadata
+
+    def build_sample_manifest(self, files: list[dict]):
+        """Build a SampleManifest covering every selected sequenced MAF file."""
+        from ...core.SampleManifest import SampleManifest
+
+        records = []
+        seen: set[str] = set()
+        for f in files:
+            if (
+                self.sample_type is not None
+                and f.get("sample_type") != self.sample_type
+            ):
+                continue
+            identifier = self.sample_identifier(f)
+            if identifier in seen:
+                continue
+            seen.add(identifier)
+            records.append(
+                {
+                    "sample_id": identifier,
+                    "patient_id": f["case_id"],
+                    "eligible": True,
+                    "assay": "WES",
+                    "sample_type": f.get("sample_type"),
+                    "file_id": f.get("file_id"),
+                }
+            )
+        frame = pd.DataFrame(
+            records,
+            columns=[
+                "sample_id",
+                "patient_id",
+                "eligible",
+                "assay",
+                "sample_type",
+                "file_id",
+            ],
+        )
+        frame["eligible"] = frame["eligible"].astype(bool)
+        return SampleManifest(frame, sample_id_col="sample_id")
 
     def build(self) -> MAF:
         resolved_files = self.resolve_files()
@@ -89,9 +147,11 @@ class TCGAMutationBuilder(TCGATableBuilder):
 
         maf = self.read_and_merge(files)
         maf._sample_metadata = self.build_sample_metadata(maf, files)
+        maf.sample_manifest = self.build_sample_manifest(files)
 
         print(
             f"[{self.__class__.__name__}] "
-            f"{len(maf)} mutations across {maf['sample_ID'].nunique()} samples"
+            f"{len(maf)} mutations across {maf['sample_ID'].nunique()} mutated "
+            f"samples ({len(maf.sample_manifest.eligible_samples)} sequenced)"
         )
         return maf

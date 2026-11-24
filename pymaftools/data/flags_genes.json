@@ -1,0 +1,27 @@
+{
+  "source": "Shyr et al. (2014) BMC Medical Genomics 7:64, Additional file 1: Table S1 (republished in 2017 correction, BMC Medical Genomics 10:69) — Top 20 FLAGS (frequently mutated genes in public exomes), matching maftools::flags(top=20).",
+  "reference": "https://doi.org/10.1186/s12920-014-0064-y",
+  "correction": "https://doi.org/10.1186/s12920-017-0309-7",
+  "genes": [
+    "TTN",
+    "MUC16",
+    "OBSCN",
+    "AHNAK2",
+    "SYNE1",
+    "FLG",
+    "MUC5B",
+    "DNAH17",
+    "PLEC",
+    "DST",
+    "SYNE2",
+    "NEB",
+    "HSPG2",
+    "LAMA5",
+    "AHNAK",
+    "HMCN1",
+    "USH2A",
+    "DNAH11",
+    "MACF1",
+    "MUC17"
+  ]
+}
