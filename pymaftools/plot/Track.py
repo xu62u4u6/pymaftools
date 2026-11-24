@@ -12,6 +12,7 @@ sample/feature annotation tracks come in later stages.
 from __future__ import annotations
 
 import copy
+import warnings
 from abc import ABC, abstractmethod
 
 import matplotlib.pyplot as plt
@@ -495,9 +496,20 @@ class BarTrack(Track):
         )
 
         offset = np.zeros(n)
+        nan_examples: list[str] = []
+        nan_count = 0
         for col in frame.columns:
             vals = frame[col].to_numpy(dtype=float)
-            plot_vals = np.where(np.isnan(vals), 0.0, vals)
+            nan_mask = np.isnan(vals)
+            if nan_mask.any():
+                nan_count += int(nan_mask.sum())
+                if len(nan_examples) < 3:
+                    for idx in frame.index[nan_mask]:
+                        if len(nan_examples) >= 3:
+                            break
+                        label = f"{idx}:{col}" if frame.shape[1] > 1 else str(idx)
+                        nan_examples.append(label)
+            plot_vals = np.where(nan_mask, 0.0, vals)
             color = self.cmap.get(col, self.color) if self.cmap else self.color
             if horizontal:
                 ax.barh(
@@ -518,6 +530,16 @@ class BarTrack(Track):
                     **edge_kwargs,
                 )
             offset = offset + plot_vals
+
+        if nan_count:
+            track_name = self.label or "BarTrack"
+            warnings.warn(
+                f"BarTrack {track_name!r} contains {nan_count} NaN value(s) "
+                f"(examples: {nan_examples}); rendering missing values at height 0 "
+                "so non-missing bars remain visible.",
+                UserWarning,
+                stacklevel=2,
+            )
 
         vmax = (
             self._shared_max

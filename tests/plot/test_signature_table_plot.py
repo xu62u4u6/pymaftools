@@ -7,6 +7,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import pytest
 from matplotlib.colors import to_hex
 
 from pymaftools.core.SignatureTable import SignatureTable
@@ -35,11 +36,12 @@ def test_stacked_bar_samples_continuous_colormap_across_full_range():
     plt.close(fig)
 
 
-def test_stacked_bar_cycles_small_qualitative_palette():
+def test_stacked_bar_cycles_small_qualitative_palette_with_warning():
     table = _signature_table(12)
     fig, ax = plt.subplots()
 
-    table.plot.stacked_bar(ax=ax, colormap="tab10", legend=False)
+    with pytest.warns(UserWarning, match=r"tab10.*10.*12.*tab20"):
+        table.plot.stacked_bar(ax=ax, colormap="tab10", legend=False)
 
     # Two sample patches per signature: signature 11 cycles to tab10 colour 1.
     colors = [to_hex(patch.get_facecolor()) for patch in ax.patches]

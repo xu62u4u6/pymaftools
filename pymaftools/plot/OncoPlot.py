@@ -329,7 +329,10 @@ class OncoPlot(BasePlot):
 
         Examples
         --------
-        >>> functional_counts = pt.sample_metadata[ColorManager.FUNCTIONAL_ORDER]
+        >>> tmb_cols = [f"tmb_{g}" for g in ColorManager.FUNCTIONAL_ORDER]
+        >>> functional_counts = pt.sample_metadata[tmb_cols].rename(
+        ...     columns=lambda col: col.removeprefix("tmb_")
+        ... )
         >>> op.add_track(BarTrack(
         ...     functional_counts, side="top", label="Mutation count",
         ...     cmap=ColorManager.FUNCTIONAL_CMAP))

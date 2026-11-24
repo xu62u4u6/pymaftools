@@ -291,6 +291,27 @@ def test_lollipop_length_mismatch_warns_and_draws_without_domains(tmp_path):
     plt.close(plot.fig)
 
 
+def test_resolve_lollipop_domains_handles_custom_csv_missing_columns(tmp_path):
+    """Fallback length lookup must never mask a missing-domain warning with KeyError."""
+    from pymaftools.plot.LollipopPlot import resolve_lollipop_domains
+
+    bad_csv = tmp_path / "custom_domains.csv"
+    pd.DataFrame({"gene": ["TP53"], "length": [393]}).to_csv(bad_csv)
+
+    class _StubMaf:
+        def get_domain_info(self, gene, aa_length, path=None):
+            raise ValueError(
+                f"No domain info found for gene {gene} with AA length {aa_length}"
+            )
+
+    with pytest.warns(UserWarning, match=r"missing column\(s\).*aa\.length"):
+        domains = resolve_lollipop_domains(
+            _StubMaf(), "TP53", 392, protein_domains_path=bad_csv
+        )
+
+    assert domains == []
+
+
 def test_multi_cohort_lollipop_saves_extensionless_path_in_dotted_directory(
     tmp_path,
 ):

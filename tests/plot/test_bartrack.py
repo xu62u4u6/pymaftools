@@ -94,14 +94,15 @@ def test_stacked_contributes_legend_single_series_does_not():
 
 
 def test_nan_values_do_not_collapse_scale_or_poison_stacked_offsets():
-    """Missing segments render as zero-height bars while valid totals still
-    determine the shared value scale."""
+    """Missing segments render as zero-height bars with a UserWarning while
+    valid totals still determine the shared value scale."""
     frame = pd.DataFrame(
         {"A": [5.0, np.nan, 2.0], "B": [1.0, 3.0, np.nan]},
         index=["P0", "P1", "P2"],
     )
 
-    fig, ax = _render(BarTrack(frame, side="top", cmap=CMAP))
+    with pytest.warns(UserWarning, match=r"2 NaN value\(s\).*P1:A.*height 0"):
+        fig, ax = _render(BarTrack(frame, side="top", cmap=CMAP))
 
     assert ax.get_ylim() == pytest.approx((0.0, 6.0))
     heights = np.array([patch.get_height() for patch in ax.patches])

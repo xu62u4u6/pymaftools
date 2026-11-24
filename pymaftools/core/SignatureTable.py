@@ -30,7 +30,7 @@ class SignatureTable(PivotTable):
         cls,
         file_path: str,
         *,
-        orientation: str = "signatures_by_samples",
+        orientation: str = "samples_by_signatures",
     ) -> SignatureTable:
         """
         Read a signature weight file and return a SignatureTable.
@@ -39,11 +39,14 @@ class SignatureTable(PivotTable):
         ----------
         file_path : str
             Path to a tab-separated signature exposure file.
-        orientation : {"signatures_by_samples", "samples_by_signatures"}, \
-default "signatures_by_samples"
-            Orientation of the input file. The returned table always follows
-            the package's feature-by-sample contract: signatures are rows and
-            samples are columns.
+        orientation : {"samples_by_signatures", "signatures_by_samples"}, \
+default "samples_by_signatures"
+            Orientation of the input file. Defaults to ``"samples_by_signatures"``
+            (rows = samples, columns = signatures), matching SigProfilerExtractor /
+            SigProfilerAssignment ``*_Activities.txt`` files and legacy behaviour.
+            Pass ``orientation="signatures_by_samples"`` when the file already has
+            signatures as rows and samples as columns. The returned table always
+            follows the package's feature-by-sample contract (signatures × samples).
 
         Returns
         -------

@@ -7,6 +7,8 @@ Reachable via ``signature_table.plot``.
 
 from __future__ import annotations
 
+import warnings
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -88,6 +90,15 @@ class SignatureTablePlot(PivotStatsPlot):
         # share one mapping.
         cmap = plt.get_cmap(colormap)
         if isinstance(cmap, ListedColormap) and cmap.N <= 20:
+            if len(df.columns) > cmap.N:
+                warnings.warn(
+                    f"Qualitative colormap {colormap!r} provides only {cmap.N} "
+                    f"distinct colors for {len(df.columns)} signatures; colors "
+                    "will repeat. Pass colormap='tab20' or a continuous colormap "
+                    "(e.g. 'viridis') for distinct colors.",
+                    UserWarning,
+                    stacklevel=2,
+                )
             color_values = [cmap(i % cmap.N) for i in range(len(df.columns))]
         else:
             color_values = cmap(np.linspace(0, 1, len(df.columns)))
