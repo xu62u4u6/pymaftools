@@ -26,15 +26,20 @@ def test_evaluate_model_returns_metric_dict():
             return (self.predict_proba(X)[:, 1] >= 0.5).astype(int)
 
     X_test = pd.DataFrame({"f0": np.arange(6)})
-    y_test = pd.Series([0, 0, 0, 1, 1, 1])
+    # Imbalanced labels so macro F1 (0.829) and weighted F1 (0.838) differ:
+    # with balanced labels both averages coincide and the oracle cannot tell
+    # which one evaluate_model reports.
+    y_test = pd.Series([0, 0, 0, 0, 1, 1])
     model = _FixedBinaryModel()
 
     metrics = evaluate_model(model, X_test, y_test)
     y_pred = model.predict(X_test)
     y_prob = model.predict_proba(X_test)[:, 1]
 
+    macro_f1 = f1_score(y_test, y_pred, average="macro")
+    assert macro_f1 != pytest.approx(f1_score(y_test, y_pred, average="weighted"))
     assert metrics["acc"] == pytest.approx(accuracy_score(y_test, y_pred))
-    assert metrics["f1"] == pytest.approx(f1_score(y_test, y_pred, average="weighted"))
+    assert metrics["f1"] == pytest.approx(macro_f1)
     assert metrics["auc"] == pytest.approx(roc_auc_score(y_test, y_prob))
 
 
