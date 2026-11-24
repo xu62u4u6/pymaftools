@@ -29,6 +29,12 @@ producer-aware MAF input, and errors that say how to fix the call.
   `ASCStackingModel.soft_score()`. Accessing the old top-level names raises an
   error naming the replacement. `beautifulsoup4` is no longer a dependency.
 
+* **SQLite mixed-type object columns fail loud:** `PivotTable.to_sqlite()` and
+  `Cohort.to_sqlite()` now raise a `ValueError` pointing to `to_h5()` when an
+  `object` column mixes numeric values with strings or booleans (e.g.
+  `[0.0, "x"]`), instead of silently converting numbers to text strings on
+  round-trip.
+
 ### 🏷️ Name unification and deprecations
 
 Old names keep working and return identical results; they only emit a
@@ -39,6 +45,11 @@ Old names keep working and return identical results; they only emit a
 |---|---|
 | `Cohort.to_hdf5()` / `Cohort.read_hdf5()` | `Cohort.to_h5()` / `Cohort.read_h5()` (same file format; matches `PivotTable`) |
 | `PivotTable.PCA()` | `PivotTable.pca()` |
+| `MAF.plot.summary_stats()` | `MAF.summary_stats()` |
+| `MAF.plot.compare_cohorts()` | `MAF.compare_cohorts()` |
+| `PivotTable.plot.somatic_interactions_stats()` | `PivotTable.somatic_interactions()` |
+| `PivotTable.plot.plot_pca_samples()` | `PivotTable.plot.pca()` |
+| `PivotTable.plot.plot_boxplot_with_annot()` | `PivotTable.plot.boxplot()` |
 | `MAF.vaild_variant_classfication` | `MAF.valid_variant_classification` |
 | `utils.geneinfo.get_ncbi_gene_ID(s)` | `get_ncbi_gene_id(s)` |
 | `TCGA_sample_type`, `get_target_sample_ID`, `read_TCGA_ASCAT3_CNV_file_sheet` | `tcga_sample_type`, `get_target_sample_id`, `read_tcga_ascat3_cnv_file_sheet` |

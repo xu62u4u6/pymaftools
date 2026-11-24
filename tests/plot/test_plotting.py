@@ -145,7 +145,7 @@ class TestPlotValidation:
     def test_invalid_column_names(self, sample_pivot_table):
         plot = PivotStatsPlot(sample_pivot_table)
 
-        with pytest.raises(ValueError, match="Could not interpret (value|input)"):
+        with pytest.raises(ValueError, match="not found in data"):
             plot.boxplot(test_col="nonexistent_column", group_col="subtype")
 
         with pytest.raises(ValueError, match="not found in sample_metadata"):

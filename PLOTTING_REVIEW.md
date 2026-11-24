@@ -155,13 +155,13 @@ op.save("onco.png")
 
 ### 已完成的 WES plot API
 
-- [x] `MAF.plot.summary()` / `plot_maf_summary`
+- [x] `MAF.plot.overview()` / `MAF.summary_stats()`
 - [x] `MAF.plot.titv()` / `summarize_titv`
 - [x] `MAF.plot.rainfall()`
 - [x] `MAF.plot.vaf()` / `infer_vaf`
 - [x] `PivotTable.plot.somatic_interactions()`
-- [x] `PivotTable.plot.somatic_interactions_stats()`
-- [x] `MAF.plot.compare_cohorts()`
+- [x] `PivotTable.somatic_interactions()` (deprecated alias: `PivotTable.plot.somatic_interactions_stats()`)
+- [x] `MAF.compare_cohorts()` (deprecated alias: `MAF.plot.compare_cohorts()`)
 - [x] `MAF.plot.forest()`
 
 驗證圖輸出在 `outputs/wes_plots/`。這些圖是用 bundled example MAF / synthetic comparison 產生的檢查 artifact，不應打包進 package data。

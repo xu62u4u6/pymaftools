@@ -31,9 +31,28 @@ retained events stay in the denominator; filtering before conversion otherwise
 drops them silently. Errors and `UserWarning`s from pymaftools name the missing
 input and the fixing call; read them rather than working around them.
 
-Raw MAF-level plots live on `maf.plot`: `overview()` (summary header plus sample,
-variant, nucleotide and gene panels) and `lollipop(gene)`, which accepts GDC `HGVSp_Short`,
-cBioPortal bare positions and VEP `?-12/393` ranges.
+Raw MAF-level summary stats and cohort comparisons live directly on `MAF`, while
+raw MAF-level plots live on `maf.plot`:
+
+```python
+summary = maf.summary_stats()  # cohort counts, median/sample, Ti/Tv
+diff = cohort_a.compare_cohorts(cohort_b, cohort1_name="LUAD", cohort2_name="LUSC")
+fig = cohort_a.plot.forest(diff, top=20)
+```
+
+`maf.plot` also provides `overview()` (summary header plus sample, variant,
+nucleotide and gene panels) and `lollipop(gene)`, which accepts GDC
+`HGVSp_Short`, cBioPortal bare positions and VEP `?-12/393` ranges.
+
+For exploratory matrix-level statistics and plots on a `PivotTable`:
+
+```python
+pca_df, var_ratio, pca_obj = table.plot.pca(color_col="subtype", to_binary=True)
+ax = table.plot.boxplot(group_col="subtype", test_col="mutations_count")
+```
+
+Pass `to_binary=True` for mutation-classification `SmallVariationTable` matrices
+whose cells hold strings (`"Missense_Mutation"`) and `False`.
 
 For scientific denominators, pass the complete sample universe rather than
 deriving it from event-bearing rows:

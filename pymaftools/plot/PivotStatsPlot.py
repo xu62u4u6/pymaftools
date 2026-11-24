@@ -62,6 +62,11 @@ class PivotStatsPlot(BasePlot):
         """
         super().__init__()  # Initialize BasePlot
         self.pivot_table = pivot_table
+        self._last_plot_summary: dict[str, object] = {}
+
+    def _plot_summary(self, dpi: float) -> dict[str, object]:
+        """Domain summary for :meth:`BasePlot.summary` / ``save(summary=True)``."""
+        return dict(self._last_plot_summary)
 
     def oncoplot(
         self,
@@ -151,9 +156,16 @@ class PivotStatsPlot(BasePlot):
         """
         from .wes import plot_somatic_interactions
 
-        return plot_somatic_interactions(
-            self.pivot_table, top=top, alpha=alpha, figsize=figsize
+        fig, stats = plot_somatic_interactions(
+            self.pivot_table,
+            top=top,
+            alpha=alpha,
+            figsize=figsize,
+            _warning_stacklevel=3,
         )
+        self.fig = fig
+        self._last_plot_summary = dict(getattr(fig, "pymaftools_summary", {}))
+        return fig, stats
 
     def somatic_interactions_stats(self, top: int = 25, alpha: float = 0.05):
         """Deprecated alias for :meth:`~pymaftools.core.PivotTable.PivotTable.somatic_interactions`.
@@ -165,7 +177,11 @@ class PivotStatsPlot(BasePlot):
             "PivotTable.plot.somatic_interactions_stats()",
             "PivotTable.somatic_interactions()",
         )
-        return self.pivot_table.somatic_interactions(top=top, alpha=alpha)
+        from .wes import somatic_interactions
+
+        return somatic_interactions(
+            self.pivot_table, top=top, alpha=alpha, _warning_stacklevel=3
+        )
 
     def boxplot(
         self,
@@ -287,6 +303,25 @@ class PivotStatsPlot(BasePlot):
         if data is None:
             data = self.pivot_table.sample_metadata
 
+        available_cols = list(data.columns)
+        for param_name, col_name in [("group_col", group_col), ("test_col", test_col)]:
+            if col_name not in data.columns:
+                raise ValueError(
+                    f"{param_name}={col_name!r} not found in data. "
+                    f"Available columns: {available_cols}. "
+                    "Attach sample metadata with `table = table.add_sample_metadata(df)`."
+                )
+
+        # Check paired test requirements
+        if is_paired and pair_col is None:
+            raise ValueError("pair_col must be specified when is_paired=True")
+
+        if is_paired and pair_col is not None and pair_col not in data.columns:
+            raise ValueError(
+                f"pair_col={pair_col!r} not found in data. "
+                f"Available columns: {available_cols}."
+            )
+
         if ax is None:
             self.fig, ax = plt.subplots(figsize=(10, 6))
         else:
@@ -295,16 +330,8 @@ class PivotStatsPlot(BasePlot):
         if title is None:
             title = f"Boxplot of {test_col} by {group_col}"
 
-        # Check paired test requirements
-        if is_paired and pair_col is None:
-            raise ValueError("pair_col must be specified when is_paired=True")
-
         # Prepare data for paired tests if needed
         if is_paired and pair_col is not None:
-            # Validate that pair_col exists
-            if pair_col not in data.columns:
-                raise ValueError(f"Column '{pair_col}' not found in data")
-
             # For paired tests, we need to ensure we have complete pairs
             # Group by pair_col and keep only pairs that have both groups
             pair_groups = data.groupby(pair_col)
@@ -424,6 +451,15 @@ class PivotStatsPlot(BasePlot):
         from . import style
 
         style.style_axes(ax)
+
+        self._last_plot_summary = {
+            "plot_type": "boxplot",
+            "group_col": group_col,
+            "test_col": test_col,
+            "test": test,
+            "is_paired": bool(is_paired),
+            "groups": {str(k): int(v) for k, v in sample_counts.items()},
+        }
 
         # Save figure
         if save_path is not None:
@@ -550,20 +586,31 @@ class PivotStatsPlot(BasePlot):
         from .LegendManager import LegendManager
         from .ColorManager import ColorManager
 
+        # Validate metadata columns before running PCA so typos fail loudly
+        # with available columns rather than a cryptic downstream error.
+        available_cols = list(self.pivot_table.sample_metadata.columns)
+        if color_col not in self.pivot_table.sample_metadata.columns:
+            raise ValueError(
+                f"Column {color_col!r} not found in sample_metadata. "
+                f"Available columns: {available_cols}. "
+                "Attach metadata with `table = table.add_sample_metadata(df)`."
+            )
+        if (
+            shape_col is not None
+            and shape_col not in self.pivot_table.sample_metadata.columns
+        ):
+            raise ValueError(
+                f"Column {shape_col!r} not found in sample_metadata. "
+                f"Available columns: {available_cols}. "
+                "Attach metadata with `table = table.add_sample_metadata(df)`."
+            )
+
         # Calculate PCA result
         pca_result_df, explained_variance, pca = self.pivot_table.pca(
             to_binary=to_binary
         )
-
-        # Ensure color_col exists in sample_metadata
-        if color_col not in self.pivot_table.sample_metadata.columns:
-            raise ValueError(f"Column '{color_col}' not found in sample_metadata.")
         pca_result_df[color_col] = self.pivot_table.sample_metadata[color_col]
-
-        # Add shape_col if specified
         if shape_col is not None:
-            if shape_col not in self.pivot_table.sample_metadata.columns:
-                raise ValueError(f"Column '{shape_col}' not found in sample_metadata.")
             pca_result_df[shape_col] = self.pivot_table.sample_metadata[shape_col]
 
         # Create GridSpec layout for PCA plot and legend
@@ -793,6 +840,16 @@ class PivotStatsPlot(BasePlot):
         from . import style
 
         style.style_axes(ax_pca)
+
+        self._last_plot_summary = {
+            "plot_type": "pca",
+            "n_samples": int(len(pca_result_df)),
+            "to_binary": bool(to_binary),
+            "color_col": color_col,
+            "shape_col": shape_col,
+            "is_numeric": bool(is_actually_numeric),
+            "explained_variance_ratio": [float(v) for v in explained_variance],
+        }
 
         # Save figure using BasePlot's save method
         if save_path is not None:

@@ -1636,13 +1636,13 @@ class PivotTable(pd.DataFrame):
             self, group_col=group_col, group_order=group_order, top=top
         )
 
-    def pca(self, to_binary: bool) -> Tuple[pd.DataFrame, np.ndarray, PCA]:
+    def pca(self, to_binary: bool = False) -> Tuple[pd.DataFrame, np.ndarray, PCA]:
         """
         Perform Principal Component Analysis on the PivotTable.
 
         Parameters
         ----------
-        to_binary : bool
+        to_binary : bool, default False
             Whether to convert the data to binary format before PCA.
 
         Returns
@@ -1654,9 +1654,24 @@ class PivotTable(pd.DataFrame):
         """
         pivot_table = self.to_binary_table() if to_binary else self
         pca = PCA(n_components=2)
-        pca_result = pca.fit_transform(
-            pivot_table.T
-        )  # Transpose since samples should be rows
+        try:
+            pca_result = pca.fit_transform(
+                pivot_table.T
+            )  # Transpose since samples should be rows
+        except (TypeError, ValueError) as exc:
+            if not to_binary and any(
+                pd.api.types.is_object_dtype(dtype)
+                or pd.api.types.is_string_dtype(dtype)
+                or isinstance(dtype, pd.CategoricalDtype)
+                for dtype in pivot_table.dtypes
+            ):
+                raise ValueError(
+                    f"{type(self).__name__} contains non-numeric (e.g. mutation "
+                    "classification string) values and cannot run PCA directly. "
+                    "Pass `to_binary=True` (e.g. `table.pca(to_binary=True)` or "
+                    "`table.plot.pca(to_binary=True)`)."
+                ) from exc
+            raise
         explained_variance = pca.explained_variance_ratio_
         pca_result_df = pd.DataFrame(
             pca_result, index=pivot_table.columns, columns=["PC1", "PC2"]
@@ -2038,7 +2053,7 @@ class PivotTable(pd.DataFrame):
         """
         from ..plot.wes import somatic_interactions
 
-        return somatic_interactions(self, top=top, alpha=alpha)
+        return somatic_interactions(self, top=top, alpha=alpha, _warning_stacklevel=3)
 
     def compute_similarity(
         self,

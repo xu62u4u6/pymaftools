@@ -9,7 +9,13 @@ import pandas as pd
 from scipy.stats import fisher_exact
 from statsmodels.stats.multitest import multipletests
 
-from ..provenance import attach_provenance, provenance_for_table
+from ..provenance import (
+    Provenance,
+    attach_provenance,
+    provenance_for_table,
+    sample_universe,
+    table_inputs,
+)
 
 
 BASE_CHANGE_ORDER = [
@@ -271,7 +277,31 @@ def _interaction_observation_frame(binary) -> pd.DataFrame:
     return observation_mask.to_frame().astype(bool)
 
 
-def somatic_interactions(table, top: int = 25, alpha: float = 0.05) -> pd.DataFrame:
+_INTERACTION_COLUMNS = [
+    "gene1",
+    "gene2",
+    "odds_ratio",
+    "p_value",
+    "both_mutated",
+    "gene2_only",
+    "gene1_only",
+    "neither_mutated",
+    "jointly_observed",
+    "tested",
+    "adjusted_p_value",
+    "tested_family_size",
+    "interaction",
+    "is_significant",
+]
+
+
+def somatic_interactions(
+    table,
+    top: int = 25,
+    alpha: float = 0.05,
+    *,
+    _warning_stacklevel: int = 2,
+) -> pd.DataFrame:
     """Pairwise Fisher tests for co-occurrence / mutual exclusivity.
 
     The interaction hypothesis is undirected, so each selected gene pair is
@@ -287,6 +317,23 @@ def somatic_interactions(table, top: int = 25, alpha: float = 0.05) -> pd.DataFr
     ``tested=False`` and missing statistics, and is excluded from the BH family.
     ``tested_family_size`` records the number of pairs in that family.
     """
+    if isinstance(top, bool) or not isinstance(top, (int, np.integer)) or top < 1:
+        raise ValueError(
+            f"top must be a positive integer >= 1, got {top!r}. "
+            "Pass e.g. top=25 to test pairs among the top 25 mutated genes."
+        )
+    top = int(top)
+    if (
+        isinstance(alpha, bool)
+        or not isinstance(alpha, (int, float, np.number))
+        or not (0.0 < float(alpha) < 1.0)
+    ):
+        raise ValueError(
+            f"alpha must be a significance threshold strictly between 0 and 1, "
+            f"got {alpha!r}. Pass e.g. alpha=0.05."
+        )
+    alpha = float(alpha)
+
     binary = table.to_binary_table().astype(bool)
     observed = _interaction_observation_frame(binary)
     present = pd.DataFrame(binary).astype(bool) & observed
@@ -336,7 +383,7 @@ def somatic_interactions(table, top: int = 25, alpha: float = 0.05) -> pd.DataFr
         "somatic_interactions", table, {"top": top, "alpha": alpha}
     )
     if result.empty:
-        return attach_provenance(result, provenance)
+        return attach_provenance(pd.DataFrame(columns=_INTERACTION_COLUMNS), provenance)
     tested_pairs = result["tested"].to_numpy(dtype=bool)
     result["adjusted_p_value"] = np.nan
     if tested_pairs.any():
@@ -351,12 +398,16 @@ def somatic_interactions(table, top: int = 25, alpha: float = 0.05) -> pd.DataFr
         default="Mutual exclusivity",
     )
     result["is_significant"] = tested_pairs & (result["adjusted_p_value"] < alpha)
-    _warn_interaction_pitfalls(result, n_samples=binary.shape[1])
+    _warn_interaction_pitfalls(
+        result, n_samples=binary.shape[1], stacklevel=_warning_stacklevel + 1
+    )
     result = result.sort_values("adjusted_p_value", na_position="last")
     return attach_provenance(result, provenance)
 
 
-def _warn_interaction_pitfalls(result: pd.DataFrame, n_samples: int) -> None:
+def _warn_interaction_pitfalls(
+    result: pd.DataFrame, n_samples: int, *, stacklevel: int = 3
+) -> None:
     """Warn (never alter results) when the interaction table is likely misleading.
 
     The numbers stay exactly as computed; these warnings exist because a
@@ -370,7 +421,7 @@ def _warn_interaction_pitfalls(result: pd.DataFrame, n_samples: int) -> None:
             f"somatic_interactions on only {n_samples} samples: Fisher tests "
             "have almost no power here; treat the table as descriptive.",
             UserWarning,
-            stacklevel=3,
+            stacklevel=stacklevel,
         )
     # Untested pairs (no jointly observed sample) are outside the tested family.
     tested = result[result["tested"]] if "tested" in result else result
@@ -387,7 +438,7 @@ def _warn_interaction_pitfalls(result: pd.DataFrame, n_samples: int) -> None:
                 "stratifying by TMB or excluding hypermutators before "
                 "interpreting individual pairs.",
                 UserWarning,
-                stacklevel=3,
+                stacklevel=stacklevel,
             )
 
 
@@ -396,6 +447,8 @@ def plot_somatic_interactions(
     top: int = 25,
     alpha: float = 0.05,
     figsize=(8, 7),
+    *,
+    _warning_stacklevel: int = 2,
 ):
     """Draw a signed -log10(FDR) interaction heatmap.
 
@@ -419,7 +472,9 @@ def plot_somatic_interactions(
 
     from . import style
 
-    stats = somatic_interactions(table, top=top, alpha=alpha)
+    stats = somatic_interactions(
+        table, top=top, alpha=alpha, _warning_stacklevel=_warning_stacklevel + 1
+    )
     binary = table.to_binary_table().astype(bool)
     genes = (
         binary.astype(int)
@@ -556,18 +611,43 @@ def _interaction_figure_summary(stats: pd.DataFrame, alpha: float) -> dict:
 def compare_cohorts(
     cohort1_maf: pd.DataFrame,
     cohort2_maf: pd.DataFrame,
-    cohort1_name: str = "Cohort1",
-    cohort2_name: str = "Cohort2",
+    cohort1_name: str | None = None,
+    cohort2_name: str | None = None,
     min_mutated: int = 1,
     *,
     name1: str | None = None,
     name2: str | None = None,
 ) -> pd.DataFrame:
     """Compare gene mutation frequencies between two MAF cohorts."""
-    if name1 is not None:
-        cohort1_name = name1
-    if name2 is not None:
-        cohort2_name = name2
+    if cohort1_name is not None and name1 is not None:
+        raise ValueError(
+            f"Cannot pass both cohort1_name={cohort1_name!r} and legacy alias "
+            f"name1={name1!r}; pass only cohort1_name."
+        )
+    if cohort2_name is not None and name2 is not None:
+        raise ValueError(
+            f"Cannot pass both cohort2_name={cohort2_name!r} and legacy alias "
+            f"name2={name2!r}; pass only cohort2_name."
+        )
+    cohort1_name = (
+        cohort1_name
+        if cohort1_name is not None
+        else (name1 if name1 is not None else "Cohort1")
+    )
+    cohort2_name = (
+        cohort2_name
+        if cohort2_name is not None
+        else (name2 if name2 is not None else "Cohort2")
+    )
+    if (
+        isinstance(min_mutated, bool)
+        or not isinstance(min_mutated, (int, np.integer))
+        or min_mutated < 1
+    ):
+        raise ValueError(
+            f"min_mutated must be a positive integer >= 1, got {min_mutated!r}."
+        )
+    min_mutated = int(min_mutated)
 
     cohort1_sample_col = _get_sample_col(cohort1_maf)
     cohort2_sample_col = _get_sample_col(cohort2_maf)
@@ -578,8 +658,10 @@ def compare_cohorts(
         set(cohort1_maf["Hugo_Symbol"].dropna())
         | set(cohort2_maf["Hugo_Symbol"].dropna())
     )
-    cohort1_sample_count = cohort1_maf[cohort1_sample_col].nunique()
-    cohort2_sample_count = cohort2_maf[cohort2_sample_col].nunique()
+    c1_samples = cohort1_maf[cohort1_sample_col].dropna().unique().tolist()
+    c2_samples = cohort2_maf[cohort2_sample_col].dropna().unique().tolist()
+    cohort1_sample_count = len(c1_samples)
+    cohort2_sample_count = len(c2_samples)
     cohort1_gene_counts = (
         cohort1_maf.drop_duplicates(["Hugo_Symbol", cohort1_sample_col])
         .groupby("Hugo_Symbol")
@@ -623,11 +705,38 @@ def compare_cohorts(
                 "p_value": p_value,
             }
         )
+    provenance = Provenance(
+        analysis="compare_cohorts",
+        parameters={
+            "cohort1_name": cohort1_name,
+            "cohort2_name": cohort2_name,
+            "min_mutated": min_mutated,
+        },
+        inputs=table_inputs(cohort1_maf) + table_inputs(cohort2_maf),
+        sample_universe=sample_universe(
+            [f"{cohort1_name}:{s}" for s in c1_samples]
+            + [f"{cohort2_name}:{s}" for s in c2_samples],
+            source="maf_cohorts",
+        ),
+    )
     result = pd.DataFrame(rows)
     if result.empty:
-        return result
+        empty = pd.DataFrame(
+            columns=[
+                "gene",
+                f"{cohort1_name}_mutated",
+                f"{cohort2_name}_mutated",
+                f"{cohort1_name}_freq",
+                f"{cohort2_name}_freq",
+                "odds_ratio",
+                "p_value",
+                "adjusted_p_value",
+            ]
+        )
+        return attach_provenance(empty, provenance)
     result["adjusted_p_value"] = multipletests(result["p_value"], method="fdr_bh")[1]
-    return result.sort_values("adjusted_p_value")
+    result = result.sort_values("adjusted_p_value")
+    return attach_provenance(result, provenance)
 
 
 def plot_cohort_comparison_forest(

@@ -104,9 +104,9 @@ def test_sample_label_auto_hide_threshold():
     few = [f"S{i}" for i in range(5)]
     many = [f"S{i}" for i in range(style.SAMPLE_LABEL_LIMIT + 1)]
 
-    assert style.apply_sample_xticklabels(ax, few) is True       # auto: few -> show
-    assert style.apply_sample_xticklabels(ax, many) is False     # auto: many -> hide
-    assert style.apply_sample_xticklabels(ax, many, show=True) is True   # force show
+    assert style.apply_sample_xticklabels(ax, few) is True  # auto: few -> show
+    assert style.apply_sample_xticklabels(ax, many) is False  # auto: many -> hide
+    assert style.apply_sample_xticklabels(ax, many, show=True) is True  # force show
     assert style.apply_sample_xticklabels(ax, few, show=False) is False  # force hide
     plt.close(fig)
 
@@ -165,7 +165,9 @@ def test_somatic_interactions_displays_upper_triangle_only():
     """Somatic interactions return required columns and plot upper triangle only."""
     table = _maf().to_gene_table()
 
-    fig, stats = table.plot.somatic_interactions(top=4)
+    plotter = table.plot
+    fig, stats = plotter.somatic_interactions(top=4)
+    assert plotter.fig is fig
     assert {"gene1", "gene2", "odds_ratio", "adjusted_p_value"}.issubset(stats.columns)
     heatmap = fig.axes[0].collections[0]
     mask = heatmap.get_array().mask.reshape((4, 4))
@@ -217,3 +219,56 @@ def test_compare_cohorts_uses_explicit_cohort_column_names():
     assert fig.axes
     assert any(ax.collections or ax.lines or ax.patches for ax in fig.axes)
     plt.close(fig)
+
+
+def test_compare_cohorts_applies_bh_fdr_and_attaches_provenance():
+    """compare_cohorts computes exact Benjamini-Hochberg FDR and attaches provenance."""
+    from pymaftools.provenance import get_provenance
+
+    def _cohort(prefix, n_samples, gene_counts):
+        rows = []
+        # Ensure every sample appears in the MAF so cohort denominator is exact.
+        for i in range(n_samples):
+            rows.append(
+                {
+                    "Hugo_Symbol": "BASELINE",
+                    "Tumor_Sample_Barcode": f"{prefix}{i}",
+                    "sample_ID": f"{prefix}{i}",
+                    "Variant_Classification": "Missense_Mutation",
+                }
+            )
+        for gene, count in gene_counts.items():
+            for i in range(count):
+                rows.append(
+                    {
+                        "Hugo_Symbol": gene,
+                        "Tumor_Sample_Barcode": f"{prefix}{i}",
+                        "sample_ID": f"{prefix}{i}",
+                        "Variant_Classification": "Missense_Mutation",
+                    }
+                )
+        return MAF(pd.DataFrame(rows))
+
+    cohort1 = _cohort("A", 20, {"G1": 16, "G2": 10, "G3": 6, "G4": 4, "G5": 2})
+    cohort2 = _cohort("B", 20, {"G1": 1, "G2": 2, "G3": 3, "G4": 4, "G5": 1})
+
+    result = cohort1.compare_cohorts(cohort2, cohort1_name="LUAD", cohort2_name="LUSC")
+    expected_fdr = multipletests(result["p_value"], method="fdr_bh")[1]
+
+    # Raw and BH-adjusted p-values must genuinely differ so the test cannot pass
+    # if adjustment is skipped or replaced with raw p-values.
+    assert not (
+        result["adjusted_p_value"].to_numpy() == result["p_value"].to_numpy()
+    ).all()
+    assert result["adjusted_p_value"].to_numpy() == pytest.approx(expected_fdr)
+    assert result["adjusted_p_value"].is_monotonic_increasing
+
+    prov = get_provenance(result)
+    assert prov is not None
+    assert prov["analysis"] == "compare_cohorts"
+    assert prov["parameters"] == {
+        "cohort1_name": "LUAD",
+        "cohort2_name": "LUSC",
+        "min_mutated": 1,
+    }
+    assert prov["sample_universe"]["n_samples"] == 40
