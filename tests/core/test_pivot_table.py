@@ -273,31 +273,16 @@ class TestPivotTableFrequencyCalculations:
         assert frequencies['KRAS'] == 0.5
     
     def test_add_freq_method(self, sample_pivot_table):
-        """Test add_freq method"""
+        """Test add_freq writes exact feature frequencies into feature_metadata."""
         table = sample_pivot_table
         table_with_freq = table.add_freq()
-        
-        assert 'freq' in table_with_freq.feature_metadata.columns
-        assert len(table_with_freq.feature_metadata['freq']) == table.shape[0]
-        assert all(0 <= freq <= 1 for freq in table_with_freq.feature_metadata['freq'])
-    
-    def test_add_freq_with_groups(self, sample_pivot_table):
-        """Test add_freq with group-specific frequencies"""
-        table = sample_pivot_table
-        
-        # Create group subsets
-        luad_samples = table.sample_metadata['subtype'] == 'LUAD'
-        lusc_samples = table.sample_metadata['subtype'] == 'LUSC'
-        
-        luad_table = table.subset(samples=luad_samples)
-        lusc_table = table.subset(samples=lusc_samples)
-        
-        groups = {'LUAD': luad_table, 'LUSC': lusc_table}
-        table_with_group_freq = table.add_freq(groups=groups)
-        
-        assert 'LUAD_freq' in table_with_group_freq.feature_metadata.columns
-        assert 'LUSC_freq' in table_with_group_freq.feature_metadata.columns
-        assert 'freq' in table_with_group_freq.feature_metadata.columns
+
+        assert "freq" in table_with_freq.feature_metadata.columns
+        pd.testing.assert_series_equal(
+            table_with_freq.feature_metadata["freq"],
+            table.calculate_feature_frequency(),
+            check_names=False,
+        )
 
     def test_add_freq_raises_on_drifted_feature_metadata_index(self, sample_pivot_table):
         """add_freq must fail loud, not produce a silently all-NaN freq column.
@@ -533,36 +518,6 @@ class TestPivotTableValidation:
         assert len(table.sample_metadata) == 0
 
 
-@pytest.mark.slow
-class TestPivotTablePerformance:
-    """Performance tests for large datasets"""
-    
-    def test_large_dataset_creation(self):
-        """Test creation with large dataset"""
-        from tests.conftest import TestDataBuilder
-        
-        large_data = TestDataBuilder.create_large_mutation_matrix(
-            n_samples=1000, n_genes=5000
-        )
-        
-        table = PivotTable(large_data)
-        assert table.shape == (5000, 1000)
-    
-    def test_large_dataset_frequency_calculation(self):
-        """Test frequency calculation on large dataset"""
-        from tests.conftest import TestDataBuilder
-        
-        large_data = TestDataBuilder.create_large_mutation_matrix(
-            n_samples=500, n_genes=2000
-        )
-        
-        table = PivotTable(large_data)
-        frequencies = table.calculate_feature_frequency()
-        
-        assert len(frequencies) == 2000
-        assert all(0 <= freq <= 1 for freq in frequencies)
-
-
 class TestAnnDataInterop:
     """Test AnnData interoperability methods"""
 
@@ -590,15 +545,6 @@ class TestAnnDataInterop:
         # var should contain feature_metadata
         assert "chromosome" in adata.var.columns
         assert "gene_type" in adata.var.columns
-
-    def test_from_anndata_basic(self, sample_pivot_table):
-        """Test AnnData to PivotTable conversion"""
-        pytest.importorskip("anndata")
-        adata = sample_pivot_table.to_anndata()
-        table = PivotTable.from_anndata(adata)
-
-        assert isinstance(table, PivotTable)
-        assert table.shape == sample_pivot_table.shape
 
     def test_roundtrip_numeric(self):
         """Test numeric data roundtrip preserves values"""

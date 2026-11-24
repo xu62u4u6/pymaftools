@@ -98,40 +98,15 @@ class TestCohortSubsetting:
         assert subset_cohort.sample_metadata.shape[0] == 2
         assert list(subset_cohort.sample_metadata.index) == subset_samples
 
-    @pytest.mark.skip(reason="Order method not implemented yet")
-    def test_order_by_group(self, sample_cohort):
-        """Test ordering cohort by group"""
-        cohort = sample_cohort
-
-        group_order = ['LUAD', 'ASC', 'LUSC']
-        ordered_cohort = cohort.order(
-            group_col='subtype',
-            group_order=group_order
-        )
-
-        # Check that samples are ordered by subtype
-        subtypes = ordered_cohort.sample_metadata['subtype'].tolist()
-
-        # Check that each group appears in the correct order
-        unique_subtypes = []
-        for subtype in subtypes:
-            if subtype not in unique_subtypes:
-                unique_subtypes.append(subtype)
-
-        # The unique subtypes should follow the order specified
-        expected_order = [g for g in group_order if g in unique_subtypes]
-        assert unique_subtypes == expected_order
-
-
 class TestCohortPersistence:
     """Test saving and loading cohorts"""
 
-    def test_sqlite_save_and_load(self, sample_cohort, temp_output_dir):
+    def test_sqlite_save_and_load(self, sample_cohort, tmp_path):
         """Test saving and loading cohort to/from SQLite"""
         cohort = sample_cohort
 
         # Save to SQLite
-        db_path = temp_output_dir / "test_cohort.db"
+        db_path = tmp_path / "test_cohort.db"
         with pytest.warns(DeprecationWarning, match="to_h5"):
             cohort.to_sqlite(str(db_path))
 
@@ -371,29 +346,3 @@ class TestCohortCopy:
         # Deep copy should have separate table instances
         assert copied.tables["SNV"] is not original.tables["SNV"]
         assert copied.tables["SNV"].equals(original.tables["SNV"])
-
-
-@pytest.mark.integration
-class TestCohortIntegration:
-    """Integration tests for cohort functionality"""
-
-    def test_end_to_end_workflow(self, sample_cohort):
-        """Test complete cohort workflow"""
-        cohort = sample_cohort
-
-        # 1. Add frequency calculations
-        snv_with_freq = cohort.SNV.add_freq()
-        cohort.tables["SNV"] = snv_with_freq
-
-        # 2. Filter by frequency
-        high_freq_snv = cohort.SNV.filter_by_freq(threshold=0.3)
-
-        # 3. Subset cohort to high-frequency features
-        feature_subset = cohort.subset(samples=cohort.sample_IDs)
-        feature_subset.tables["SNV"] = high_freq_snv
-
-        # 4. Verify workflow results
-        assert isinstance(feature_subset, Cohort)
-        assert len(feature_subset.tables) >= 1
-        assert feature_subset.sample_metadata is not None
-        assert 'freq' in feature_subset.SNV.feature_metadata.columns

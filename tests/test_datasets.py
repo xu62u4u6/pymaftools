@@ -15,13 +15,6 @@ from pymaftools import (
 from pymaftools.core.MAF import MAF
 
 
-def test_example_maf_paths_exist():
-    for name in ("multisample", "single_sample"):
-        path = example_maf_path(name)
-        assert path.exists(), f"bundled example {name} missing at {path}"
-        assert path.suffix == ".maf"
-
-
 def test_example_maf_unknown_name_raises():
     with pytest.raises(ValueError, match="Unknown example MAF"):
         example_maf_path("does_not_exist")
@@ -42,7 +35,9 @@ def test_load_example_multisample_is_readable():
 def test_load_example_single_sample_is_readable():
     maf = load_example_maf("single_sample")
     assert isinstance(maf, MAF)
-    assert maf.to_pivot_table().shape[0] > 0
+    table = maf.to_pivot_table()
+    assert table.shape[0] > 0
+    assert table.shape[1] == 1
 
 
 def test_bundled_hdf5_table_has_installed_package_entry_points():

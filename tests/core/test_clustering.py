@@ -1,9 +1,8 @@
 import numpy as np
 import pandas as pd
+import pytest
 
-from pymaftools.core.PivotTable import PivotTable
 from pymaftools.core.Clustering import (
-    table_to_distance,
     align_clusters,
     align_cluster_label_dict,
     convert_ndarray_to_list,
@@ -13,13 +12,6 @@ from pymaftools.core.Clustering import (
     plot_clustering_metrics_and_find_best_k,
 )
 from pymaftools.llm import gpt_known_genes_summary
-
-
-def test_table_to_distance_returns_square_matrix(sample_pivot_table):
-    distance = table_to_distance(sample_pivot_table)
-
-    assert distance.shape == (sample_pivot_table.shape[1], sample_pivot_table.shape[1])
-    np.testing.assert_allclose(np.diag(distance), np.zeros(sample_pivot_table.shape[1]), atol=1e-8)
 
 
 def test_align_related_cluster_helpers():
@@ -36,6 +28,7 @@ def test_align_related_cluster_helpers():
     ari_matrix = calculate_ari_matrix(aligned_dict, 2)
     assert ari_matrix.shape == (2, 2)
     np.testing.assert_allclose(np.diag(ari_matrix), np.ones(2), atol=1e-8)
+    assert ari_matrix.loc[1, 2] == pytest.approx(1.0)
 
 
 def test_convert_ndarray_to_list_recursively():

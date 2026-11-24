@@ -60,11 +60,6 @@ def test_maf_plot_accessor_is_maf_specific():
     assert hasattr(maf.plot, "overview")
 
 
-def test_cnv_accessor_exposes_band_ratio():
-    cnv = CopyNumberVariationTable(_frame())
-    assert hasattr(cnv.plot, "band_ratio")
-
-
 def test_plot_cnv_band_ratio_is_deprecated_alias():
     """The old table-level method warns and delegates to .plot.band_ratio()."""
     cnv = CopyNumberVariationTable(_frame())

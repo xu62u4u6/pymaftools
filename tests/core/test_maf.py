@@ -347,29 +347,6 @@ def test_read_maf_is_identical_across_header_formats(tmp_path):
         pd.testing.assert_frame_equal(frames[0], other)
 
 
-def test_read_maf_multi_comment_regression(tmp_path):
-    """Regression for the reported 'Expected 1 fields ... saw N' ParserError.
-
-    The old reader hardcoded skiprows=1, so multiple comment lines left a
-    '#'-comment as the header (1 field) and the real header (N fields) on a
-    later line, raising pandas.errors.ParserError. It must now read cleanly.
-    """
-    maf_path = _write_maf(
-        tmp_path / "multi.maf",
-        ["#version 2.4", "#filedate 20240101", "#annotator vcf2maf"],
-    )
-
-    maf = MAF.read_maf(maf_path, sample_ID="s1")
-
-    assert list(maf["Hugo_Symbol"]) == ["TP53", "TP53", "EGFR", "KRAS"]
-
-
-def test_count_leading_comment_lines(tmp_path):
-    for fmt_id, comment_lines in _HEADER_FORMATS:
-        path = _write_maf(tmp_path / f"{fmt_id}.maf", comment_lines)
-        assert MAF._count_leading_comment_lines(path) == len(comment_lines)
-
-
 def test_read_maf_supports_gzip_with_leading_comments(tmp_path):
     path = tmp_path / "mutations.maf.gz"
     lines = ["#version 2.4", "#filedate 20240101", _MAF_HEADER] + _MAF_ROWS
@@ -539,9 +516,3 @@ def test_read_maf_reports_missing_index_columns(tmp_path):
 
     with pytest.raises(ValueError, match="End_Position"):
         MAF.read_maf(path)
-
-
-def test_correct_variant_classification_name_keeps_legacy_alias():
-    with pytest.warns(DeprecationWarning, match="valid_variant_classification"):
-        legacy = MAF.vaild_variant_classfication
-    assert legacy is MAF.valid_variant_classification

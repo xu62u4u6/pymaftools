@@ -212,9 +212,6 @@ class TestReadManifest:
         assert len(df) == 2
         assert df.index.name == "file_id"
         assert "uuid-1" in df.index
-
-    def test_columns(self, mock_manifest):
-        df = read_manifest(mock_manifest)
         assert "filename" in df.columns
 
 
@@ -285,45 +282,16 @@ class TestReadStarCounts:
         assert table.shape == (3, 3)
         assert "TCGA-01-0001" in table.columns
         assert "ENSG00000000003" in table.index
-
-    @patch("pymaftools.io.tcga_readers.build_uuid_to_case_mapping")
-    def test_qc_rows_removed(self, mock_mapping, mock_star_dir, mock_manifest_for_star):
-        mock_mapping.return_value = {
-            "uuid-aaa": "TCGA-01-0001",
-            "uuid-bbb": "TCGA-01-0002",
-            "uuid-ccc": "TCGA-01-0003",
-        }
-
-        table = read_star_counts(mock_star_dir, mock_manifest_for_star)
+        # QC rows are moved out of the feature index into sample_metadata
         assert "N_unmapped" not in table.index
         assert "N_multimapping" not in table.index
-        # QC values should be in sample_metadata instead
         for col in ["N_unmapped", "N_multimapping", "N_noFeature", "N_ambiguous"]:
             assert col in table.sample_metadata.columns
         assert table.sample_metadata.loc["TCGA-01-0001", "N_unmapped"] == 100
-
-    @patch("pymaftools.io.tcga_readers.build_uuid_to_case_mapping")
-    def test_feature_metadata(self, mock_mapping, mock_star_dir, mock_manifest_for_star):
-        mock_mapping.return_value = {
-            "uuid-aaa": "TCGA-01-0001",
-            "uuid-bbb": "TCGA-01-0002",
-            "uuid-ccc": "TCGA-01-0003",
-        }
-
-        table = read_star_counts(mock_star_dir, mock_manifest_for_star)
+        # Feature and sample metadata populated
         assert "gene_name" in table.feature_metadata.columns
         assert "gene_type" in table.feature_metadata.columns
         assert table.feature_metadata.loc["ENSG00000000003", "gene_name"] == "TSPAN6"
-
-    @patch("pymaftools.io.tcga_readers.build_uuid_to_case_mapping")
-    def test_sample_metadata(self, mock_mapping, mock_star_dir, mock_manifest_for_star):
-        mock_mapping.return_value = {
-            "uuid-aaa": "TCGA-01-0001",
-            "uuid-bbb": "TCGA-01-0002",
-            "uuid-ccc": "TCGA-01-0003",
-        }
-
-        table = read_star_counts(mock_star_dir, mock_manifest_for_star)
         assert "case_id" in table.sample_metadata.columns
         assert len(table.sample_metadata) == 3
 
