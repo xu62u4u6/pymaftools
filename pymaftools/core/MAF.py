@@ -1448,3 +1448,62 @@ class MAF(pd.DataFrame):
             A copy containing only rows for the requested samples.
         """
         return self[self.sample_ID.isin(sample_IDs)].copy()
+
+    def summary_stats(self) -> dict[str, Any]:
+        """Return cohort-level summary statistics for this MAF.
+
+        Computes sample count, mutated gene count, variant count, median
+        variants per sample, missense fraction, and (when columns permit)
+        SNV fraction and Ti/Tv ratio directly on the current MAF rows.
+
+        Returns
+        -------
+        dict[str, Any]
+            Plain dictionary of cohort-level summary numbers.
+        """
+        from ..plot.wes import summary_stats
+
+        return summary_stats(self)
+
+    def compare_cohorts(
+        self,
+        other: MAF,
+        cohort1_name: str = "Cohort1",
+        cohort2_name: str = "Cohort2",
+        min_mutated: int = 1,
+        *,
+        name1: str | None = None,
+        name2: str | None = None,
+    ) -> pd.DataFrame:
+        """Compare per-gene mutation frequencies against another MAF cohort.
+
+        Parameters
+        ----------
+        other : MAF
+            Comparison cohort MAF.
+        cohort1_name : str, default "Cohort1"
+            Label prefix for this cohort's count and frequency columns.
+        cohort2_name : str, default "Cohort2"
+            Label prefix for ``other`` cohort's count and frequency columns.
+        min_mutated : int, default 1
+            Minimum mutated samples in at least one cohort to include a gene.
+        name1, name2 : str, optional
+            Backward-compatible aliases for ``cohort1_name`` and ``cohort2_name``.
+
+        Returns
+        -------
+        pd.DataFrame
+            Per-gene counts, frequencies, Fisher exact odds ratio, p-value,
+            and Benjamini-Hochberg adjusted p-value.
+        """
+        from ..plot.wes import compare_cohorts
+
+        return compare_cohorts(
+            self,
+            other,
+            cohort1_name=cohort1_name,
+            cohort2_name=cohort2_name,
+            min_mutated=min_mutated,
+            name1=name1,
+            name2=name2,
+        )

@@ -113,7 +113,7 @@ def test_sample_label_auto_hide_threshold():
 
 def test_summary_stats_reports_cohort_level_numbers():
     """summary_stats counts samples/genes/variants from the raw MAF."""
-    stats = _maf().plot.summary_stats()
+    stats = _maf().summary_stats()
 
     assert stats["samples"] == 4  # S1..S4
     assert stats["variants"] == 6

@@ -15,6 +15,6 @@ class SmallVariationTablePlot(PivotStatsPlot):
     Plotting interface for SmallVariationTable objects.
 
     Inherits the shared plotters from :class:`PivotStatsPlot` (``oncoplot``,
-    ``plot_pca_samples``, ``plot_boxplot_with_annot``). This is a reserved
+    ``pca``, ``boxplot``). This is a reserved
     extension point for mutation-specific plots; add them here as methods.
     """

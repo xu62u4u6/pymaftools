@@ -15,7 +15,7 @@ class CopyNumberVariationTablePlot(PivotStatsPlot):
     Plotting interface for CopyNumberVariationTable objects.
 
     Inherits the shared plotters from :class:`PivotStatsPlot` (``oncoplot``,
-    ``plot_pca_samples``, ``plot_boxplot_with_annot``) and adds CNV-specific
+    ``pca``, ``boxplot``) and adds CNV-specific
     visualisations.
     """
 

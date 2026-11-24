@@ -16,7 +16,7 @@ Serialise any result
 
    maf = pm.load_example_maf()
    table = maf.filter_maf(pm.MAF.nonsynonymous_types).to_gene_table()
-   stats = table.plot.somatic_interactions_stats(top=10)
+   stats = table.somatic_interactions(top=10)
 
    pm.to_json(stats, "interactions.json")   # {"provenance", "n_rows", "columns", "records"}
    pm.get_provenance(stats)["parameters"]   # {"top": 10, "alpha": 0.05}
