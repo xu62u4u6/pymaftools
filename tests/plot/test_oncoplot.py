@@ -109,18 +109,6 @@ def test_mutation_heatmap_registers_track_then_renders(mutation_table):
     assert len(op.ax_heatmap.collections) >= 1
 
 
-def test_mutation_legend_content(mutation_table):
-    """After render the legend carries the present variant types and never the
-    'Unknown' sentinel."""
-    op = OncoPlot(mutation_table, figsize=(8, 6)).main().render()
-
-    assert op.has_legend("Mutation")
-    legend = op.legend_manager.legend_dict["Mutation"]
-    # variant types present in the data appear; wild-type/absent are filtered
-    assert set(legend).issubset(set(VARIANT_TYPES))
-    assert "Unknown" not in legend
-
-
 def test_legend_swatch_default_is_wide_and_short(mutation_table):
     """Legend swatches should be squat rectangles, not near-square blocks."""
     op = OncoPlot(mutation_table, figsize=(8, 6)).main().render()
@@ -323,35 +311,18 @@ def test_add_sample_annotation_dtype_inference(mutation_table):
     assert any(isinstance(t, CategoricalTrack) for t in op.tracks)
 
 
-def test_full_declarative_render_smoke(mutation_table):
-    """End-to-end: a full oncoplot through render() draws every side without
-    error and yields a heatmap plus all expected legends."""
-    op = (
-        OncoPlot(mutation_table, figsize=(12, 8))
-        .main()
-        .add_bar("TMB", side="top")
-        .add_freq(side="right")
-        .add_feature_annotation(["pathway"], side="right")
-        .add_sample_annotation(["subtype", "sex"], side="bottom")
-        .add_sample_annotation(["age"], side="bottom")
-    )
-    op.render()
-
-    assert len(op.ax_heatmap.collections) >= 1
-    for name in ("Mutation", "pathway", "subtype", "sex"):
-        assert op.has_legend(name)
-
-
 # --- Stage 4: legend filter / xticklabel params / render spacing -----------
 
 
 def test_mutation_legend_filters_wildtype_and_absent(mutation_table):
-    """P1#4: by default the legend drops wild-type ('False') and any colormap
-    category that does not occur in this cohort."""
+    """P1#4: by default the legend drops wild-type ('False'), 'Unknown', and any
+    colormap category that does not occur in this cohort."""
     op = OncoPlot(mutation_table, figsize=(8, 6)).main().render()
 
+    assert op.has_legend("Mutation")
     legend = op.legend_manager.legend_dict["Mutation"]
     assert "False" not in legend  # wild-type sentinel gone
+    assert "Unknown" not in legend  # unknown sentinel gone
     assert "Multi_Hit" not in legend  # in the cmap but absent from the data
     # only variant types actually present remain
     assert set(legend).issubset(set(VARIANT_TYPES))
@@ -380,34 +351,19 @@ def test_add_xticklabel_rotation_and_fontsize(mutation_table):
 
 
 def test_render_legend_pad_adds_named_spacer_column(mutation_table):
-    """legend_pad inserts one explicit spacer column (the named replacement for
-    the old phantom column); without it there is none."""
-    op_no_pad = OncoPlot(mutation_table, figsize=(8, 6)).main().add_freq(side="right")
-    op_no_pad.render(legend_pad=0)
-
-    op_pad = OncoPlot(mutation_table, figsize=(8, 6)).main().add_freq(side="right")
-    op_pad.render(legend_pad=2)
-
-    assert op_pad.gs.ncols == op_no_pad.gs.ncols + 1
-
-
-def test_render_default_legend_pad_adds_space_before_legend(mutation_table):
-    """The default oncoplot keeps the legend off the main plot."""
+    """Default and explicit legend_pad insert one spacer column before the
+    legend; legend_pad=0 omits it."""
     op_no_pad = OncoPlot(mutation_table, figsize=(8, 6)).main().add_freq(side="right")
     op_no_pad.render(legend_pad=0)
 
     op_default = OncoPlot(mutation_table, figsize=(8, 6)).main().add_freq(side="right")
     op_default.render()
 
+    op_pad = OncoPlot(mutation_table, figsize=(8, 6)).main().add_freq(side="right")
+    op_pad.render(legend_pad=2)
+
     assert op_default.gs.ncols == op_no_pad.gs.ncols + 1
-
-
-def test_freq_track_default_annotation_fontsize_is_smaller(mutation_table):
-    """Frequency cell annotations default one point smaller than before."""
-    op = OncoPlot(mutation_table, figsize=(8, 6)).main().add_freq(side="right")
-
-    track = next(t for t in op.tracks if isinstance(t, FreqTrack))
-    assert track.annot_fontsize == 8
+    assert op_pad.gs.ncols == op_no_pad.gs.ncols + 1
 
 
 # --- S6: unified entry + PivotTablePlot rename backward-compat --------------

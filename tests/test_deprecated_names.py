@@ -8,15 +8,16 @@ producing the same numbers until pymaftools 1.0.
 from __future__ import annotations
 
 import warnings
+from unittest.mock import patch
 
 import pandas as pd
 import pytest
 
 import pymaftools
 from pymaftools import Cohort, PivotTable
-from pymaftools._deprecation import REMOVAL_VERSION
 from pymaftools.core import CopyNumberVariationTable as cnv_module
 from pymaftools.core.MAF import MAF
+from pymaftools.core.VCF import VCF
 from pymaftools.utils import geneinfo
 
 
@@ -35,28 +36,18 @@ def _table() -> PivotTable:
     return table
 
 
-def test_removal_version_is_one_point_zero():
-    assert REMOVAL_VERSION == "1.0"
+def test_top_level_deprecated_pca_cca_warns_and_resolves():
+    from pymaftools.utils.reduction import PCA_CCA as canonical
 
+    assert "PCA_CCA" not in pymaftools.__all__
+    with pytest.warns(DeprecationWarning, match=r"pymaftools\.PCA_CCA.*1\.0"):
+        resolved = pymaftools.PCA_CCA
+    assert resolved is canonical
 
-@pytest.mark.parametrize("name", ["PCA_CCA"])
-def test_project_specific_names_left_top_level_namespace(name):
-    assert name not in pymaftools.__all__
-    with pytest.warns(DeprecationWarning, match=rf"pymaftools\.{name}.*1\.0"):
-        value = getattr(pymaftools, name)
-    assert value is not None
+    with pytest.warns(DeprecationWarning, match=r"pymaftools\.PCA_CCA.*1\.0"):
+        from pymaftools import PCA_CCA as imported
 
-
-def test_top_level_deprecated_names_resolve_to_submodule_objects():
-    from pymaftools.utils.reduction import PCA_CCA
-
-    with pytest.warns(DeprecationWarning):
-        assert pymaftools.PCA_CCA is PCA_CCA
-
-
-def test_from_import_of_deprecated_top_level_name_warns():
-    with pytest.warns(DeprecationWarning, match="PCA_CCA"):
-        from pymaftools import PCA_CCA  # noqa: F401
+    assert imported is canonical
 
 
 @pytest.mark.parametrize(
@@ -90,11 +81,10 @@ def test_cohort_hdf5_aliases_round_trip_identically(tmp_path):
     canonical = tmp_path / "canonical.h5"
     legacy = tmp_path / "legacy.h5"
     cohort.to_h5(canonical)
-    with pytest.warns(DeprecationWarning, match=r"Cohort\.to_h5\(\).*") as record:
+    with pytest.warns(DeprecationWarning, match=r"1\.0.*Cohort\.to_h5\(\)"):
         cohort.to_hdf5(legacy)
-    assert "1.0" in str(record[0].message)
 
-    with pytest.warns(DeprecationWarning, match=r"Cohort\.read_h5\(\)"):
+    with pytest.warns(DeprecationWarning, match=r"1\.0.*Cohort\.read_h5\(\)"):
         from_legacy = Cohort.read_hdf5(legacy)
     from_canonical = Cohort.read_h5(canonical)
     pd.testing.assert_frame_equal(
@@ -102,26 +92,92 @@ def test_cohort_hdf5_aliases_round_trip_identically(tmp_path):
     )
 
 
+def test_pivot_sqlite_warns_in_favor_of_hdf5(tmp_path):
+    table = PivotTable(pd.DataFrame({"s1": [True]}, index=["TP53"]))
+    db_path = tmp_path / "pivot.db"
+
+    with pytest.warns(DeprecationWarning, match=r"1\.0.*to_h5"):
+        table.to_sqlite(db_path)
+    with pytest.warns(DeprecationWarning, match=r"1\.0.*read_h5"):
+        restored = PivotTable.read_sqlite(db_path)
+
+    pd.testing.assert_frame_equal(
+        pd.DataFrame(restored), pd.DataFrame(table), check_names=False
+    )
+
+
 def test_pivot_pca_alias_matches_pca():
     table = _table()
     expected_df, expected_var, _ = table.pca(to_binary=True)
-    with pytest.warns(DeprecationWarning, match=r"PivotTable\.pca\(\)"):
+    with pytest.warns(DeprecationWarning, match=r"1\.0.*PivotTable\.pca\(\)"):
         legacy_df, legacy_var, _ = table.PCA(to_binary=True)
     pd.testing.assert_frame_equal(legacy_df, expected_df)
     assert list(legacy_var) == list(expected_var)
 
 
+def test_calculate_TMB_alias_warns_and_matches_calculate_tmb():
+    table = _table()
+    table.sample_metadata["mutations_count"] = [3, 5, 2]
+
+    with pytest.warns(FutureWarning, match="legacy normalized count"):
+        expected = table.calculate_tmb(default_capture_size=40)
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        legacy = table.calculate_TMB(default_capture_size=40)
+    dep_msgs = [
+        str(w.message) for w in caught if issubclass(w.category, DeprecationWarning)
+    ]
+    assert any("calculate_tmb" in m and "1.0" in m for m in dep_msgs)
+    pd.testing.assert_series_equal(
+        legacy.sample_metadata["TMB"], expected.sample_metadata["TMB"]
+    )
+
+
+def test_to_sigprofiler_alias_warns_and_matches_canonical(tmp_path):
+    maf = MAF(
+        pd.DataFrame(
+            {
+                "sample_ID": ["s1", "s2"],
+                "Chromosome": ["chr1", "chr2"],
+                "Start_Position": [1, 2],
+                "End_Position": [1, 2],
+                "Reference_Allele": ["C", "G"],
+                "Tumor_Seq_Allele2": ["T", "A"],
+                "Variant_Type": ["SNP", "SNP"],
+            }
+        )
+    )
+    canonical_path = tmp_path / "canonical.tsv"
+    legacy_path = tmp_path / "legacy.tsv"
+
+    maf.to_sigprofiler(canonical_path)
+    with pytest.warns(DeprecationWarning, match=r"1\.0.*to_sigprofiler"):
+        maf.write_SigProfilerMatrixGenerator_format(legacy_path)
+
+    assert legacy_path.read_text() == canonical_path.read_text()
+
+
+def test_vcf_from_file_alias_warns_and_delegates():
+    with patch.object(VCF, "read_vcf", return_value="sentinel") as stub:
+        with pytest.warns(DeprecationWarning, match=r"1\.0.*read_vcf"):
+            result = VCF.from_file("x.vcf", "mutect2")
+
+    assert result == "sentinel"
+    stub.assert_called_once_with("x.vcf", "mutect2")
+
+
 def test_misspelled_variant_classification_alias_warns_on_class_and_instance():
-    with pytest.warns(DeprecationWarning, match="valid_variant_classification"):
+    with pytest.warns(DeprecationWarning, match=r"1\.0.*valid_variant_classification"):
         assert MAF.vaild_variant_classfication is MAF.valid_variant_classification
     maf = MAF(pd.DataFrame({"Hugo_Symbol": ["TP53"]}))
-    with pytest.warns(DeprecationWarning):
+    with pytest.warns(DeprecationWarning, match=r"1\.0.*valid_variant_classification"):
         assert maf.vaild_variant_classfication is MAF.valid_variant_classification
 
 
 def test_tcga_cnv_helpers_have_snake_case_names():
     barcode = "TCGA-05-4389-01A"
-    with pytest.warns(DeprecationWarning, match=r"tcga_sample_type\(\)"):
+    with pytest.warns(DeprecationWarning, match=r"1\.0.*tcga_sample_type\(\)"):
         assert cnv_module.TCGA_sample_type(barcode) == cnv_module.tcga_sample_type(
             barcode
         )
@@ -210,24 +266,3 @@ def test_pivot_stats_and_plot_aliases_warn_and_match_canonical():
         t.get_text() for t in ax1.get_xticklabels()
     ]
     plt.close("all")
-
-
-@pytest.mark.parametrize(
-    "call",
-    [
-        lambda: _table().calculate_TMB(),
-        lambda: pymaftools.PCA_CCA,
-    ],
-)
-def test_every_deprecation_message_names_the_removal_release(call):
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        try:
-            call()
-        except (
-            Exception
-        ):  # the call itself may need more input; only the warning matters
-            pass
-    deprecations = [w for w in caught if issubclass(w.category, DeprecationWarning)]
-    assert deprecations
-    assert all(f"pymaftools {REMOVAL_VERSION}" in str(w.message) for w in deprecations)

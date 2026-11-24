@@ -161,22 +161,12 @@ def test_lollipop_single_gene_draws_legend_axis():
     plt.close(plot.fig)
 
 
-def test_pivot_plot_exposes_somatic_interactions():
-    """Somatic interactions belong on the gene x sample PivotTable accessor."""
+def test_somatic_interactions_displays_upper_triangle_only():
+    """Somatic interactions return required columns and plot upper triangle only."""
     table = _maf().to_gene_table()
 
     fig, stats = table.plot.somatic_interactions(top=4)
-
     assert {"gene1", "gene2", "odds_ratio", "adjusted_p_value"}.issubset(stats.columns)
-    assert fig.axes
-    plt.close(fig)
-
-
-def test_somatic_interactions_displays_upper_triangle_only():
-    """The symmetric interaction matrix should not duplicate lower-triangle cells."""
-    table = _maf().to_gene_table()
-
-    fig, _stats = table.plot.somatic_interactions(top=4)
     heatmap = fig.axes[0].collections[0]
     mask = heatmap.get_array().mask.reshape((4, 4))
 

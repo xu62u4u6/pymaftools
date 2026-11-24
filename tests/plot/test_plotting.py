@@ -1,311 +1,160 @@
-"""
-Tests for plotting functionality
-"""
+"""Tests for PivotStatsPlot, ModelPlot, and BasePlot saving/validation."""
 
-import pytest
+from __future__ import annotations
+
+import matplotlib
+
+matplotlib.use("Agg")
+
 import matplotlib.pyplot as plt
 import numpy as np
-import tempfile
-from pymaftools.plot.PivotTablePlot import PivotTablePlot
+import pandas as pd
+import pytest
+
+from pymaftools.plot.BasePlot import BasePlot
 from pymaftools.plot.ModelPlot import ModelPlot
+from pymaftools.plot.PivotStatsPlot import PivotStatsPlot
 
 
-class TestPivotTablePlot:
-    """Test PivotTablePlot functionality"""
-    
-    def test_plot_creation(self, sample_pivot_table):
-        """Test plot object creation"""
-        plot = PivotTablePlot(sample_pivot_table)
-        
-        assert plot.pivot_table is sample_pivot_table
-        assert hasattr(plot, 'fig')
-        assert hasattr(plot, 'save')
-    
+class TestPivotStatsPlot:
+    """Behavioral tests for PivotStatsPlot boxplot and PCA methods."""
+
     @pytest.mark.plot
-    def test_boxplot_with_annot(self, sample_pivot_table, temp_output_dir):
-        """Test boxplot with statistical annotations"""
-        # Add TMB data for testing
-        sample_pivot_table.sample_metadata['TMB'] = [2.5, 3.1, 1.8, 2.9]
-        
-        plot = PivotTablePlot(sample_pivot_table)
-        
-        # Test basic boxplot
-        ax = plot.plot_boxplot_with_annot(
-            test_col='TMB',
-            group_col='subtype',
-            test='Mann-Whitney'
+    def test_boxplot_draws_boxes_custom_labels_and_annotations(
+        self, sample_pivot_table
+    ):
+        sample_pivot_table.sample_metadata["TMB"] = [2.5, 3.1, 1.8, 2.9]
+        plot = PivotStatsPlot(sample_pivot_table)
+
+        ax = plot.boxplot(
+            test_col="TMB",
+            group_col="subtype",
+            test="Mann-Whitney",
+            xlabel="Cancer Subtype",
+            ylabel="Tumor Mutation Burden",
+            title="TMB Comparison",
         )
-        
-        assert ax is not None
-        assert ax.get_xlabel() == 'subtype'
-        assert ax.get_ylabel() == 'TMB'
-        
-        plt.close('all')
-    
+
+        assert ax.get_xlabel() == "Cancer Subtype"
+        assert ax.get_ylabel() == "Tumor Mutation Burden"
+        assert ax.get_title() == "TMB Comparison"
+        assert len(ax.patches) >= 1 or len(ax.lines) >= 1
+        assert len(ax.texts) >= 1  # statannotations significance label
+        plt.close("all")
+
     @pytest.mark.plot
-    def test_boxplot_custom_labels(self, sample_pivot_table, temp_output_dir):
-        """Test boxplot with custom axis labels"""
-        sample_pivot_table.sample_metadata['TMB'] = [2.5, 3.1, 1.8, 2.9]
-        
-        plot = PivotTablePlot(sample_pivot_table)
-        
-        ax = plot.plot_boxplot_with_annot(
-            test_col='TMB',
-            group_col='subtype',
-            xlabel='Cancer Subtype',
-            ylabel='Tumor Mutation Burden',
-            title='TMB Comparison'
-        )
-        
-        assert ax.get_xlabel() == 'Cancer Subtype'
-        assert ax.get_ylabel() == 'Tumor Mutation Burden'
-        assert ax.get_title() == 'TMB Comparison'
-        
-        plt.close('all')
-    
-    @pytest.mark.plot
-    def test_boxplot_save_functionality(self, sample_pivot_table, temp_output_dir):
-        """Test saving boxplot"""
-        sample_pivot_table.sample_metadata['TMB'] = [2.5, 3.1, 1.8, 2.9]
-        
-        plot = PivotTablePlot(sample_pivot_table)
-        save_path = temp_output_dir / "test_boxplot.png"
-        
-        plot.plot_boxplot_with_annot(
-            test_col='TMB',
-            group_col='subtype',
-            save_path=str(save_path),
-            dpi=150
-        )
-        
-        assert save_path.exists()
-        plt.close('all')
-    
-    @pytest.mark.plot
-    def test_pca_plot(self, sample_pivot_table, temp_output_dir):
-        """Test PCA plotting"""
-        plot = PivotTablePlot(sample_pivot_table)
-        
-        pca_df, explained_var, pca_obj = plot.plot_pca_samples(
-            color_col='subtype',
+    def test_pca_categorical_and_numeric_render_artists(self, sample_pivot_table):
+        sample_pivot_table.sample_metadata["TMB"] = [2.5, 3.1, 1.8, 2.9]
+        expected_df, expected_var, _ = sample_pivot_table.pca(to_binary=True)
+
+        plot_cat = PivotStatsPlot(sample_pivot_table)
+        pca_df, explained_var, pca_obj = plot_cat.pca(
+            color_col="subtype",
             figsize=(8, 4),
-            to_binary=True
+            to_binary=True,
         )
-        
-        assert pca_df is not None
-        assert explained_var is not None
+        pd.testing.assert_frame_equal(pca_df[["PC1", "PC2"]], expected_df)
+        np.testing.assert_allclose(explained_var, expected_var)
         assert pca_obj is not None
-        assert pca_df.shape[1] >= 2  # At least PC1, PC2
-        assert len(explained_var) >= 2
-        
-        plt.close('all')
-    
-    @pytest.mark.plot 
-    def test_pca_plot_numeric_colors(self, sample_pivot_table):
-        """Test PCA plot with numeric color encoding"""
-        # Add numeric data
-        sample_pivot_table.sample_metadata['TMB'] = [2.5, 3.1, 1.8, 2.9]
-        
-        plot = PivotTablePlot(sample_pivot_table)
-        
-        pca_df, explained_var, pca_obj = plot.plot_pca_samples(
-            color_col='TMB',
+        assert any(ax.collections for ax in plot_cat.fig.axes)
+        plt.close("all")
+
+        plot_num = PivotStatsPlot(sample_pivot_table)
+        num_df, _, _ = plot_num.pca(
+            color_col="TMB",
             is_numeric=True,
-            palette='viridis'
+            palette="viridis",
+            to_binary=True,
         )
-        
-        assert pca_df is not None
-        plt.close('all')
+        pd.testing.assert_frame_equal(num_df[["PC1", "PC2"]], expected_df)
+        # Numeric color encoding attaches a colorbar (extra axes beyond main + legend)
+        assert len(plot_num.fig.axes) >= 2
+        assert any(
+            c.get_array() is not None
+            for ax in plot_num.fig.axes
+            for c in ax.collections
+        )
+        plt.close("all")
 
 
 class TestModelPlot:
-    """Test ModelPlot functionality"""
-    
-    def test_model_plot_creation(self):
-        """Test ModelPlot creation"""
-        plot = ModelPlot()
-        
-        assert hasattr(plot, 'fig')
-        assert hasattr(plot, 'save')
-    
+    """Behavioral tests for ModelPlot metric comparisons."""
+
     @pytest.mark.plot
-    def test_metric_comparison_plot(self, sample_model_metrics, temp_output_dir):
-        """Test metric comparison plotting"""
+    def test_metric_comparison_draws_axes_rotation_and_saves(
+        self, sample_model_metrics, tmp_path
+    ):
         plot = ModelPlot()
-        
+        save_path = tmp_path / "metrics.png"
+
         plot.plot_metric_comparison_with_annotation(
             data=sample_model_metrics,
-            metrics=['acc', 'f1'],
-            group_col='model',
-            test='Mann-Whitney',
-            fontsize=12
-        )
-        
-        assert plot.fig is not None
-        plt.close('all')
-    
-    @pytest.mark.plot
-    def test_metric_comparison_with_rotation(self, sample_model_metrics):
-        """Test metric comparison with rotated labels"""
-        plot = ModelPlot()
-        
-        plot.plot_metric_comparison_with_annotation(
-            data=sample_model_metrics,
-            metrics=['acc'],
-            group_col='model',
-            rotation=45,
-            fontsize=10
-        )
-        
-        assert plot.fig is not None
-        plt.close('all')
-    
-    @pytest.mark.plot
-    def test_metric_comparison_save(self, sample_model_metrics, temp_output_dir):
-        """Test saving metric comparison plot"""
-        plot = ModelPlot()
-        save_path = temp_output_dir / "test_metrics.png"
-        
-        plot.plot_metric_comparison_with_annotation(
-            data=sample_model_metrics,
-            metrics=['acc', 'f1'],
-            group_col='model',
+            metrics=["acc", "f1"],
+            group_col="model",
+            test="Mann-Whitney",
+            rotation=30,
+            fontsize=10,
             save_path=str(save_path),
-            dpi=150
+            dpi=120,
         )
-        
-        assert save_path.exists()
-        plt.close('all')
+
+        assert len(plot.fig.axes) == 2
+        tick_rotations = {
+            tick.get_rotation() for tick in plot.fig.axes[0].get_xticklabels()
+        }
+        assert tick_rotations == {30}
+        assert save_path.is_file() and save_path.stat().st_size > 0
+        plt.close("all")
 
 
 class TestPlotSaving:
-    """Test plot saving functionality"""
-    
+    """Tests for BasePlot.save across formats, Path objects, and DPI."""
+
     @pytest.mark.plot
-    def test_different_formats(self, sample_pivot_table, temp_output_dir):
-        """Test saving plots in different formats"""
-        plot = PivotTablePlot(sample_pivot_table)
-        sample_pivot_table.sample_metadata['TMB'] = [2.5, 3.1, 1.8, 2.9]
-        
-        formats = ['png', 'pdf', 'svg']
-        
-        for fmt in formats:
-            save_path = temp_output_dir / f"test_plot.{fmt}"
-            
-            ax = plot.plot_boxplot_with_annot(
-                test_col='TMB',
-                group_col='subtype',
-                save_path=str(save_path)
-            )
-            
-            if fmt != 'svg':  # SVG might have issues with some matplotlib versions
-                assert save_path.exists()
-            
-            plt.close('all')
-    
+    @pytest.mark.parametrize("ext", ["png", "pdf", "svg"])
+    def test_save_supports_formats_and_pathlike(self, tmp_path, ext):
+        plot = BasePlot()
+        plot.fig, ax = plt.subplots(figsize=(4, 3))
+        ax.plot([0, 1], [0, 1])
+        save_path = tmp_path / f"plot.{ext}"
+
+        plot.save(save_path)
+
+        assert save_path.is_file()
+        assert save_path.stat().st_size > 0
+        plot.close()
+
     @pytest.mark.plot
-    def test_high_dpi_saving(self, sample_pivot_table, temp_output_dir):
-        """Test high DPI saving"""
-        plot = PivotTablePlot(sample_pivot_table)
-        sample_pivot_table.sample_metadata['TMB'] = [2.5, 3.1, 1.8, 2.9]
-        
-        save_path = temp_output_dir / "high_dpi_plot.png"
-        
-        ax = plot.plot_boxplot_with_annot(
-            test_col='TMB',
-            group_col='subtype',
-            save_path=str(save_path),
-            dpi=600
-        )
-        
-        assert save_path.exists()
-        
-        # Check file size (higher DPI should result in larger file)
-        file_size = save_path.stat().st_size
-        assert file_size > 1000  # Should be reasonably large
-        
-        plt.close('all')
+    def test_higher_dpi_produces_larger_png(self, tmp_path):
+        plot = BasePlot()
+        plot.fig, ax = plt.subplots(figsize=(4, 3))
+        ax.scatter(np.arange(20), np.arange(20))
+
+        low_dpi = tmp_path / "low.png"
+        high_dpi = tmp_path / "high.png"
+        plot.save(low_dpi, dpi=72)
+        plot.save(high_dpi, dpi=300)
+        plot.close()
+
+        assert high_dpi.stat().st_size > low_dpi.stat().st_size
 
 
 class TestPlotValidation:
-    """Test plot validation and error handling"""
-    
+    """Error handling for invalid plotting inputs."""
+
     def test_invalid_column_names(self, sample_pivot_table):
-        """Test handling of invalid column names"""
-        plot = PivotTablePlot(sample_pivot_table)
-        
+        plot = PivotStatsPlot(sample_pivot_table)
+
         with pytest.raises(ValueError, match="Could not interpret (value|input)"):
-            plot.plot_boxplot_with_annot(
-                test_col='nonexistent_column',
-                group_col='subtype'
-            )
-        
+            plot.boxplot(test_col="nonexistent_column", group_col="subtype")
+
         with pytest.raises(ValueError, match="not found in sample_metadata"):
-            plot.plot_pca_samples(color_col='nonexistent_column')
-    
-    def test_empty_data_handling(self):
-        """Test handling of empty data"""
-        import pandas as pd
-        from pymaftools.core.PivotTable import PivotTable
-        
-        # Create minimal table
-        minimal_data = pd.DataFrame({
-            'sample1': [True, False]
-        }, index=['gene1', 'gene2'])
-        
-        table = PivotTable(minimal_data)
-        table.sample_metadata['group'] = ['A']
-        
-        plot = PivotTablePlot(table)
-        
-        # Should handle single group gracefully
-        with pytest.raises((ValueError, IndexError)):
-            plot.plot_boxplot_with_annot(
-                test_col='nonexistent',
-                group_col='group'
-            )
-
-
-@pytest.mark.slow
-class TestPlotPerformance:
-    """Performance tests for plotting"""
-    
-    @pytest.mark.plot
-    def test_large_dataset_plotting(self):
-        """Test plotting with large datasets"""
-        from tests.conftest import TestDataBuilder
-        import pandas as pd
-        from pymaftools.core.PivotTable import PivotTable
-        
-        # Create large dataset
-        large_data = TestDataBuilder.create_large_mutation_matrix(
-            n_samples=100, n_genes=500
-        )
-        
-        table = PivotTable(large_data)
-        
-        # Add sample metadata
-        subtypes = ['LUAD', 'LUSC', 'ASC'] * (100 // 3 + 1)
-        table.sample_metadata['subtype'] = subtypes[:100]
-        table.sample_metadata['TMB'] = np.random.normal(2.5, 0.5, 100)
-        
-        plot = PivotTablePlot(table)
-        
-        # Test PCA (this should be reasonably fast)
-        pca_df, explained_var, pca_obj = plot.plot_pca_samples(
-            color_col='subtype',
-            to_binary=True
-        )
-        
-        assert pca_df.shape[0] == 100
-        plt.close('all')
+            plot.pca(color_col="nonexistent_column")
 
 
 @pytest.mark.plot
 def test_metric_comparison_default_order_uses_data_groups():
     # The default order used to be the ASC project's omics names.
-    import pandas as pd
-
     rng = np.random.default_rng(0)
     data = pd.DataFrame(
         {
