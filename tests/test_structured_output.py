@@ -216,7 +216,7 @@ def test_save_without_summary_writes_only_figure(table, tmp_path):
 
 def test_save_errors_are_raised(table, tmp_path):
     oncoplot = table.head(3).plot.oncoplot(figsize=(5, 3)).main().render()
-    with pytest.raises(Exception):
+    with pytest.raises(OSError):
         oncoplot.save(tmp_path / "missing_dir" / "x.png", dpi=50)
     oncoplot.close()
 

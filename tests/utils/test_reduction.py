@@ -31,12 +31,14 @@ def test_fit_transform_transform_and_get_weights():
 
     assert cca_snv.shape == (snv.shape[1], 2)
     assert cca_cnv.shape == (cnv.shape[1], 2)
-    assert cca_snv_new.shape == (snv.shape[1], 2)
-    assert cca_cnv_new.shape == (cnv.shape[1], 2)
+    assert np.allclose(cca_snv, cca_snv_new)
+    assert np.allclose(cca_cnv, cca_cnv_new)
     assert "CCA_SNV_comp1" in w_snv.columns
     assert "CCA_CNV_comp1" in w_cnv.columns
     assert "abs_weight_mean" in w_snv.columns
     assert "abs_weight_mean" in w_cnv.columns
+    assert w_snv["abs_weight_mean"].is_monotonic_decreasing
+    assert w_cnv["abs_weight_mean"].is_monotonic_decreasing
 
 
 def test_get_weights_raises_before_fit():

@@ -6,6 +6,7 @@ matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
 import pandas as pd
+import pytest
 from statsmodels.stats.multitest import multipletests
 
 from pymaftools.core.MAF import MAF
@@ -117,7 +118,10 @@ def test_summary_stats_reports_cohort_level_numbers():
     assert stats["samples"] == 4  # S1..S4
     assert stats["variants"] == 6
     assert stats["genes_mutated"] == 4  # TP53, KRAS, EGFR, PIK3CA
-    assert 0.0 <= stats["missense_fraction"] <= 1.0
+    assert stats["median_per_sample"] == pytest.approx(1.5)
+    assert stats["missense_fraction"] == pytest.approx(0.5)  # 3 / 6
+    assert stats["snv_fraction"] == pytest.approx(5 / 6)
+    assert stats["titv_ratio"] == pytest.approx(4.0)  # 4 Ti / 1 Tv
 
 
 def test_titv_summary_uses_six_pyrimidine_context_classes():
@@ -211,5 +215,15 @@ def test_compare_cohorts_uses_explicit_cohort_column_names():
     assert {"LUAD_mutated", "LUSC_mutated", "LUAD_freq", "LUSC_freq"}.issubset(
         result.columns
     )
+    by_gene = result.set_index("gene")
+    # TP53 has two rows in S1; compare_cohorts must deduplicate to 1 mutated sample
+    assert by_gene.loc["TP53", "LUAD_mutated"] == 1
+    assert by_gene.loc["TP53", "LUSC_mutated"] == 0
+    assert by_gene.loc["TP53", "LUAD_freq"] == pytest.approx(0.5)
+    assert by_gene.loc["TP53", "LUSC_freq"] == pytest.approx(0.0)
+    assert by_gene.loc["EGFR", "LUAD_mutated"] == 0
+    assert by_gene.loc["EGFR", "LUSC_mutated"] == 2
+    assert by_gene.loc["EGFR", "LUSC_freq"] == pytest.approx(1.0)
     assert fig.axes
+    assert any(ax.collections or ax.lines or ax.patches for ax in fig.axes)
     plt.close(fig)

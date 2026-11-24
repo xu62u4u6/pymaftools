@@ -313,53 +313,47 @@ class TestPivotTableFrequencyCalculations:
             table.add_freq()
 
     def test_filter_by_freq(self, sample_pivot_table):
-        """Test frequency-based filtering"""
+        """Test frequency-based filtering actually drops below-threshold features."""
         table = sample_pivot_table.add_freq()
-        
-        # Filter features with frequency >= 0.5
-        filtered = table.filter_by_freq(threshold=0.5)
-        
-        assert all(table.feature_metadata.loc[filtered.index, 'freq'] >= 0.5)
-        assert filtered.shape[0] <= table.shape[0]
+
+        # TP53=0.5, KRAS=0.5, EGFR=0.75, PIK3CA=0.5 -> only EGFR passes >= 0.6.
+        filtered = table.filter_by_freq(threshold=0.6)
+
+        assert list(filtered.index) == ["EGFR"]
+        assert list(filtered.feature_metadata.index) == ["EGFR"]
+        assert filtered.feature_metadata.loc["EGFR", "freq"] == pytest.approx(0.75)
 
 
 class TestPivotTableSorting:
     """Test sorting functionality"""
-    
+
     def test_sort_features(self, sample_pivot_table):
         """Test feature sorting by metadata"""
         table = sample_pivot_table.add_freq()
-        
+
         # Sort by frequency (descending)
-        sorted_table = table.sort_features(by='freq', ascending=False)
-        
-        freq_values = sorted_table.feature_metadata['freq'].values
-        assert all(freq_values[i] >= freq_values[i+1] for i in range(len(freq_values)-1))
-    
-    def test_sort_samples_by_group(self, sample_pivot_table):
-        """Test sample sorting by group"""
-        table = sample_pivot_table
-        
-        group_order = ['LUAD', 'ASC', 'LUSC']
-        sorted_table = table.sort_samples_by_group(
-            group_col='subtype', 
-            group_order=group_order, 
-            top=2
+        sorted_table = table.sort_features(by="freq", ascending=False)
+
+        assert sorted_table.index[0] == "EGFR"
+        freq_values = sorted_table.feature_metadata["freq"].values
+        assert all(
+            freq_values[i] >= freq_values[i + 1] for i in range(len(freq_values) - 1)
         )
-        
-        # Check that samples are grouped by subtype
-        subtypes = sorted_table.sample_metadata['subtype'].tolist()
-        
-        # Should have groups in order (though within groups may vary)
-        luad_indices = [i for i, s in enumerate(subtypes) if s == 'LUAD']
-        asc_indices = [i for i, s in enumerate(subtypes) if s == 'ASC']
-        lusc_indices = [i for i, s in enumerate(subtypes) if s == 'LUSC']
-        
-        # Check that groups appear in order
-        if luad_indices and asc_indices:
-            assert max(luad_indices) < min(asc_indices)
-        if asc_indices and lusc_indices:
-            assert max(asc_indices) < min(lusc_indices)
+
+    def test_sort_samples_by_group(self, sample_pivot_table):
+        """Test sample sorting by group preserves exact group order."""
+        table = sample_pivot_table
+
+        group_order = ["LUAD", "ASC", "LUSC"]
+        sorted_table = table.sort_samples_by_group(
+            group_col="subtype",
+            group_order=group_order,
+            top=2,
+        )
+
+        subtypes = sorted_table.sample_metadata["subtype"].tolist()
+        assert subtypes == ["LUAD", "LUAD", "ASC", "LUSC"]
+        assert set(sorted_table.columns) == set(table.columns)
 
     def test_sort_samples_by_group_preserves_unlisted_and_missing_groups(
         self, sample_pivot_table
@@ -395,17 +389,26 @@ class TestPivotTableSorting:
 
 class TestPivotTableStatistics:
     """Test statistical methods"""
-    
-    def test_to_binary_table(self, sample_pivot_table):
-        """Test conversion to binary format"""
-        table = sample_pivot_table
+
+    def test_to_binary_table(self):
+        """Test conversion of mixed string/False/None mutation calls to boolean."""
+        table = PivotTable(
+            pd.DataFrame(
+                {
+                    "S1": ["Missense_Mutation", False, None],
+                    "S2": ["Multi_Hit", "Nonsense_Mutation", False],
+                },
+                index=["TP53", "KRAS", "EGFR"],
+            )
+        )
         binary_table = table.to_binary_table()
-        
-        # Check that all columns are boolean type
+
         assert all(dtype == bool for dtype in binary_table.dtypes)
-        assert binary_table.shape == table.shape
-        expected = table.notna() & table.ne(False)
-        assert binary_table.equals(expected)
+        expected = pd.DataFrame(
+            {"S1": [True, False, False], "S2": [True, True, False]},
+            index=["TP53", "KRAS", "EGFR"],
+        )
+        pd.testing.assert_frame_equal(pd.DataFrame(binary_table), expected)
 
     def test_to_binary_table_treats_missing_values_as_absent(self, sample_pivot_table):
         """Missing observations must not be counted as mutations."""
@@ -448,36 +451,46 @@ class TestPivotTableStatistics:
         assert continuous.to_binary_table(threshold=0.3).equals(
             pd.DataFrame([[True, False, True]])
         )
-    
+
     def test_PCA_calculation(self, sample_pivot_table):
-        """Test PCA calculation"""
+        """Test PCA coordinates, sample alignment, and variance ordering."""
         table = sample_pivot_table
-        
-        # Test with binary conversion
+
         pca_df, explained_var, pca_obj = table.pca(to_binary=True)
-        
+
         assert isinstance(pca_df, pd.DataFrame)
-        assert pca_df.shape == (table.shape[1], 2)  # n_samples x 2 components
-        assert 'PC1' in pca_df.columns
-        assert 'PC2' in pca_df.columns
+        assert pca_df.shape == (table.shape[1], 2)
+        assert pca_df.index.equals(table.columns)
+        assert list(pca_df.columns[:2]) == ["PC1", "PC2"]
+        assert np.all(np.isfinite(pca_df.values))
         assert len(explained_var) == 2
-        assert all(0 <= var <= 1 for var in explained_var)
-    
+        assert explained_var[0] >= explained_var[1] >= 0.0
+        assert float(np.sum(explained_var)) <= 1.0 + 1e-12
+        np.testing.assert_allclose(explained_var, pca_obj.explained_variance_ratio_)
+
     def test_compute_similarity(self, sample_pivot_table):
-        """Test similarity matrix computation"""
+        """Test exact cosine similarity values, symmetry, and unit diagonal."""
         table = sample_pivot_table
-        
-        # Test cosine similarity
-        similarity_matrix = table.compute_similarity(method='cosine')
-        
+
+        similarity_matrix = table.compute_similarity(method="cosine")
+
         assert similarity_matrix.shape == (table.shape[1], table.shape[1])
         assert similarity_matrix.index.equals(table.columns)
         assert similarity_matrix.columns.equals(table.columns)
-        
-        # Diagonal should be 1 (self-similarity)
-        np.testing.assert_array_almost_equal(
-            np.diag(similarity_matrix.values), 
-            np.ones(table.shape[1])
+
+        np.testing.assert_allclose(
+            np.diag(similarity_matrix.values), np.ones(table.shape[1])
+        )
+        np.testing.assert_allclose(
+            similarity_matrix.values, similarity_matrix.values.T, atol=1e-12
+        )
+        assert similarity_matrix.loc["sample1", "sample2"] == pytest.approx(0.5)
+        assert similarity_matrix.loc["sample1", "sample4"] == pytest.approx(0.5)
+        assert similarity_matrix.loc["sample1", "sample3"] == pytest.approx(
+            1.0 / np.sqrt(6.0)
+        )
+        assert similarity_matrix.loc["sample3", "sample4"] == pytest.approx(
+            1.0 / np.sqrt(6.0)
         )
 
 

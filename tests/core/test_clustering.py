@@ -48,8 +48,9 @@ def test_convert_ndarray_to_list_recursively():
 
 def test_random_forest_cv_and_multiple_seeds_outputs():
     rng = np.random.default_rng(0)
-    X = rng.normal(size=(30, 6))
     y = np.array([0] * 15 + [1] * 15)
+    X = rng.normal(size=(30, 6))
+    X[:, 0] = y * 5.0 + rng.normal(scale=0.1, size=30)
     feature_names = [f"f{i}" for i in range(6)]
 
     model, cv_scores, importance_df = run_random_forest_cv(
@@ -57,24 +58,33 @@ def test_random_forest_cv_and_multiple_seeds_outputs():
         y,
         feature_names=feature_names,
         n_splits=3,
-        n_estimators=10,
+        n_estimators=20,
         random_state=42,
     )
 
     assert hasattr(model, "feature_importances_")
     assert len(cv_scores) == 3
-    assert importance_df.shape[0] == len(feature_names)
-    assert "mean_importance" in importance_df.columns
+    assert all(0.0 <= score <= 1.0 for score in cv_scores)
+    assert min(cv_scores) >= 0.8
+    assert importance_df.index.tolist() == feature_names
+    fold_cols = ["importance_1", "importance_2", "importance_3"]
+    assert np.allclose(importance_df["mean_importance"], importance_df[fold_cols].mean(axis=1))
+    assert importance_df["mean_importance"].idxmax() == "f0"
 
     models, seed_importance_df = run_random_forest_multiple_seeds(
         X,
         y,
         feature_names=feature_names,
         seeds=[0, 1, 2],
-        n_estimators=10,
+        n_estimators=20,
     )
     assert len(models) == 3
-    assert "mean_importance" in seed_importance_df.columns
+    assert seed_importance_df.index.tolist() == feature_names
+    seed_cols = ["importance_0", "importance_1", "importance_2"]
+    assert np.allclose(
+        seed_importance_df["mean_importance"], seed_importance_df[seed_cols].mean(axis=1)
+    )
+    assert seed_importance_df["mean_importance"].idxmax() == "f0"
 
 
 def test_plot_metrics_and_gpt_summary(tmp_path):
@@ -93,14 +103,20 @@ def test_plot_metrics_and_gpt_summary(tmp_path):
 
     best_k = plot_clustering_metrics_and_find_best_k(metric_df, filename=str(out))
 
-    assert best_k in {2, 3, 4}
-    assert out.exists()
+    assert best_k == 4
+    assert out.exists() and out.stat().st_size > 0
+
+    captured = {}
 
     class MockClient:
         class chat:
             class completions:
                 @staticmethod
                 def create(model, messages, temperature):
+                    captured["model"] = model
+                    captured["messages"] = messages
+                    captured["temperature"] = temperature
+
                     class Message:
                         content = "Gene: TP53, Reason: common tumor suppressor"
 
@@ -113,5 +129,7 @@ def test_plot_metrics_and_gpt_summary(tmp_path):
                     return Response()
 
     result, prompt = gpt_known_genes_summary(MockClient(), ["TP53", "KRAS"], "17p")
-    assert "TP53" in result
-    assert "17p" in prompt
+    assert result == "Gene: TP53, Reason: common tumor suppressor"
+    assert "TP53" in prompt and "KRAS" in prompt and "17p" in prompt
+    sent_text = " ".join(msg["content"] for msg in captured["messages"])
+    assert "TP53" in sent_text and "KRAS" in sent_text and "17p" in sent_text
