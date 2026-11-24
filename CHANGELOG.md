@@ -127,6 +127,21 @@ removal release.
   `seg_to_cytoband_table()` counted the length of NaN `Segment_Mean`
   segments, pulling bands toward 0 and reporting fully unmeasured bands
   (e.g. chrY in female samples) as 0.0 (diploid); those cells are now NaN.
+* **CNV binarisation tracks value scale (`gistic_discrete`, `absolute_cn`,
+  `log2_ratio`).** `CopyNumberVariationTable.value_scale` is tagged by GISTIC
+  and TCGA CNV builders and persisted across HDF5 round-trips. ASCAT3 absolute
+  copy-number tables with `{0, 1, 2}` now treat diploid `2` as neutral (`False`)
+  and deletions `0`/`1` as altered (`True`) instead of inverting them; untagged
+  non-negative `{0, 1, 2}` tables raise a `ValueError` asking for `value_scale`
+  or an explicit `threshold`.
+* **TCGA STAR-Counts QC metrics are preserved on `build()` and for TPM/FPKM.**
+  `TCGATableBuilder.build()` now merges builder-computed `sample_metadata`
+  (such as STAR `N_unmapped`, `mapped_reads`, and `mapping_rate`) with GDC
+  provenance instead of overwriting it. When `TCGAExpressionBuilder` or
+  `read_star_counts()` reads normalized columns (`tpm_unstranded`,
+  `fpkm_unstranded`, `fpkm_uq_unstranded`), STAR QC rows are read from the raw
+  `unstranded` column; when raw counts or QC rows are absent, `mapping_rate` is
+  `NA` instead of `1.0`.
 * **TCGA clinical event tables keep every row.** `drug`, `radiation`,
   `follow_up` and `nte` (several rows per patient) were cut to the first row
   per patient, losing later regimens and deaths. They now drop only exact

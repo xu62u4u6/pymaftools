@@ -29,9 +29,7 @@ class DummyBuilder(TCGATableBuilder):
 
     def __init__(self, files, sample_type="Primary Tumor", sample_key="case_id"):
         mapping = pd.DataFrame(columns=["filename", "case_id"])
-        super().__init__(
-            ".", mapping, sample_type=sample_type, sample_key=sample_key
-        )
+        super().__init__(".", mapping, sample_type=sample_type, sample_key=sample_key)
         self.files = files
 
     def resolve_files(self):
@@ -155,9 +153,7 @@ def test_expression_builder_handles_missing_qc_rows(tmp_path):
         enrich_coordinates=False,
     )
 
-    table = builder.read_and_merge(
-        [{"filepath": expression_path, "case_id": "case-1"}]
-    )
+    table = builder.read_and_merge([{"filepath": expression_path, "case_id": "case-1"}])
 
     assert table.sample_metadata.loc["case-1", "mapping_rate"] == pytest.approx(0.95)
     assert pd.isna(table.sample_metadata.loc["case-1", "N_multimapping"])
@@ -372,7 +368,13 @@ def _nan_segment_inputs(tmp_path):
             "Start": [0, 50, 0, 0, 0],
             "End": [50, 100, 100, 100, 100],
             "Segment_Mean": [2.0, float("nan"), -0.5, 1.0, float("nan")],
-            "sample_ID": ["male-01A", "male-01A", "male-01A", "female-01A", "female-01A"],
+            "sample_ID": [
+                "male-01A",
+                "male-01A",
+                "male-01A",
+                "female-01A",
+                "female-01A",
+            ],
             "case_id": ["male", "male", "male", "female", "female"],
             "sample_type": ["Primary Tumor"] * 5,
         }
@@ -405,3 +407,161 @@ def test_legacy_seg_to_cytoband_table_ignores_nan_segments(tmp_path):
 
     assert table.loc["chr1p1", "male"] == pytest.approx(2.0)
     assert pd.isna(table.loc["chrYp11.31", "female"])
+    assert table.value_scale == "log2_ratio"
+
+
+def test_cnv_gene_builder_tags_absolute_cn_and_binarizes_diploid_two_as_false(tmp_path):
+    filename = "sample1.gene_level_copy_number.v36.tsv"
+    path = tmp_path / filename
+    pd.DataFrame(
+        {
+            "gene_id": ["ENSG000001.1", "ENSG000002.1", "ENSG000003.1"],
+            "gene_name": ["CDKN2A", "PTEN", "TP53"],
+            "chromosome": ["9", "10", "17"],
+            "start": [1, 1, 1],
+            "end": [2, 2, 2],
+            "copy_number": [0, 1, 2],
+        }
+    ).to_csv(path, sep="\t", index=False)
+    mapping = pd.DataFrame(
+        {
+            "filename": [filename],
+            "case_id": ["TCGA-01-0001"],
+            "sample_id": ["TCGA-01-0001-01A"],
+            "sample_type": ["Primary Tumor"],
+            "file_id": ["file-cnv-1"],
+        }
+    )
+
+    table = TCGACNVGeneBuilder(tmp_path, mapping).build()
+
+    assert table.value_scale == "absolute_cn"
+    binary = table.to_binary_table()
+    assert binary.loc["ENSG000001", "TCGA-01-0001"]
+    assert binary.loc["ENSG000002", "TCGA-01-0001"]
+    assert not binary.loc["ENSG000003", "TCGA-01-0001"]
+
+
+def test_expression_builder_build_preserves_star_qc_and_uses_raw_counts_for_tpm(
+    tmp_path,
+):
+    filename = "sample1.rna_seq.augmented_star_gene_counts.tsv"
+    path = tmp_path / filename
+    pd.DataFrame(
+        {
+            "gene_id": [
+                "N_unmapped",
+                "N_multimapping",
+                "N_noFeature",
+                "N_ambiguous",
+                "ENSG000001.1",
+                "ENSG000002.1",
+            ],
+            "gene_name": [None, None, None, None, "TP53", "EGFR"],
+            "gene_type": [None, None, None, None, "protein_coding", "protein_coding"],
+            "unstranded": [1000, 500, 200, 100, 3000, 2000],
+            "tpm_unstranded": [None, None, None, None, 15.5, 42.0],
+        }
+    ).to_csv(path, sep="\t", index=False)
+    mapping = pd.DataFrame(
+        {
+            "filename": [filename],
+            "case_id": ["TCGA-01-0001"],
+            "sample_id": ["TCGA-01-0001-01A"],
+            "sample_type": ["Primary Tumor"],
+        },
+        index=pd.Index(["file-expr-1"], name="file_id"),
+    )
+
+    counts_table = TCGAExpressionBuilder(
+        tmp_path, mapping, count_column="unstranded", enrich_coordinates=False
+    ).build()
+    tpm_table = TCGAExpressionBuilder(
+        tmp_path, mapping, count_column="tpm_unstranded", enrich_coordinates=False
+    ).build()
+
+    expected_rate = 5000 / (5000 + 1000 + 500 + 200 + 100)
+    for table in (counts_table, tpm_table):
+        meta = table.sample_metadata
+        assert meta.loc["TCGA-01-0001", "case_id"] == "TCGA-01-0001"
+        assert meta.loc["TCGA-01-0001", "file_id"] == "file-expr-1"
+        assert meta.loc["TCGA-01-0001", "N_unmapped"] == 1000
+        assert meta.loc["TCGA-01-0001", "mapped_reads"] == 5000
+        assert meta.loc["TCGA-01-0001", "mapping_rate"] == pytest.approx(expected_rate)
+
+    assert tpm_table.loc["ENSG000001", "TCGA-01-0001"] == pytest.approx(15.5)
+
+
+def test_expression_builder_does_not_fabricate_mapping_rate_without_qc_or_raw_counts(
+    tmp_path,
+):
+    tpm_only_path = tmp_path / "tpm_only.rna_seq.augmented_star_gene_counts.tsv"
+    pd.DataFrame(
+        {
+            "gene_id": ["N_unmapped", "ENSG000001.1"],
+            "gene_name": [None, "TP53"],
+            "gene_type": [None, "protein_coding"],
+            "tpm_unstranded": [None, 12.5],
+        }
+    ).to_csv(tpm_only_path, sep="\t", index=False)
+
+    no_qc_path = tmp_path / "no_qc.rna_seq.augmented_star_gene_counts.tsv"
+    pd.DataFrame(
+        {
+            "gene_id": ["ENSG000001.1"],
+            "gene_name": ["TP53"],
+            "gene_type": ["protein_coding"],
+            "unstranded": [500],
+        }
+    ).to_csv(no_qc_path, sep="\t", index=False)
+
+    builder_tpm = TCGAExpressionBuilder(
+        tmp_path,
+        pd.DataFrame(columns=["filename", "case_id"]),
+        count_column="tpm_unstranded",
+        enrich_coordinates=False,
+    )
+    tpm_table = builder_tpm.read_and_merge(
+        [{"filepath": tpm_only_path, "case_id": "case-1"}]
+    )
+    assert pd.isna(tpm_table.sample_metadata.loc["case-1", "mapping_rate"])
+    assert pd.isna(tpm_table.sample_metadata.loc["case-1", "mapped_reads"])
+
+    builder_raw = TCGAExpressionBuilder(
+        tmp_path,
+        pd.DataFrame(columns=["filename", "case_id"]),
+        count_column="unstranded",
+        enrich_coordinates=False,
+    )
+    raw_table = builder_raw.read_and_merge(
+        [{"filepath": no_qc_path, "case_id": "case-2"}]
+    )
+    assert raw_table.sample_metadata.loc["case-2", "mapped_reads"] == 500
+    assert pd.isna(raw_table.sample_metadata.loc["case-2", "mapping_rate"])
+
+
+def test_legacy_read_star_counts_tpm_reads_qc_from_raw_counts(tmp_path, monkeypatch):
+    from pymaftools.io import tcga_readers
+
+    path = tmp_path / "star.augmented_star_gene_counts.tsv"
+    pd.DataFrame(
+        {
+            "gene_id": ["N_unmapped", "ENSG000001.1"],
+            "gene_name": [None, "TP53"],
+            "gene_type": [None, "protein_coding"],
+            "unstranded": [250, 750],
+            "tpm_unstranded": [None, 33.3],
+        }
+    ).to_csv(path, sep="\t", index=False)
+
+    monkeypatch.setattr(
+        tcga_readers,
+        "resolve_files_to_cases",
+        lambda *_args, **_kwargs: [("TCGA-01-0001", path)],
+    )
+    table = tcga_readers.read_star_counts(
+        tmp_path, tmp_path / "manifest.tsv", value_column="tpm_unstranded"
+    )
+
+    assert table.loc["ENSG000001", "TCGA-01-0001"] == pytest.approx(33.3)
+    assert table.sample_metadata.loc["TCGA-01-0001", "N_unmapped"] == 250

@@ -44,7 +44,11 @@ def to_h5(
         with pd.HDFStore(
             str(temporary_path), mode="w", complib=complib, complevel=complevel
         ) as store:
-            table_metadata = pd.DataFrame({"class_name": [type(table).__name__]})
+            meta_payload: dict[str, list[Any]] = {"class_name": [type(table).__name__]}
+            value_scale = getattr(table, "value_scale", None)
+            if value_scale is not None:
+                meta_payload["value_scale"] = [value_scale]
+            table_metadata = pd.DataFrame(meta_payload)
             store.put("table_metadata", table_metadata)
             store.put("data", pd.DataFrame(table_to_save))
             store.put("sample_metadata", table_to_save.sample_metadata)
@@ -102,15 +106,22 @@ def read_h5(table_cls, base_table_cls, h5_path: str | Path):
         )
 
         resolved_table_cls = table_cls
-        if table_cls is base_table_cls and "/table_metadata" in keys:
+        saved_value_scale = None
+        if "/table_metadata" in keys:
             table_metadata = store.get("table_metadata")
-            if "class_name" in table_metadata.columns:
+            if table_cls is base_table_cls and "class_name" in table_metadata.columns:
                 class_name = table_metadata["class_name"].iloc[0]
                 resolved_table_cls = base_table_cls._subclass_registry.get(
                     class_name, base_table_cls
                 )
+            if "value_scale" in table_metadata.columns:
+                raw_scale = table_metadata["value_scale"].iloc[0]
+                if pd.notna(raw_scale):
+                    saved_value_scale = str(raw_scale)
 
     table = resolved_table_cls(data)
+    if saved_value_scale is not None and hasattr(table, "value_scale"):
+        table.value_scale = saved_value_scale
     table.sample_metadata = sample_metadata.reindex(table.columns)
     table.feature_metadata = feature_metadata.reindex(table.index)
     if sample_manifest_frame is not None:

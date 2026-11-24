@@ -99,6 +99,6 @@ class TCGACNVGeneBuilder(TCGATableBuilder):
         feature_meta = gene_info.set_index("gene_id")
         feature_meta = feature_meta[~feature_meta.index.duplicated(keep="first")]
 
-        table = CopyNumberVariationTable(matrix)
+        table = CopyNumberVariationTable(matrix, value_scale="absolute_cn")
         table.feature_metadata = feature_meta.reindex(matrix.index)
         return table

@@ -8,12 +8,25 @@ from ...core.ExpressionTable import ExpressionTable
 from .base import TCGATableBuilder
 
 # GDC STAR-Counts files include four QC summary rows before the gene rows.
+# Only raw count columns contain values for these rows; normalized columns
+# (TPM/FPKM) leave them blank/NaN.
 _QC_ROWS = ["N_unmapped", "N_multimapping", "N_noFeature", "N_ambiguous"]
+_RAW_COUNT_COLUMNS = ("unstranded", "stranded_first", "stranded_second")
 
 
 def _zero_if_missing(value):
     """Return zero for missing STAR QC counters without evaluating pd.NA."""
     return 0 if pd.isna(value) else value
+
+
+def _resolve_qc_column(df: pd.DataFrame, count_column: str) -> str | None:
+    """Return the raw count column to read STAR QC metrics from, or ``None``."""
+    if count_column in _RAW_COUNT_COLUMNS and count_column in df.columns:
+        return count_column
+    for candidate in _RAW_COUNT_COLUMNS:
+        if candidate in df.columns:
+            return candidate
+    return None
 
 
 class TCGAExpressionBuilder(TCGATableBuilder):
@@ -69,22 +82,31 @@ class TCGAExpressionBuilder(TCGATableBuilder):
 
             # --- Separate QC summary rows from gene rows ---
             is_qc = df["gene_id"].isin(_QC_ROWS)
-            qc_rows = df[is_qc].set_index("gene_id")[self.count_column]
             gene_rows = df[~is_qc]
+            qc_column = _resolve_qc_column(df, self.count_column)
 
-            qc_record = {row: qc_rows.get(row, pd.NA) for row in _QC_ROWS}
-            # Derive mapped_reads = sum of per-gene counts for this sample
-            qc_record["mapped_reads"] = gene_rows[self.count_column].sum()
-            total = (
-                qc_record["mapped_reads"]
-                + _zero_if_missing(qc_record["N_unmapped"])
-                + _zero_if_missing(qc_record["N_multimapping"])
-                + _zero_if_missing(qc_record["N_noFeature"])
-                + _zero_if_missing(qc_record["N_ambiguous"])
-            )
-            qc_record["mapping_rate"] = (
-                qc_record["mapped_reads"] / total if total > 0 else pd.NA
-            )
+            if qc_column is None:
+                qc_record: dict[str, object] = {row: pd.NA for row in _QC_ROWS}
+                qc_record["mapped_reads"] = pd.NA
+                qc_record["mapping_rate"] = pd.NA
+            else:
+                qc_rows = df[is_qc].set_index("gene_id")[qc_column]
+                qc_record = {row: qc_rows.get(row, pd.NA) for row in _QC_ROWS}
+                qc_record["mapped_reads"] = gene_rows[qc_column].sum()
+                has_qc_rows = any(pd.notna(qc_record[row]) for row in _QC_ROWS)
+                if has_qc_rows:
+                    total = (
+                        qc_record["mapped_reads"]
+                        + _zero_if_missing(qc_record["N_unmapped"])
+                        + _zero_if_missing(qc_record["N_multimapping"])
+                        + _zero_if_missing(qc_record["N_noFeature"])
+                        + _zero_if_missing(qc_record["N_ambiguous"])
+                    )
+                    qc_record["mapping_rate"] = (
+                        qc_record["mapped_reads"] / total if total > 0 else pd.NA
+                    )
+                else:
+                    qc_record["mapping_rate"] = pd.NA
             identifier = self.sample_identifier(f)
             qc_dict[identifier] = qc_record
 

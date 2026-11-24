@@ -211,7 +211,7 @@ class TCGACNVSegmentBuilder(TCGATableBuilder):
             .reindex(matrix.columns)
         )
 
-        table = CopyNumberVariationTable(matrix)
+        table = CopyNumberVariationTable(matrix, value_scale="log2_ratio")
         table.feature_metadata = feature_meta
         table.sample_metadata = sample_meta
 
