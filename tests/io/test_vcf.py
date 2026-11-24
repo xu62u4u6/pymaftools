@@ -532,3 +532,72 @@ def test_sort_variants_orders_chromosomes_and_positions_numerically():
         "chr10|50|A|G",
         "chrX|10|A|T",
     ]
+
+
+# ---------------------------------------------------------------------------
+# Legacy parse_info (public, kept for backwards compatibility)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("format_str", "value_str", "alt_index", "expected"),
+    [
+        # VarScan2: RD = ref depth, AD = alt-only depth, FREQ in percent.
+        ("GT:GQ:DP:RD:AD:FREQ:DP4", "0/1:.:50:30:20:40%:15,15,10,10", 0, (50, 30, 20, 0.4)),
+        # Mutect2: AD is Number=R (ref, alt), AF reported.
+        ("GT:AD:AF:DP", "0/1:60,40:0.40:100", 0, (100, 60, 40, 0.4)),
+        # MuSE: AD ref,alt with DP, no AF -> AF from depths.
+        ("GT:DP:AD:BQ:SS", "0/1:50:30,20:30,30:2", 0, (50, 30, 20, 0.4)),
+        # DeepSomatic: VAF instead of AF.
+        ("GT:GQ:DP:AD:VAF:PL", "0/1:40:100:61,39:0.39:0,0,0", 0, (100, 61, 39, 0.39)),
+        # Pindel: AD only -> DP is the sum of AD.
+        ("GT:AD", "0/1:45,15", 0, (60, 45, 15, 0.25)),
+        # Multi-allelic: alt_index selects the second ALT's depth and AF.
+        ("GT:AD:AF:DP", "0/1/2:30,5,10:0.111,0.222:45", 1, (45, 30, 10, 0.222)),
+    ],
+    ids=["varscan2", "mutect2", "muse", "deepsomatic_vaf", "pindel_ad_only", "multiallelic"],
+)
+def test_legacy_parse_info_per_caller_format(format_str, value_str, alt_index, expected):
+    from pymaftools.io.vcf import parse_info
+
+    dp, ref, ad, af = parse_info(format_str, value_str, alt_index=alt_index)
+
+    assert (dp, ref, ad) == expected[:3]
+    assert af == pytest.approx(expected[3])
+
+
+@pytest.mark.parametrize(
+    ("format_str", "value_str", "alt_index", "match"),
+    [
+        ("GT:GQ:DP:RD:AD:FREQ:DP4", "0/1:.:50:30:20:40%:15,15,10,10", 1, "Failed to parse"),
+        ("GT:AD:AF:DP", "0/1:60,40:0.40:100", 2, "Failed to parse"),
+        ("GT:GQ", "0/1:40", 0, "Unrecognized FORMAT"),
+    ],
+    ids=["varscan_no_per_alt_depth", "alt_index_out_of_range", "no_depth_fields"],
+)
+def test_legacy_parse_info_errors_name_the_format(format_str, value_str, alt_index, match):
+    from pymaftools.io.vcf import parse_info
+
+    with pytest.raises(ValueError, match=match):
+        parse_info(format_str, value_str, alt_index=alt_index)
+
+
+def test_legacy_parse_info_matches_mutect2_adapter_on_fixture():
+    # parse_info and the caller adapters implement FORMAT parsing separately;
+    # pin that they agree on a real fixture row so the two cannot drift.
+    from pymaftools.io.vcf import parse_info
+
+    fixture = (FIXTURE_DIR / "mutect2.vcf").read_text(encoding="utf-8").splitlines()
+    record = next(line for line in fixture if line.startswith("chr17\t7675088"))
+    fields = record.split("\t")
+    format_str, tumor_value = fields[8], fields[10]
+
+    vcf = VCF.read_vcf(FIXTURE_DIR / "mutect2.vcf", caller="mutect2")
+    row = vcf.loc["chr17|7675088|C|T"]
+
+    assert parse_info(format_str, tumor_value) == (
+        row["tumor_dp"],
+        row["tumor_ref"],
+        row["tumor_ad"],
+        pytest.approx(row["tumor_af"]),
+    )
