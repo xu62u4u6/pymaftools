@@ -81,7 +81,9 @@ def test_k_fold_stratifies_only_when_group_column_is_requested():
 
     for fold_labels in labels[2].values():
         held_out = table.columns.difference(fold_labels.index)
-        assert table.sample_metadata.loc[held_out, "subtype"].value_counts().to_dict() == {
+        assert table.sample_metadata.loc[
+            held_out, "subtype"
+        ].value_counts().to_dict() == {
             "A": 2,
             "B": 2,
         }
@@ -120,3 +122,104 @@ def test_align_cluster_labels_rejects_labels_outside_zero_to_k_minus_one():
 
     with pytest.raises(ValueError, match="0..1"):
         align_cluster_label_dict({2: {1: reference, 2: target}})
+
+
+def test_table_to_distance_handles_zero_vector_for_precomputed_silhouette():
+    from sklearn.metrics import silhouette_score
+
+    table = PivotTable(
+        pd.DataFrame(
+            [[1.0, 1.0, 0.0, 0.0], [0.0, 0.0, 0.0, 1.0]],
+            index=["F1", "F2"],
+            columns=["S1", "S2", "S_zero", "S4"],
+        )
+    )
+
+    distance = table_to_distance(table)
+    assert np.all(distance >= 0.0)
+    np.testing.assert_array_equal(np.diag(distance), np.zeros(4))
+    score = silhouette_score(distance, [0, 0, 1, 1], metric="precomputed")
+    assert -1.0 <= score <= 1.0
+
+
+def test_run_feature_clustering_caps_max_clusters_and_handles_zero_vectors(tmp_path):
+    import pytest
+
+    from pymaftools.core.Clustering import run_feature_clustering
+
+    feat_df = PivotTable(
+        pd.DataFrame(
+            [
+                [1.0, 0.0, 0.0, 1.0],
+                [1.0, 0.1, 0.0, 1.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0, 0.0],
+            ],
+            index=["F1", "F2", "F3", "F_zero"],
+            columns=["S1", "S2", "S3", "S4"],
+        )
+    )
+    out_csv = tmp_path / "feature_clustering.csv"
+    res = run_feature_clustering(feat_df, result_path=str(out_csv), max_clusters=10)
+    assert list(res["n_clusters"]) == [2, 3]
+    assert out_csv.exists()
+
+    with pytest.raises(ValueError, match="at least 3 features"):
+        run_feature_clustering(
+            feat_df.head(2), result_path=str(out_csv), max_clusters=5
+        )
+
+
+def test_plot_cluster_feature_importance_accepts_features_count_and_gene_count():
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    from pymaftools.core.Clustering import (
+        plot_cluster_feature_importance,
+        plot_cluster_feature_importance_boxplot,
+    )
+
+    base = pd.DataFrame(
+        {
+            "mean_importance": [0.5, 0.3, 0.2],
+            "unique_chr_arm": ["1p", "2q", "17p"],
+            "importance_1": [0.4, 0.3, 0.2],
+            "importance_2": [0.6, 0.3, 0.2],
+        },
+        index=[0, 1, 2],
+    )
+    for col in ("features_count", "gene_count"):
+        df = base.copy()
+        df[col] = [10, 5, 3]
+        plot_cluster_feature_importance(df, ["importance_1", "importance_2"])
+        plt.close("all")
+        plot_cluster_feature_importance_boxplot(df, ["importance_1", "importance_2"])
+        plt.close("all")
+
+
+def test_plot_clustering_metrics_dynamic_folds_and_explicit_format(tmp_path):
+    from pymaftools.core.Clustering import plot_clustering_metrics_and_find_best_k
+
+    metric_df = pd.DataFrame(
+        {
+            "fold1_silhouette": [0.20, 0.40, 0.30],
+            "fold2_silhouette": [0.22, 0.42, 0.28],
+            "fold3_silhouette": [0.18, 0.38, 0.32],
+            "mean_ari_3_fold": [0.10, 0.35, 0.20],
+        },
+        index=[2, 3, 4],
+    )
+    original_cols = list(metric_df.columns)
+    out_dir = tmp_path / "dir.v1"
+    out_dir.mkdir()
+    out_file = out_dir / "metrics_no_ext"
+
+    best_k = plot_clustering_metrics_and_find_best_k(
+        metric_df, filename=str(out_file), format="png"
+    )
+    assert best_k == 3
+    assert list(metric_df.columns) == original_cols
+    assert out_file.exists()
+    assert out_file.read_bytes().startswith(b"\x89PNG")

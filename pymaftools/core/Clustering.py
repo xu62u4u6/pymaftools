@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+import re
 import pandas as pd
 import numpy as np
 import seaborn as sns
@@ -32,10 +34,12 @@ def table_to_distance(table: PivotTable) -> np.ndarray:
     Returns
     -------
     numpy.ndarray
-        Distance matrix computed as 1 minus cosine similarity.
+        Non-negative distance matrix computed as ``1 - cosine_similarity`` with
+        zero diagonal (safe for zero vectors and ``metric='precomputed'``).
     """
     similarity = table.compute_similarity(method="cosine")
-    distance = 1 - similarity.values
+    distance = np.clip(1.0 - similarity.to_numpy(dtype=float), 0.0, None)
+    np.fill_diagonal(distance, 0.0)
     return distance
 
 
@@ -472,19 +476,30 @@ def plot_cluster_feature_importance_boxplot(
     table : pd.DataFrame
         DataFrame containing cluster information with importance scores.
         Must include a ``mean_importance`` column, plus ``unique_chr_arm``
-        and ``gene_count`` for axis labels.
+        and ``features_count`` (or legacy ``gene_count``) for axis labels.
     importance_cols : list[str]
         Column names for per-fold importance scores.
     top_n : int, optional
         Number of top clusters to display, by default 20.
     """
+    if "features_count" in table.columns:
+        count_col = "features_count"
+    elif "gene_count" in table.columns:
+        count_col = "gene_count"
+    else:
+        raise ValueError(
+            "table must include a 'features_count' or 'gene_count' column; "
+            f"available columns: {list(table.columns)}"
+        )
+
     top_data = (
         table.sort_values(by="mean_importance", ascending=False).head(top_n).copy()
     )
-    positions = np.arange(top_n)
+    n_display = len(top_data)
+    positions = np.arange(n_display)
 
     box_values = [
-        top_data.iloc[i][importance_cols].values.tolist() for i in range(top_n)
+        top_data.iloc[i][importance_cols].values.tolist() for i in range(n_display)
     ]
     bar_values = top_data["mean_importance"].values.tolist()
 
@@ -505,14 +520,14 @@ def plot_cluster_feature_importance_boxplot(
     plt.bar(positions, bar_values, width=0.6, color="skyblue", label="Mean Importance")
 
     xlabels = [
-        f"\n\nC{i}\n arm: {top_data.loc[i, 'unique_chr_arm']}\n n={top_data.loc[i, 'gene_count']}"
+        f"\n\nC{i}\n arm: {top_data.loc[i, 'unique_chr_arm']}\n n={top_data.loc[i, count_col]}"
         for i in top_data.index
     ]
     plt.xticks(positions, xlabels, rotation=45, ha="right")
 
     plt.ylabel("Feature Importance")
     plt.title(
-        "Top Cluster Feature Importances\n(Bar = Mean, Box = 5-Fold Distribution)"
+        "Top Cluster Feature Importances\n(Bar = Mean, Box = Per-Fold Distribution)"
     )
     plt.legend()
     plt.tight_layout()
@@ -532,19 +547,27 @@ def plot_cluster_feature_importance(
     table : pd.DataFrame
         DataFrame containing cluster information with importance scores.
         Must include ``mean_importance``, ``unique_chr_arm``, and
-        ``gene_count`` columns.
+        ``features_count`` (or legacy ``gene_count``) columns.
     importance_cols : list[str]
         Column names for per-fold importance scores.
     top_n : int, optional
         Number of top clusters to display, by default 20.
     """
+    if "features_count" in table.columns:
+        count_col = "features_count"
+    elif "gene_count" in table.columns:
+        count_col = "gene_count"
+    else:
+        raise ValueError(
+            "table must include a 'features_count' or 'gene_count' column; "
+            f"available columns: {list(table.columns)}"
+        )
+
     top_data = table.nlargest(top_n, "mean_importance").copy()
     top_data["Cluster"] = [f"C{i}" for i in top_data.index]
 
-    long_df = top_data[
-        ["Cluster", "unique_chr_arm", "gene_count"] + importance_cols
-    ].melt(
-        id_vars=["Cluster", "unique_chr_arm", "gene_count"],
+    long_df = top_data[["Cluster", "unique_chr_arm", count_col] + importance_cols].melt(
+        id_vars=["Cluster", "unique_chr_arm", count_col],
         value_vars=importance_cols,
         var_name="Fold",
         value_name="Importance",
@@ -566,13 +589,15 @@ def plot_cluster_feature_importance(
     )
 
     new_labels = [
-        f"\n\n{row['Cluster']}\narm: {row['unique_chr_arm']}\nn={row['gene_count']}"
+        f"\n\n{row['Cluster']}\narm: {row['unique_chr_arm']}\nn={row[count_col]}"
         for _, row in top_data.iterrows()
     ]
-    plt.xticks(ticks=np.arange(top_n), labels=new_labels, rotation=45, ha="right")
+    plt.xticks(
+        ticks=np.arange(len(top_data)), labels=new_labels, rotation=45, ha="right"
+    )
 
     plt.ylabel("Feature Importance")
-    plt.title("Top Cluster Feature Importances\n(Dots = 5-Fold, Bar = Mean)")
+    plt.title("Top Cluster Feature Importances\n(Dots = Per-Fold, Bar = Mean)")
     plt.tight_layout()
     plt.show()
 
@@ -592,27 +617,37 @@ def run_feature_clustering(
     result_path : str
         File path to save the resulting CSV of silhouette scores.
     max_clusters : int, optional
-        Maximum number of clusters to evaluate, by default 200.
+        Maximum number of clusters to evaluate, by default 200. Automatically
+        capped at ``table.shape[0] - 1``.
 
     Returns
     -------
     pd.DataFrame
         DataFrame with columns ``n_clusters`` and ``silhouette`` for each k.
     """
+    n_features = table.shape[0]
+    if n_features < 3:
+        raise ValueError(
+            "Feature clustering requires at least 3 features for silhouette "
+            f"evaluation, got {n_features}."
+        )
+    if max_clusters < 2:
+        raise ValueError(f"max_clusters must be at least 2, got {max_clusters}.")
+
+    upper_k = min(max_clusters, n_features - 1)
     metric = "cosine"
     similarity = table.T.compute_similarity(method=metric)
-    distance = 1 - similarity
-    distance_matrix = distance.values
-    X = table.values
+    distance_matrix = np.clip(1.0 - similarity.to_numpy(dtype=float), 0.0, None)
+    np.fill_diagonal(distance_matrix, 0.0)
 
     results = []
-    for k in tqdm(range(2, max_clusters + 1)):
+    for k in tqdm(range(2, upper_k + 1)):
         print(f"Clustering with {k} clusters")
         model = AgglomerativeClustering(
             n_clusters=k, metric="precomputed", linkage="average"
         )
         labels = model.fit_predict(distance_matrix)
-        score = silhouette_score(X, labels, metric=metric)
+        score = silhouette_score(distance_matrix, labels, metric="precomputed")
         results.append({"n_clusters": k, "silhouette": score})
         print(f"score: {score}")
 
@@ -639,7 +674,8 @@ def plot_clustering_metrics_and_find_best_k(
     ----------
     metric_df : pd.DataFrame
         DataFrame indexed by cluster count with per-fold silhouette columns
-        (``fold1_silhouette`` ... ``fold5_silhouette``) and ``mean_ari_5_fold``.
+        (``fold1_silhouette`` ... ``foldN_silhouette``) and an ARI column
+        (``mean_ari_<N>_fold`` or ``mean_ari``).
     filename : str
         Output file path for the saved figure.
     title : str or None, optional
@@ -663,23 +699,53 @@ def plot_clustering_metrics_and_find_best_k(
     int
         The cluster count k that maximizes ``target_col``.
     """
+    plot_df = metric_df.copy()
+    fold_matches = [
+        (int(m.group(1)), col)
+        for col in plot_df.columns
+        if (m := re.fullmatch(r"fold(\d+)_silhouette", str(col))) is not None
+    ]
+    if not fold_matches:
+        raise ValueError(
+            "metric_df must contain at least one 'fold<k>_silhouette' column; "
+            f"available columns: {list(plot_df.columns)}"
+        )
+    fold_matches.sort(key=lambda pair: pair[0])
+    fold_columns = [col for _, col in fold_matches]
+    n_folds = len(fold_columns)
+
+    expected_ari = f"mean_ari_{n_folds}_fold"
+    if expected_ari in plot_df.columns:
+        ari_col = expected_ari
+    else:
+        ari_candidates = [
+            col
+            for col in plot_df.columns
+            if re.fullmatch(r"mean_ari(?:_\d+_fold)?", str(col))
+        ]
+        if not ari_candidates:
+            raise ValueError(
+                f"metric_df must contain {expected_ari!r} (or 'mean_ari'); "
+                f"available columns: {list(plot_df.columns)}"
+            )
+        ari_col = ari_candidates[0]
+
     fig, ax = plt.subplots(figsize=(12, 6))
 
-    fold_columns = [f"fold{fold}_silhouette" for fold in range(1, 6)]
-    fold_df = metric_df.loc[:, fold_columns]
+    fold_df = plot_df.loc[:, fold_columns]
     fold_means = fold_df.mean(axis=1)
-    metric_df["mean_silhouette"] = fold_means
+    plot_df["mean_silhouette"] = fold_means
     fold_stds = fold_df.std(axis=1)
 
     ax.plot(
-        metric_df.index,
+        plot_df.index,
         fold_means,
-        label="Mean silhouette (5-fold)",
+        label=f"Mean silhouette ({n_folds}-fold)",
         color="#1f77b4",
         linestyle="-",
     )
     ax.errorbar(
-        metric_df.index,
+        plot_df.index,
         fold_means,
         yerr=fold_stds,
         fmt="none",
@@ -687,18 +753,23 @@ def plot_clustering_metrics_and_find_best_k(
         capthick=1,
         color="#bbbbbb",
         alpha=0.6,
-        label="5-fold mean ± std",
+        label=f"{n_folds}-fold mean ± std",
     )
 
     ax.plot(
-        metric_df.index,
-        metric_df["mean_ari_5_fold"],
-        label="Mean ARI (5-fold)",
+        plot_df.index,
+        plot_df[ari_col],
+        label=f"Mean ARI ({n_folds}-fold)",
         color="#2ca02c",
         linestyle="-.",
     )
 
-    best_k = metric_df[target_col].idxmax()
+    if target_col not in plot_df.columns:
+        raise ValueError(
+            f"target_col={target_col!r} not found in metric_df; "
+            f"available columns: {list(plot_df.columns)}"
+        )
+    best_k = plot_df[target_col].idxmax()
     ax.axvline(best_k, color="red", linestyle=":", alpha=0.6, label=f"Best k={best_k}")
 
     ax.set_xlabel("Number of Clusters (k)")
@@ -709,18 +780,22 @@ def plot_clustering_metrics_and_find_best_k(
     ax.grid(True, alpha=0.3)
     fig.tight_layout()
 
-    # save figure
-    format = filename.split(".")[-1].lower()
-    pil_kwargs = {"compression": "tiff_lzw"} if format == "tiff" else {}
-    fig.savefig(
-        filename,
+    # Save figure, honoring caller-provided format when supplied
+    resolved_format = (
+        format.lstrip(".").lower()
+        if format is not None
+        else (Path(filename).suffix.lstrip(".").lower() or None)
+    )
+    pil_kwargs = {"compression": "tiff_lzw"} if resolved_format == "tiff" else {}
+    save_kwargs = dict(
         dpi=dpi,
         bbox_inches=bbox_inches,
         transparent=transparent,
-        format=format,
         pil_kwargs=pil_kwargs,
         **kwargs,
     )
+    if resolved_format is not None:
+        save_kwargs["format"] = resolved_format
+    fig.savefig(filename, **save_kwargs)
     plt.close(fig)
-
     return best_k

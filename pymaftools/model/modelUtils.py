@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import warnings
 
 import numpy as np
@@ -18,7 +19,9 @@ def get_importance(model: object) -> pd.Series:
     Extract feature importance from a fitted model.
 
     Supports sklearn estimators with ``feature_importances_`` and
-    ``OmicsStackingModel`` instances.
+    ``OmicsStackingModel`` instances. For ``OmicsStackingModel``, each feature
+    is prefixed with its omics layer name (``"{omics_name}::{feature}"``) so
+    identical gene names across layers never collide.
 
     Parameters
     ----------
@@ -47,7 +50,12 @@ def get_importance(model: object) -> pd.Series:
         importances = []
         for omics_name in model.omics_dict.keys():
             imp = model.get_omics_feature_importance(omics_name)
-            importances.append(imp)
+            prefix = f"{omics_name}::"
+            prefixed_index = [
+                feat if str(feat).startswith(prefix) else f"{prefix}{feat}"
+                for feat in imp.index
+            ]
+            importances.append(pd.Series(imp.to_numpy(), index=prefixed_index))
         return pd.concat(importances)
 
     else:
@@ -178,6 +186,7 @@ def cross_validate_importance(
         if groups.isna().any():
             raise ValueError("groups cannot contain missing values.")
 
+    warned_nested_cv = False
     for seed in tqdm(range(n_seeds), desc="CV seeds", disable=not verbose):
         if groups is None:
             splitter = StratifiedKFold(
@@ -199,7 +208,24 @@ def cross_validate_importance(
             y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
 
             model = model_func(seed)
-            model.fit(X_train, y_train)
+            if groups is not None:
+                train_groups = groups.iloc[train_idx]
+                fit_params = inspect.signature(model.fit).parameters
+                if "groups" in fit_params:
+                    model.fit(X_train, y_train, groups=train_groups)
+                else:
+                    if hasattr(model, "cv") and not warned_nested_cv:
+                        warnings.warn(
+                            f"{type(model).__name__}.fit() does not accept 'groups'; "
+                            "outer CV respects groups, but inner CV splits may leak "
+                            "samples from the same group across inner folds.",
+                            UserWarning,
+                            stacklevel=2,
+                        )
+                        warned_nested_cv = True
+                    model.fit(X_train, y_train)
+            else:
+                model.fit(X_train, y_train)
 
             if evaluate_func is not None:
                 metrics: dict = {
@@ -305,27 +331,66 @@ def to_importance_table(all_importance_df: pd.DataFrame, omic: str) -> PivotTabl
     """
     Convert long-format importance data to a sorted PivotTable.
 
+    Features not selected in a given ``(seed, fold)`` run are treated as having
+    ``0.0`` importance rather than being skipped, avoiding upward selection bias
+    for unstable features. ``feature_metadata`` records both ``mean`` (across
+    all seeds, with unselected runs counted as zero) and ``selection_freq``
+    (fraction of ``(seed, fold)`` runs in which the feature was selected).
+
     Parameters
     ----------
     all_importance_df : pd.DataFrame
         Long-format importance DataFrame with columns ``model``, ``seed``,
-        ``fold``, ``feature``, ``importance``.
+        ``fold`` (optional), ``feature``, and ``importance``.
     omic : str
-        Omics name to filter by.
+        Omics/model name to filter by.
 
     Returns
     -------
     PivotTable
         Feature x seed matrix sorted by mean importance (descending).
     """
-    pivot_df = (
-        all_importance_df.query(f"model == '{omic}'")
-        .groupby(["seed", "feature"])["importance"]
-        .mean()
-        .unstack("seed")
-    )
+    omic_df = all_importance_df.loc[all_importance_df["model"] == omic]
+    if omic_df.empty:
+        available = sorted(all_importance_df["model"].dropna().unique().tolist())
+        raise ValueError(
+            f"Model {omic!r} not found in all_importance_df['model']. "
+            f"Available models: {available}."
+        )
+
+    if "fold" in omic_df.columns:
+        fold_table = omic_df.pivot_table(
+            index="feature",
+            columns=["seed", "fold"],
+            values="importance",
+            aggfunc="mean",
+            fill_value=0.0,
+        )
+        n_total_runs = fold_table.shape[1]
+        selected_counts = (
+            omic_df.drop_duplicates(["seed", "fold", "feature"])
+            .groupby("feature")
+            .size()
+        )
+        pivot_df = fold_table.T.groupby(level="seed").mean().T
+    else:
+        pivot_df = omic_df.pivot_table(
+            index="feature",
+            columns="seed",
+            values="importance",
+            aggfunc="mean",
+            fill_value=0.0,
+        )
+        n_total_runs = pivot_df.shape[1]
+        selected_counts = (
+            omic_df.drop_duplicates(["seed", "feature"]).groupby("feature").size()
+        )
+
     table = PivotTable(pivot_df)
     table.feature_metadata["mean"] = table.mean(axis=1)
+    table.feature_metadata["selection_freq"] = (
+        selected_counts.reindex(table.index).fillna(0).astype(float) / n_total_runs
+    )
 
     sorted_table = table.sort_features(by="mean", ascending=False)
     return sorted_table
@@ -503,7 +568,7 @@ def run_model_evaluation(
     evaluate_func: callable | None = None,
     verbose: bool = True,
     groups: pd.Series | np.ndarray | None = None,
-) -> tuple[dict, pd.DataFrame, pd.DataFrame]:
+) -> tuple[dict, pd.DataFrame, pd.DataFrame | None]:
     """
     Run cross-validation and importance analysis for multiple models.
 
@@ -519,7 +584,8 @@ def run_model_evaluation(
     n_splits : int, default 5
         Number of CV folds.
     evaluate_func : callable, optional
-        Evaluation function ``(model, X_test, y_test) -> dict``.
+        Evaluation function ``(model, X_test, y_test) -> dict``. When ``None``,
+        ``all_metrics_df`` is returned as ``None``.
     verbose : bool, default True
         Whether to print progress.
     groups : array-like, optional
@@ -531,9 +597,13 @@ def run_model_evaluation(
         Per-model results with ``"importance"`` and ``"metrics"`` keys.
     all_importance_df : pd.DataFrame
         Combined long-format feature importance data.
-    all_metrics_df : pd.DataFrame
-        Combined long-format classification metrics.
+    all_metrics_df : pd.DataFrame or None
+        Combined long-format classification metrics, or ``None`` if
+        ``evaluate_func`` was not provided.
     """
+    if not model_configs:
+        raise ValueError("model_configs must contain at least one model configuration.")
+
     result: dict = {}
 
     for model_config in model_configs:
@@ -565,9 +635,11 @@ def run_model_evaluation(
         ignore_index=True,
     )
 
-    all_metrics_df = pd.concat(
-        [res["metrics"] for res in result.values()],
-        ignore_index=True,
+    metric_frames = [
+        res["metrics"] for res in result.values() if res["metrics"] is not None
+    ]
+    all_metrics_df = (
+        pd.concat(metric_frames, ignore_index=True) if metric_frames else None
     )
 
     return result, all_importance_df, all_metrics_df

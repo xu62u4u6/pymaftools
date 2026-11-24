@@ -61,10 +61,34 @@ def test_get_importance_returns_series_with_feature_names():
 def test_to_importance_table_returns_sorted_pivot_table():
     all_importance_df = pd.DataFrame(
         [
-            {"model": "SNV", "seed": 0, "fold": 0, "feature": "TP53", "importance": 0.9},
-            {"model": "SNV", "seed": 1, "fold": 0, "feature": "TP53", "importance": 0.8},
-            {"model": "SNV", "seed": 0, "fold": 0, "feature": "KRAS", "importance": 0.2},
-            {"model": "SNV", "seed": 1, "fold": 0, "feature": "KRAS", "importance": 0.3},
+            {
+                "model": "SNV",
+                "seed": 0,
+                "fold": 0,
+                "feature": "TP53",
+                "importance": 0.9,
+            },
+            {
+                "model": "SNV",
+                "seed": 1,
+                "fold": 0,
+                "feature": "TP53",
+                "importance": 0.8,
+            },
+            {
+                "model": "SNV",
+                "seed": 0,
+                "fold": 0,
+                "feature": "KRAS",
+                "importance": 0.2,
+            },
+            {
+                "model": "SNV",
+                "seed": 1,
+                "fold": 0,
+                "feature": "KRAS",
+                "importance": 0.3,
+            },
             {"model": "CNV", "seed": 0, "fold": 0, "feature": "MYC", "importance": 0.6},
         ]
     )
@@ -190,7 +214,9 @@ def test_evaluate_model_unseen_test_class_gives_nan_auc_with_warning():
 
     omics_dict, X, _ = _build_model_inputs(n_samples=30)
     y_train = np.array(["LUAD"] * 15 + ["LUSC"] * 15)
-    model = OmicsStackingModel(omics_dict=omics_dict, class_order=["LUAD", "ASC", "LUSC"])
+    model = OmicsStackingModel(
+        omics_dict=omics_dict, class_order=["LUAD", "ASC", "LUSC"]
+    )
     model.fit(X, y_train)
     assert list(model.classes_) == ["LUAD", "LUSC"]
 
@@ -199,3 +225,198 @@ def test_evaluate_model_unseen_test_class_gives_nan_auc_with_warning():
     with pytest.warns(UserWarning, match="not seen in training"):
         metrics = evaluate_model(model, X, y_test)
     assert np.isnan(metrics["auc"])
+
+
+def test_cross_validate_importance_forwards_groups_to_stacking_inner_cv():
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).parent))
+    from test_stacking_model import _build_model_inputs
+
+    from pymaftools.model.StackingModel import OmicsStackingModel
+
+    # 36 samples from 18 patients (2 samples per patient, same class per patient)
+    omics_dict, X, _ = _build_model_inputs(n_samples=36, seed=21)
+    y = pd.Series(
+        ["LUAD"] * 18 + ["LUSC"] * 18,
+        index=X.index,
+    )
+    groups = pd.Series(
+        [f"P{i // 2}" for i in range(36)],
+        index=X.index,
+    )
+
+    observed_inner_splits = []
+
+    def make_model(seed):
+        model = OmicsStackingModel(
+            omics_dict=omics_dict,
+            class_order=["LUAD", "LUSC"],
+            cv=3,
+            random_state=seed,
+        )
+        orig_fit = model.fit
+
+        def tracking_fit(X_tr, y_tr, groups=None):
+            assert groups is not None
+            orig_fit(X_tr, y_tr, groups=groups)
+            inner_cv = model.model.cv
+            assert isinstance(inner_cv, list) and len(inner_cv) == 3
+            g_arr = np.asarray(groups)
+            for inner_tr, inner_val in inner_cv:
+                assert set(g_arr[inner_tr]).isdisjoint(set(g_arr[inner_val]))
+            observed_inner_splits.append(len(inner_cv))
+
+        model.fit = tracking_fit
+        return model
+
+    imp_df, metrics_df = cross_validate_importance(
+        X=X,
+        y=y,
+        model_func=make_model,
+        model_name="STACK",
+        n_seeds=1,
+        n_splits=3,
+        verbose=False,
+        evaluate_func=evaluate_model,
+        groups=groups,
+    )
+
+    assert len(observed_inner_splits) == 3
+    assert len(metrics_df) == 3
+    assert set(imp_df["feature"]).issuperset({"SNV::snv_f0", "CNV::cnv_f0"})
+
+
+def test_cross_validate_importance_warns_when_nested_cv_estimator_ignores_groups():
+    class _NestedCVStub:
+        cv = 3
+
+        def fit(self, X, y):
+            self.feature_names_in_ = np.asarray(X.columns)
+            self.feature_importances_ = np.ones(X.shape[1]) / X.shape[1]
+            return self
+
+    rng = np.random.default_rng(1)
+    X = pd.DataFrame(rng.normal(size=(18, 3)), columns=["a", "b", "c"])
+    y = pd.Series([0, 1] * 9, index=X.index)
+    groups = pd.Series(np.repeat(np.arange(9), 2), index=X.index)
+
+    with pytest.warns(UserWarning, match="inner CV splits may leak"):
+        cross_validate_importance(
+            X,
+            y,
+            model_func=lambda seed: _NestedCVStub(),
+            model_name="stub",
+            n_seeds=1,
+            n_splits=3,
+            verbose=False,
+            groups=groups,
+        )
+
+
+def test_get_importance_prefixes_overlapping_genes_across_omics_layers():
+    from pymaftools.model.StackingModel import OmicsStackingModel
+
+    rng = np.random.default_rng(5)
+    samples = [f"s{i}" for i in range(20)]
+    snv = PivotTable(
+        pd.DataFrame(rng.normal(size=(2, 20)), index=["TP53", "KRAS"], columns=samples)
+    )
+    cnv = PivotTable(
+        pd.DataFrame(rng.normal(size=(2, 20)), index=["TP53", "KRAS"], columns=samples)
+    )
+    model = OmicsStackingModel(
+        {"SNV": snv, "CNV": cnv}, class_order=["A", "B"], cv=3, random_state=0
+    )
+    X = model.prepare_features()
+    y = np.array(["A"] * 10 + ["B"] * 10)
+    model.fit(X, y)
+
+    imp = get_importance(model)
+    assert imp.index.is_unique
+    assert list(imp.index) == ["SNV::TP53", "SNV::KRAS", "CNV::TP53", "CNV::KRAS"]
+    assert imp.loc["SNV::TP53"] == pytest.approx(
+        model.get_omics_feature_importance("SNV").loc["TP53"]
+    )
+    assert imp.loc["CNV::TP53"] == pytest.approx(
+        model.get_omics_feature_importance("CNV").loc["TP53"]
+    )
+
+
+def test_to_importance_table_counts_unselected_runs_as_zero_and_records_selection_freq():
+    from pymaftools.plot.ModelPlot import ModelPlot
+
+    df = pd.DataFrame(
+        [
+            {
+                "model": "SNV",
+                "seed": 0,
+                "fold": 0,
+                "feature": "TP53",
+                "importance": 0.5,
+            },
+            {
+                "model": "SNV",
+                "seed": 0,
+                "fold": 0,
+                "feature": "NOISE",
+                "importance": 0.9,
+            },
+            {
+                "model": "SNV",
+                "seed": 1,
+                "fold": 0,
+                "feature": "TP53",
+                "importance": 0.5,
+            },
+            {
+                "model": "SNV",
+                "seed": 2,
+                "fold": 0,
+                "feature": "TP53",
+                "importance": 0.5,
+            },
+        ]
+    )
+
+    table = to_importance_table(df, "SNV")
+    assert list(table.index) == ["TP53", "NOISE"]
+    assert table.feature_metadata.loc["TP53", "mean"] == pytest.approx(0.5)
+    assert table.feature_metadata.loc["NOISE", "mean"] == pytest.approx(0.3)
+    assert table.feature_metadata.loc["TP53", "selection_freq"] == pytest.approx(1.0)
+    assert table.feature_metadata.loc["NOISE", "selection_freq"] == pytest.approx(1 / 3)
+
+    # ModelPlot._to_importance_table must agree with modelUtils.to_importance_table
+    plot_table = ModelPlot()._to_importance_table(df, "SNV")
+    pd.testing.assert_frame_equal(plot_table, table)
+
+
+def test_run_model_evaluation_with_evaluate_func_none_returns_none_metrics():
+    from pymaftools.model.modelUtils import run_model_evaluation
+
+    rng = np.random.default_rng(11)
+    X = pd.DataFrame(rng.normal(size=(16, 3)), columns=["g1", "g2", "g3"])
+    y = pd.Series([0] * 8 + [1] * 8, index=X.index)
+
+    result, all_imp, all_metrics = run_model_evaluation(
+        model_configs=[
+            {
+                "name": "RF",
+                "model_func": lambda seed: RandomForestClassifier(
+                    n_estimators=5, random_state=seed
+                ),
+                "X": X,
+            }
+        ],
+        y=y,
+        n_seeds=1,
+        n_splits=2,
+        evaluate_func=None,
+        verbose=False,
+    )
+
+    assert all_metrics is None
+    assert result["RF"]["metrics"] is None
+    assert not all_imp.empty
+    assert set(all_imp["feature"]) == {"g1", "g2", "g3"}
