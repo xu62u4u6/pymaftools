@@ -50,14 +50,21 @@ def _is_missing_scalar(value: Any) -> bool:
     )
 
 
+def _is_numeric_scalar(value: Any) -> bool:
+    return isinstance(value, (int, float, np.number)) and not isinstance(
+        value, (bool, np.bool_)
+    )
+
+
 def encode_sqlite_data(df: pd.DataFrame) -> pd.DataFrame:
     """Encode Python/NumPy booleans distinctly from numeric 0/1 for SQLite.
 
     SQLite has no native boolean column type and pandas ``to_sql`` coerces
-    ``bool`` inside mixed ``object`` columns to the text string ``'0'``/``'1'``.
-    Encoding only true boolean values (never numeric ``0``/``0.0``) avoids both
-    flipping wildtype ``False`` cells into truthy ``'0'`` strings and corrupting
-    numeric zeros into ``False``.
+    ``bool`` inside mixed ``object`` columns to the text string ``'0'``/``'1'``
+    and numeric scalars mixed with strings into text (e.g. ``0.0 -> '0.0'``).
+    Encoding true booleans distinctly avoids flipping wildtype ``False`` cells
+    into truthy ``'0'`` strings, and mixed numeric + non-numeric object columns
+    fail loud rather than silently changing value types.
     """
     encoded = pd.DataFrame(df).copy()
     for col in encoded.columns:
@@ -75,7 +82,19 @@ def encode_sqlite_data(df: pd.DataFrame) -> pd.DataFrame:
             )
         elif pd.api.types.is_object_dtype(series.dtype):
             values = series.tolist()
-            if any(isinstance(v, (bool, np.bool_)) for v in values):
+            non_null = [v for v in values if not _is_missing_scalar(v)]
+            has_numeric = any(_is_numeric_scalar(v) for v in non_null)
+            has_non_numeric = any(not _is_numeric_scalar(v) for v in non_null)
+            if has_numeric and has_non_numeric:
+                found_types = ", ".join(sorted({type(v).__name__ for v in non_null}))
+                raise ValueError(
+                    f"Column {col!r} mixes numeric and non-numeric values "
+                    f"({found_types}) in an object column, which SQLite cannot "
+                    "round-trip without silently converting numbers to strings. "
+                    "Use to_h5() / read_h5() instead, or cast the column to a "
+                    "single type before calling to_sqlite()."
+                )
+            if any(isinstance(v, (bool, np.bool_)) for v in non_null):
                 encoded[col] = pd.Series(
                     [
                         (_SQLITE_TRUE_SENTINEL if bool(v) else _SQLITE_FALSE_SENTINEL)
@@ -86,14 +105,8 @@ def encode_sqlite_data(df: pd.DataFrame) -> pd.DataFrame:
                     index=series.index,
                     dtype=object,
                 )
-            else:
-                non_null = [v for v in values if not _is_missing_scalar(v)]
-                if non_null and all(
-                    isinstance(v, (int, float, np.number))
-                    and not isinstance(v, (bool, np.bool_))
-                    for v in non_null
-                ):
-                    encoded[col] = pd.to_numeric(series)
+            elif non_null and has_numeric:
+                encoded[col] = pd.to_numeric(series)
     return encoded
 
 
