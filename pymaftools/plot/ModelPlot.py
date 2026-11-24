@@ -392,6 +392,9 @@ class ModelPlot(BasePlot):
         """
         Convert importance data to PivotTable format.
 
+        Delegates to :func:`pymaftools.model.modelUtils.to_importance_table` so
+        visualisations and tabular summaries share the exact same aggregation.
+
         Parameters
         ----------
         all_importance_df : pd.DataFrame
@@ -402,20 +405,8 @@ class ModelPlot(BasePlot):
         Returns
         -------
         PivotTable
-            Sorted table with mean importance.
+            Sorted table with mean importance and selection frequency.
         """
-        # 選定 omic 資料並 pivot 成 feature × seed matrix
-        pivot_df = (
-            all_importance_df.query(f"model == '{omic}'")
-            .groupby(["seed", "feature"])["importance"]
-            .mean()
-            .unstack("seed")
-        )
+        from ..model.modelUtils import to_importance_table
 
-        # 建立 PivotTable 並計算平均
-        table = PivotTable(pivot_df)
-        table.feature_metadata["mean"] = table.mean(axis=1)
-
-        # 按平均重要性排序
-        sorted_table = table.sort_features(by="mean", ascending=False)
-        return sorted_table
+        return to_importance_table(all_importance_df, omic)

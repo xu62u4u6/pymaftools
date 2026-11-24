@@ -343,7 +343,12 @@ class OmicsStackingModel:
             raise ValueError("Encoded class index is outside class_order")
         return np.asarray(self.class_order)[encoded]
 
-    def fit(self, X: pd.DataFrame, y: np.ndarray | pd.Series) -> None:
+    def fit(
+        self,
+        X: pd.DataFrame,
+        y: np.ndarray | pd.Series,
+        groups: np.ndarray | pd.Series | None = None,
+    ) -> None:
         """
         Fit the stacking model.
 
@@ -353,6 +358,11 @@ class OmicsStackingModel:
             Training data (samples as rows, all omics features as columns).
         y : array-like
             Target labels.
+        groups : array-like, optional
+            Group identifiers (e.g. patient IDs). When provided, the inner
+            out-of-fold splits of ``StackingClassifier`` use
+            ``StratifiedGroupKFold`` so samples from the same group never
+            span inner train and validation folds.
         """
         self._validate_input_features(X)
         if len(y) != len(X):
@@ -360,7 +370,40 @@ class OmicsStackingModel:
         if isinstance(y, pd.Series) and not y.index.equals(X.index):
             raise ValueError("X and y sample indices must match exactly.")
         y_encoded = self.encode_y(y)
-        self._require_model().fit(X, y_encoded)
+
+        model = self._require_model()
+        if groups is not None:
+            from sklearn.model_selection import StratifiedGroupKFold
+
+            if isinstance(groups, pd.Series):
+                if not groups.index.equals(X.index):
+                    raise ValueError("groups index must match X index exactly.")
+                group_series = groups
+            else:
+                group_series = pd.Series(groups, index=X.index)
+            if len(group_series) != len(X):
+                raise ValueError("groups must contain one value per row in X.")
+            if group_series.isna().any():
+                raise ValueError("groups cannot contain missing values.")
+
+            n_splits = self.cv if isinstance(self.cv, int) else self.cv.get_n_splits()
+            n_unique_groups = int(group_series.nunique())
+            if n_unique_groups < n_splits:
+                raise ValueError(
+                    f"Inner StratifiedGroupKFold requires at least {n_splits} "
+                    f"unique groups (cv={n_splits}), got {n_unique_groups}."
+                )
+            splitter = StratifiedGroupKFold(
+                n_splits=n_splits,
+                shuffle=True,
+                random_state=self.random_state,
+            )
+            inner_splits = list(splitter.split(X, y_encoded, group_series.to_numpy()))
+            model.cv = inner_splits
+        else:
+            model.cv = self.cv
+
+        model.fit(X, y_encoded)
 
     def _require_model(self) -> StackingClassifier:
         if self.model is None:

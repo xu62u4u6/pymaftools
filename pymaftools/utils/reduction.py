@@ -36,6 +36,30 @@ class PCA_CCA:
         self.features_snv = None
         self.features_cnv = None
 
+    @staticmethod
+    def _align_tables(
+        snv_table: pd.DataFrame, cnv_table: pd.DataFrame
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
+        """Validate matching sample universes and align ``cnv_table`` to ``snv_table``."""
+        snv_cols = pd.Index(snv_table.columns)
+        cnv_cols = pd.Index(cnv_table.columns)
+        if not snv_cols.is_unique:
+            dups = snv_cols[snv_cols.duplicated()].unique().tolist()
+            raise ValueError(f"snv_table contains duplicate sample IDs: {dups}.")
+        if not cnv_cols.is_unique:
+            dups = cnv_cols[cnv_cols.duplicated()].unique().tolist()
+            raise ValueError(f"cnv_table contains duplicate sample IDs: {dups}.")
+        missing_in_cnv = snv_cols.difference(cnv_cols).tolist()
+        missing_in_snv = cnv_cols.difference(snv_cols).tolist()
+        if missing_in_cnv or missing_in_snv:
+            raise ValueError(
+                "snv_table and cnv_table must contain the exact same sample IDs. "
+                f"Missing in cnv_table: {missing_in_cnv}; "
+                f"missing in snv_table: {missing_in_snv}."
+            )
+        aligned_cnv = cnv_table.reindex(columns=snv_cols)
+        return snv_table, aligned_cnv
+
     def fit_transform(self, snv_table: pd.DataFrame, cnv_table: pd.DataFrame):
         """
         Fit PCA on SNV and CNV tables, then fit CCA on the reduced embeddings.
@@ -46,6 +70,7 @@ class PCA_CCA:
             SNV data table with features as rows and samples as columns.
         cnv_table : pd.DataFrame
             CNV data table with features as rows and samples as columns.
+            Columns are validated against and aligned to ``snv_table.columns``.
 
         Returns
         -------
@@ -54,6 +79,7 @@ class PCA_CCA:
         cca_cnv : ndarray of shape (n_samples, n_cca_components)
             Canonical variates for CNV data.
         """
+        snv_table, cnv_table = self._align_tables(snv_table, cnv_table)
         self.features_snv = list(snv_table.index)
         self.features_cnv = list(cnv_table.index)
 
@@ -77,6 +103,7 @@ class PCA_CCA:
             SNV data table with features as rows and samples as columns.
         cnv_table : pd.DataFrame
             CNV data table with features as rows and samples as columns.
+            Columns are validated against and aligned to ``snv_table.columns``.
 
         Returns
         -------
@@ -85,6 +112,9 @@ class PCA_CCA:
         cca_cnv : ndarray of shape (n_samples, n_cca_components)
             Canonical variates for CNV data.
         """
+        if self.features_snv is None or self.features_cnv is None:
+            raise ValueError("Model has not been fitted yet.")
+        snv_table, cnv_table = self._align_tables(snv_table, cnv_table)
         snv = pd.DataFrame(snv_table).T
         cnv = pd.DataFrame(cnv_table).T
 

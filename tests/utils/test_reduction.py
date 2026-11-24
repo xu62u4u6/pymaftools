@@ -62,8 +62,51 @@ def test_get_weights_reproduce_canonical_scores_from_centered_features():
     snv_scores, cnv_scores = model.fit_transform(snv, cnv)
     snv_weights, cnv_weights = model.get_weights()
 
-    for table, scores, weights in [(snv, snv_scores, snv_weights), (cnv, cnv_scores, cnv_weights)]:
+    for table, scores, weights in [
+        (snv, snv_scores, snv_weights),
+        (cnv, cnv_scores, cnv_weights),
+    ]:
         components = [c for c in weights.columns if c != "abs_weight_mean"]
         centered = table.T.values - table.T.values.mean(axis=0)
         projected = centered @ weights.loc[table.index, components].values
         np.testing.assert_allclose(projected, np.asarray(scores), atol=1e-8)
+
+
+def test_pca_cca_aligns_reordered_cnv_columns_in_fit_and_transform():
+    rng = np.random.default_rng(7)
+    samples = [f"S{i}" for i in range(20)]
+    snv_vals = rng.normal(size=(6, 20))
+    cnv_vals = 0.8 * snv_vals + 0.2 * rng.normal(size=(6, 20))
+    snv = pd.DataFrame(snv_vals, index=[f"G{i}" for i in range(6)], columns=samples)
+    cnv = pd.DataFrame(cnv_vals, index=[f"C{i}" for i in range(6)], columns=samples)
+    cnv_shuffled = cnv[list(reversed(samples))]
+
+    aligned_model = PCA_CCA(n_pca_components=3, n_cca_components=2, random_state=42)
+    s_ref, c_ref = aligned_model.fit_transform(snv, cnv)
+    s_ref_t, c_ref_t = aligned_model.transform(snv, cnv)
+
+    shuffled_model = PCA_CCA(n_pca_components=3, n_cca_components=2, random_state=42)
+    s_shuf, c_shuf = shuffled_model.fit_transform(snv, cnv_shuffled)
+    s_shuf_t, c_shuf_t = shuffled_model.transform(snv, cnv_shuffled)
+
+    np.testing.assert_allclose(s_shuf, s_ref, atol=1e-10)
+    np.testing.assert_allclose(c_shuf, c_ref, atol=1e-10)
+    np.testing.assert_allclose(s_shuf_t, s_ref_t, atol=1e-10)
+    np.testing.assert_allclose(c_shuf_t, c_ref_t, atol=1e-10)
+
+
+def test_pca_cca_raises_on_mismatched_or_duplicate_samples():
+    snv, cnv = _build_tables(n_features=4, n_samples=10)
+    cnv_missing = cnv.rename(columns={"s0": "EXTRA_SAMPLE"})
+
+    model = PCA_CCA(n_pca_components=2, n_cca_components=1)
+    with pytest.raises(ValueError, match="EXTRA_SAMPLE"):
+        model.fit_transform(snv, cnv_missing)
+
+    model.fit_transform(snv, cnv)
+    with pytest.raises(ValueError, match="s0"):
+        model.transform(snv, cnv_missing)
+
+    cnv_dup = pd.concat([cnv.iloc[:, :9], cnv.iloc[:, [0]]], axis=1)
+    with pytest.raises(ValueError, match="duplicate"):
+        PCA_CCA(n_pca_components=2, n_cca_components=1).fit_transform(snv, cnv_dup)

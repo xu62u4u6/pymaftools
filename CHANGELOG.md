@@ -34,6 +34,21 @@ producer-aware MAF input, and errors that say how to fix the call.
   `object` column mixes numeric values with strings or booleans (e.g.
   `[0.0, "x"]`), instead of silently converting numbers to text strings on
   round-trip.
+* **ML feature-importance & permutation-test output changes:**
+  * `get_importance()` now prefixes every `OmicsStackingModel` feature with
+    `"{omics_name}::"` (e.g. `SNV::TP53`, `CNV::TP53`) to prevent cross-omics
+    feature-name collisions; scripts indexing or merging stacking importances
+    by bare gene symbols must strip or match the prefix.
+  * `to_importance_table()` (and `ModelPlot._to_importance_table()`) now count
+    unselected `(seed, fold)` runs as `0.0` when computing `mean` and record
+    per-feature `selection_freq` in `feature_metadata`, so unstable features no
+    longer receive upwardly biased means.
+  * `paired_similarity_permutation_test()` now holds the shared anchor group
+    fixed for `(A, B)` vs `(A, C)` comparisons and restricts permutations to
+    the compared groups rather than permuting unrelated cohort groups; exact
+    p-values therefore change for multi-group cohorts.
+  * `run_model_evaluation(..., evaluate_func=None)` now returns
+    `all_metrics_df=None` instead of raising on empty concatenation.
 
 ### 🏷️ Name unification and deprecations
 

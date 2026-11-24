@@ -1153,7 +1153,40 @@ class SimilarityMatrix(PairwiseMatrix):
         n_permutations: int = 1000,
         random_state: int | None = None,
     ) -> tuple[float, float]:
-        """Compare two group-pair means by permuting sample labels."""
+        """Compare two group-pair mean similarities via restricted label permutation.
+
+        Null hypothesis and permutation scheme:
+
+        - **Shared-anchor between-group comparison**, e.g. ``('A', 'B')`` vs
+          ``('A', 'C')`` where both pairs are between-group and share one anchor
+          ``A``: tests whether groups ``B`` and ``C`` are equally similar to
+          ``A``. Samples in the anchor group ``A`` and in any unrelated groups
+          are held fixed; only labels among ``B`` and ``C`` are permuted.
+        - **All other comparisons** (within-vs-within such as ``('A', 'A')`` vs
+          ``('B', 'B')``, within-vs-between such as ``('A', 'A')`` vs
+          ``('A', 'B')``, or disjoint pairs such as ``('A', 'B')`` vs
+          ``('C', 'D')``): permutes only samples belonging to the groups named
+          in ``pair1`` and ``pair2``; unrelated groups are held fixed.
+
+        Parameters
+        ----------
+        groups : pd.Series or np.ndarray
+            Group label for each sample.
+        pair1 : tuple of str
+            First group pair ``(g1, g2)``.
+        pair2 : tuple of str
+            Second group pair ``(g3, g4)``.
+        n_permutations : int, default 1000
+            Number of random label permutations.
+        random_state : int, optional
+            Random seed for reproducibility.
+
+        Returns
+        -------
+        tuple of (float, float)
+            Observed difference ``mean(pair1) - mean(pair2)`` and two-sided
+            permutation p-value ``(extreme + 1) / (n_permutations + 1)``.
+        """
         if n_permutations < 1:
             raise ValueError("n_permutations must be at least 1")
         group_values = self._group_values(groups)
@@ -1166,11 +1199,28 @@ class SimilarityMatrix(PairwiseMatrix):
             return float(pair1_values.mean() - pair2_values.mean())
 
         observed = difference(group_values)
+
+        involved_groups = set(pair1) | set(pair2)
+        shared_groups = set(pair1) & set(pair2)
+        if pair1[0] != pair1[1] and pair2[0] != pair2[1] and len(shared_groups) == 1:
+            # Shared-anchor comparison (A, B) vs (A, C): hold anchor A and any
+            # unrelated groups fixed; exchange labels only between B and C.
+            permutable_groups = involved_groups - shared_groups
+        else:
+            # Permute only samples in the involved groups; keep unrelated groups fixed.
+            permutable_groups = involved_groups
+
+        perm_indices = np.flatnonzero(np.isin(group_values, list(permutable_groups)))
+        perm_subset = group_values[perm_indices]
+
         rng = np.random.default_rng(random_state)
-        permuted = np.asarray(
-            [difference(rng.permutation(group_values)) for _ in range(n_permutations)]
-        )
+        permuted = np.empty(n_permutations, dtype=float)
+        for i in range(n_permutations):
+            shuffled_labels = group_values.copy()
+            shuffled_labels[perm_indices] = rng.permutation(perm_subset)
+            permuted[i] = difference(shuffled_labels)
+
         p_value = (np.count_nonzero(np.abs(permuted) >= abs(observed)) + 1) / (
             n_permutations + 1
         )
-        return observed, p_value
+        return observed, float(p_value)
