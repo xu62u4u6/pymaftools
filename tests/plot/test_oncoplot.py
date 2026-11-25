@@ -835,3 +835,123 @@ def test_top_bartrack_zero_tick_is_never_occluded_by_opaque_label_gutter(
                 overlap_y = min(tb.y1, obb.y1) - max(tb.y0, obb.y0)
                 assert not (overlap_x > 0 and overlap_y > 0)
         plt.close(op.fig)
+
+
+@pytest.mark.parametrize("show_gene_names", [True, False])
+def test_left_track_labels_never_overlap_bottom_sample_annotation_labels(
+    mutation_table, show_gene_names
+):
+    """Rotated left-track column titles and left-protruding bottom sample
+    annotation row labels must never overlap, even with long metadata names."""
+    table = mutation_table.copy()
+    n_feat, n_samp = table.shape
+    table.feature_metadata["gene_family"] = [
+        "Kinase" if i % 2 == 0 else "Other" for i in range(n_feat)
+    ]
+    table.feature_metadata["IMPACT"] = [
+        "HIGH" if i % 2 == 0 else "MODERATE" for i in range(n_feat)
+    ]
+    table.sample_metadata["subtype"] = [
+        "LUAD" if i % 2 == 0 else "LUSC" for i in range(n_samp)
+    ]
+    table.sample_metadata["smoking_pack_years"] = [
+        "Heavy" if i % 2 == 0 else "Light" for i in range(n_samp)
+    ]
+
+    op = (
+        OncoPlot(table, figsize=(12, 7))
+        .main(yticklabels=show_gene_names)
+        .add_feature_annotation("gene_family", side="left")
+        .add_feature_annotation("IMPACT", side="left")
+        .add_sample_annotation(["subtype", "smoking_pack_years"], side="bottom")
+        .render(show_sample_labels=False)
+    )
+    op.fig.canvas.draw()
+    renderer = op.fig.canvas.get_renderer()
+
+    left_label_bbs = [
+        (t.get_text(), t.get_window_extent(renderer))
+        for ax in op.fig.axes
+        for t in ax.get_xticklabels()
+        if t.get_visible() and t.get_text() in {"gene_family", "IMPACT"}
+    ]
+    bottom_label_bbs = [
+        (t.get_text(), t.get_window_extent(renderer))
+        for ax in op.fig.axes
+        for t in ax.get_yticklabels()
+        if t.get_visible() and t.get_text() in {"subtype", "smoking_pack_years"}
+    ]
+    assert {name for name, _ in left_label_bbs} == {"gene_family", "IMPACT"}
+    assert {name for name, _ in bottom_label_bbs} == {"subtype", "smoking_pack_years"}
+
+    for _lname, lbb in left_label_bbs:
+        for _bname, bbb in bottom_label_bbs:
+            assert not lbb.overlaps(bbb)
+            assert bbb.x0 > lbb.x1
+
+    plt.close(op.fig)
+
+
+@pytest.mark.parametrize(
+    "group_labels",
+    [
+        {"A": "ZNF", "B": "MUC", "C": "Other"},
+        {"A": "Zinc\nFinger", "B": "Mucin\n(>20kb)", "C": "Other\nDrivers"},
+    ],
+)
+def test_feature_group_titles_sit_close_to_feature_gutter_without_overlap(
+    group_labels,
+):
+    """Grouped feature titles must sit tightly beside the gene-label gutter
+    (not stranded in a wide 5.0-unit void) while remaining clear of labels."""
+    table = _grouped_table()
+    table.feature_metadata = table.feature_metadata.copy()
+    table.feature_metadata["fam"] = table.feature_metadata["pathway"].map(group_labels)
+
+    op = (
+        OncoPlot(table, figsize=(14, 7))
+        .main()
+        .group_samples("grp")
+        .group_features("fam")
+        .add_sample_annotation("grp", side="bottom")
+        .render(show_sample_labels=False)
+    )
+    op.fig.canvas.draw()
+    renderer = op.fig.canvas.get_renderer()
+
+    ftitle_ratio = op.gs.get_width_ratios()[0]
+    assert ftitle_ratio < 2.5
+
+    expected_titles = set(group_labels.values())
+    title_bbs = [
+        t.get_window_extent(renderer)
+        for ax in op.fig.axes
+        for t in ax.texts
+        if t.get_text() in expected_titles
+    ]
+    gene_bbs = [
+        t.get_window_extent(renderer)
+        for ax in op.fig.axes
+        for t in ax.texts
+        if t.get_text() in set(table.index)
+    ]
+    bottom_bbs = [
+        t.get_window_extent(renderer)
+        for ax in op.fig.axes
+        for t in ax.get_yticklabels()
+        if t.get_visible() and t.get_text() == "grp"
+    ]
+    assert len(title_bbs) == len(expected_titles)
+    assert gene_bbs and bottom_bbs
+
+    leftmost_gene_x0 = min(bb.x0 for bb in gene_bbs)
+    for tbb in title_bbs:
+        for gbb in gene_bbs:
+            assert not tbb.overlaps(gbb)
+        for bbb in bottom_bbs:
+            assert not tbb.overlaps(bbb)
+        gap_px = leftmost_gene_x0 - tbb.x1
+        assert 2.0 <= gap_px <= 50.0
+
+    plt.close(op.fig)
+

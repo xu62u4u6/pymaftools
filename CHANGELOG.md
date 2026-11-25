@@ -77,8 +77,11 @@ producer-aware MAF input, and errors that say how to fix the call.
     automatically detects & highlights localized hypermutation (kataegis) via
     `detect_kataegis()` / `MAF.detect_kataegis()`.
   * `OncoPlot` simple-layout left tracks now render `left[0]` outermost to
-    match grouped layouts, and label-gutter backgrounds are transparent so top
-    `BarTrack` `0` y-tick labels are never occluded.
+    match grouped layouts, label-gutter backgrounds are transparent so top
+    `BarTrack` `0` y-tick labels are never occluded, left-gutter width sizes
+    from both gene names and horizontal sample-annotation labels to prevent
+    left/bottom title collisions, and grouped feature-title columns hug the
+    matrix cleanly.
   * `ExpressionTable.plot.volcano(label_col=...)` now raises `ValueError` when
     the requested `label_col` is absent instead of silently skipping labels.
   * `SignatureTable.read_signature()` adds an explicit `orientation` parameter

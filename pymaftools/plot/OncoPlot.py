@@ -5,7 +5,9 @@ import warnings
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from matplotlib.font_manager import FontProperties
 from matplotlib.gridspec import GridSpec
+from matplotlib.textpath import TextPath
 from .BasePlot import BasePlot
 from .Track import (
     Track,
@@ -815,17 +817,37 @@ class OncoPlot(BasePlot):
         }
         self._sample_gutter_axes = []  # collected by the layout, restyled by add_xticklabel
 
-        # Size the feature gutter to roughly the longest gene name so names hug
-        # the matrix without a wide left blank (which would push a left track far
-        # from the matrix). Right-aligned, so a tight width keeps everything snug.
-        # Overridable via feature_gutter_size.
+        # Size the left gutter between any left-side tracks/titles and the main
+        # matrix from the actual rendered text widths of BOTH feature names and
+        # horizontal top/bottom track row labels (CategoricalTrack / NumericTrack
+        # / BarTrack ticks). Right-aligned labels stay completely inside this
+        # corridor so bottom sample-metadata titles never collide with rotated
+        # left-track column titles. Overridable via feature_gutter_size.
+        has_horizontal_left_labels = any(
+            isinstance(t, (CategoricalTrack, NumericTrack)) for t in (*top, *bottom)
+        )
+        show_ft = bool(self._feature_groups and self._feature_groups["show_titles"])
+        reserve_left_gutter = bool(
+            show_feature_labels or ((left or show_ft) and has_horizontal_left_labels)
+        )
         if feature_gutter_size is None:
-            max_len = (
-                max((len(str(x)) for x in feature_labels), default=1)
-                if show_feature_labels
-                else 1
+            other_width_sum = (
+                sum(t.size for t in left)
+                + main_w
+                + sum(t.size for t in right)
+                + (legend_pad if legend_pad > 0 else 0)
+                + legend_width
+                + (1.0 if show_ft else 0.0)
             )
-            feature_gutter_size = max(1.5, max_len * 0.2)
+            req_pt = self._estimate_left_gutter_pt(
+                feature_labels=feature_labels,
+                show_feature_labels=show_feature_labels,
+                top=top,
+                bottom=bottom,
+            )
+            feature_gutter_size = self._pts_to_width_ratio(
+                req_pt, fig, other_width_sum, min_ratio=1.2
+            )
 
         layout = (
             self._render_sectioned
@@ -848,6 +870,7 @@ class OncoPlot(BasePlot):
                 hspace=hspace,
                 show_sample_labels=show_sample_labels,
                 show_feature_labels=show_feature_labels,
+                reserve_left_gutter=reserve_left_gutter,
                 feature_labels=feature_labels,
                 sample_labels=sample_labels,
                 feature_gutter_size=feature_gutter_size,
@@ -1056,6 +1079,90 @@ class OncoPlot(BasePlot):
         for spine in ax.spines.values():
             spine.set_visible(False)
 
+    @staticmethod
+    def _text_width_pt(
+        text: str, fontsize: float, *, fontweight: str = "normal"
+    ) -> float:
+        """Exact single- or multi-line maximum line width in typographic points."""
+        lines = [line for line in str(text).split("\n") if line.strip()]
+        if not lines:
+            return 0.0
+        prop = FontProperties(size=fontsize, weight=fontweight)
+        return max(
+            float(TextPath((0, 0), line, prop=prop).get_extents().width)
+            for line in lines
+        )
+
+    @staticmethod
+    def _pts_to_width_ratio(
+        req_pt: float,
+        fig,
+        other_width_sum: float,
+        *,
+        min_ratio: float = 0.6,
+        max_frac: float = 0.45,
+    ) -> float:
+        """Convert a horizontal requirement in points to GridSpec width-ratio units."""
+        sp = fig.subplotpars
+        usable_pt = max(fig.get_figwidth() * (sp.right - sp.left) * 72.0, 1.0)
+        frac = min(max(req_pt, 0.0) / usable_pt, max_frac)
+        ratio = other_width_sum * frac / max(1.0 - frac, 1e-6)
+        return max(min_ratio, ratio)
+
+    @classmethod
+    def _estimate_left_gutter_pt(
+        cls,
+        *,
+        feature_labels,
+        show_feature_labels: bool,
+        top: list[Track],
+        bottom: list[Track],
+    ) -> float:
+        """Estimate required horizontal width (points) left of the main matrix.
+
+        Covers both feature tick labels drawn in the gutter and left-protruding
+        row labels of top/bottom horizontal tracks so bottom sample-metadata
+        labels never collide with rotated left-track column titles.
+        """
+        req_pt = 0.0
+        if show_feature_labels and feature_labels:
+            feat_pt = max(cls._text_width_pt(lbl, 10) for lbl in feature_labels)
+            req_pt = max(req_pt, feat_pt + 10.0)
+        for track in (*top, *bottom):
+            if isinstance(track, (CategoricalTrack, NumericTrack)):
+                fs = getattr(track, "ytick_fontsize", 10)
+                labels = list(track.data.index)
+                if labels:
+                    track_pt = max(cls._text_width_pt(lbl, fs) for lbl in labels)
+                    # Tick pad (~7 pt) + clean separation (~9 pt) from left tracks.
+                    req_pt = max(req_pt, track_pt + 16.0)
+            elif isinstance(track, BarTrack):
+                totals = track.frame.sum(axis=1)
+                vmax = (
+                    float(np.nanmax(totals))
+                    if len(totals) and not np.all(np.isnan(totals))
+                    else 0.0
+                )
+                tick_str = f"{int(round(vmax))}" if vmax >= 1 else "1.0"
+                tick_pt = cls._text_width_pt(tick_str, track.fontsize)
+                req_pt = max(req_pt, tick_pt + 12.0)
+        return req_pt
+
+    @classmethod
+    def _estimate_feature_title_width(
+        cls,
+        fsecs,
+        fcfg: dict,
+        fig,
+        other_width_sum: float,
+    ) -> float:
+        """Tight GridSpec width for rotated 90-degree feature-group titles."""
+        max_lines = max((str(lbl).count("\n") + 1 for lbl, _ in fsecs), default=1)
+        fs = float(fcfg["title_fontsize"])
+        # Rotated 90 degrees: horizontal footprint equals stacked line height.
+        req_pt = max_lines * fs * 1.3 + 8.0
+        return cls._pts_to_width_ratio(req_pt, fig, other_width_sum, min_ratio=0.8)
+
     def _render_simple(
         self,
         fig,
@@ -1073,6 +1180,7 @@ class OncoPlot(BasePlot):
         hspace,
         show_sample_labels=True,
         show_feature_labels=True,
+        reserve_left_gutter=None,
         feature_labels=None,
         sample_labels=None,
         feature_gutter_size=3.0,
@@ -1085,7 +1193,9 @@ class OncoPlot(BasePlot):
         """
         n_feat, n_samp = self.pivot_table.shape
         has_pad = legend_pad > 0
-        fgut = 1 if show_feature_labels else 0  # feature-label gutter column
+        if reserve_left_gutter is None:
+            reserve_left_gutter = bool(show_feature_labels)
+        fgut = 1 if reserve_left_gutter else 0  # feature-label / clearance gutter
         sgut = 1 if show_sample_labels else 0  # sample-label gutter row
 
         # Columns: [left tracks] [feature gutter?] [main] [right tracks] [pad?] [legend]
@@ -1136,7 +1246,7 @@ class OncoPlot(BasePlot):
         for i, t in enumerate(right):
             t.render(fig.add_subplot(self.gs[main_row, right_cols[i]]))
 
-        if fgut:
+        if show_feature_labels and gut_col is not None:
             self._draw_label_gutter(
                 fig.add_subplot(self.gs[main_row, gut_col]),
                 feature_labels,
@@ -1195,6 +1305,7 @@ class OncoPlot(BasePlot):
         hspace,
         show_sample_labels=True,
         show_feature_labels=True,
+        reserve_left_gutter=None,
         feature_labels=None,
         sample_labels=None,
         feature_gutter_size=3.0,
@@ -1210,6 +1321,8 @@ class OncoPlot(BasePlot):
         samp_gap = scfg["gap"] if scfg else 0.0
         show_ft = bool(fcfg and fcfg["show_titles"])
         show_st = bool(scfg and scfg["show_titles"])
+        if reserve_left_gutter is None:
+            reserve_left_gutter = bool(show_feature_labels)
         n_feat, n_samp = self.pivot_table.shape
 
         self._fix_shared_scales(main_track, top, bottom, left, right)
@@ -1253,13 +1366,30 @@ class OncoPlot(BasePlot):
                     "pt.add_freq(groups={'LUAD': luad_subset, ...})."
                 )
 
-        # Wider title column so multi-line rotated group titles (e.g.
-        # "Large\n(>20kb)") sit clear of the heatmap's gene tick labels.
-        ftitle_col = add_col(5.0) if show_ft else None
+        # Size the feature-group title column tightly around the rotated group
+        # labels; gene names and horizontal track labels already live inside
+        # fgut_col, so ftitle_col only needs room for the rotated title lines.
+        if show_ft:
+            other_w = (
+                sum(t.size for t in left)
+                + (feature_gutter_size if reserve_left_gutter else 0.0)
+                + main_w
+                + (scfg["freq_size"] * gs_ if sfreq else 0.0)
+                + samp_gap * max(gs_ - 1, 0)
+                + (samp_gap if (sfreq and right) else 0.0)
+                + sum(t.size for t in right)
+                + (legend_pad if legend_pad > 0 else 0.0)
+                + legend_width
+            )
+            ftitle_col = add_col(
+                self._estimate_feature_title_width(fsecs, fcfg, fig, other_w)
+            )
+        else:
+            ftitle_col = None
         left_cols = [add_col(t.size) for t in left]
-        # feature-label gutter: between the left tracks and the matrix, so gene
-        # names hug the matrix instead of overflowing a left track.
-        fgut_col = add_col(feature_gutter_size) if show_feature_labels else None
+        # feature-label / clearance gutter: between the left tracks/titles and
+        # the matrix so gene names and horizontal track labels stay clear.
+        fgut_col = add_col(feature_gutter_size) if reserve_left_gutter else None
         samp_cols = []
         sfreq_cols: list[int | None] = []
         for si, (_lbl, pos) in enumerate(ssecs):
@@ -1338,7 +1468,7 @@ class OncoPlot(BasePlot):
                     ax.set_xticks([])
 
         # label gutters: one per section, labels sliced to the section
-        if fgut_col is not None:
+        if show_feature_labels and fgut_col is not None:
             for fi, (_flbl, fpos) in enumerate(fsecs):
                 ax = fig.add_subplot(self.gs[feat_rows[fi], fgut_col])
                 self._draw_label_gutter(
@@ -1398,11 +1528,11 @@ class OncoPlot(BasePlot):
                 ax = fig.add_subplot(self.gs[feat_rows[fi], ftitle_col])
                 ax.axis("off")
                 ax.text(
-                    0.25,
+                    0.85,
                     y,
                     str(flbl),
                     rotation=90,
-                    ha="center",
+                    ha="right",
                     va=va,
                     fontsize=fcfg["title_fontsize"],
                     fontweight="bold",
