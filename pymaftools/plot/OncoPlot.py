@@ -1052,6 +1052,7 @@ class OncoPlot(BasePlot):
                 )
         ax.set_xticks([])
         ax.set_yticks([])
+        ax.patch.set_visible(False)
         for spine in ax.spines.values():
             spine.set_visible(False)
 

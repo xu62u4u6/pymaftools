@@ -161,6 +161,146 @@ def test_rainfall_reference_lengths_must_cover_all_plotted_chromosomes():
         plot_rainfall(frame, chrom_lengths={"1": 100})
 
 
+def _kataegis_maf_frame() -> pd.DataFrame:
+    """Build a synthetic multi-chromosome MAF containing one APOBEC-like
+    kataegis focus on chr17 (8 C>T/C>G SNVs within 1.4 kb), one flanking
+    distant SNV on chr17 (4.5 kb away that must be trimmed), and sparse
+    background SNVs on chr1 and chr17."""
+    rows = []
+    # Sparse chr1 background (5 SNVs spaced 200 kb apart)
+    for idx, pos in enumerate([100_000, 300_000, 500_000, 700_000, 900_000]):
+        rows.append(
+            {
+                "sample_ID": "S1",
+                "Hugo_Symbol": f"BG1_{idx}",
+                "Chromosome": "chr1",
+                "Start_Position": pos,
+                "Variant_Type": "SNP",
+                "Reference_Allele": "T",
+                "Tumor_Seq_Allele2": "C",
+                "Variant_Classification": "Missense_Mutation",
+            }
+        )
+    # Dense APOBEC-like kataegis cluster on chr17 (8 SNVs: 7 C>T/G + 1 C>A)
+    cluster_positions = [500_000, 500_120, 500_250, 500_410, 500_620, 500_890, 501_100, 501_400]
+    alleles = [
+        ("C", "T"),
+        ("G", "A"),  # C>T reverse complement
+        ("C", "G"),
+        ("G", "C"),  # C>G reverse complement
+        ("C", "T"),
+        ("C", "T"),
+        ("C", "G"),
+        ("C", "A"),
+    ]
+    for pos, (ref, alt) in zip(cluster_positions, alleles):
+        rows.append(
+            {
+                "sample_ID": "S1",
+                "Hugo_Symbol": "TP53",
+                "Chromosome": "chr17",
+                "Start_Position": pos,
+                "Variant_Type": "SNP",
+                "Reference_Allele": ref,
+                "Tumor_Seq_Allele2": alt,
+                "Variant_Classification": "Missense_Mutation",
+            }
+        )
+    # Flanking unrelated SNV 4,500 bp away (must NOT be absorbed into cluster)
+    rows.append(
+        {
+            "sample_ID": "S1",
+            "Hugo_Symbol": "FLANK1",
+            "Chromosome": "chr17",
+            "Start_Position": 505_900,
+            "Variant_Type": "SNP",
+            "Reference_Allele": "A",
+            "Tumor_Seq_Allele2": "G",
+            "Variant_Classification": "Silent",
+        }
+    )
+    # Second sample S2 with only sparse variants (no kataegis)
+    for pos in [10_000, 250_000, 600_000]:
+        rows.append(
+            {
+                "sample_ID": "S2",
+                "Hugo_Symbol": "KRAS",
+                "Chromosome": "chr12",
+                "Start_Position": pos,
+                "Variant_Type": "SNP",
+                "Reference_Allele": "C",
+                "Tumor_Seq_Allele2": "A",
+                "Variant_Classification": "Missense_Mutation",
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def test_detect_kataegis_identifies_apobec_cluster_trims_flank_and_records_provenance():
+    from pymaftools.plot.wes import detect_kataegis
+    from pymaftools.provenance import get_provenance
+
+    maf = MAF(_kataegis_maf_frame())
+    clusters = maf.detect_kataegis()
+
+    assert len(clusters) == 1
+    row = clusters.iloc[0]
+    assert row["cluster_id"] == "K1"
+    assert row["sample"] == "S1"
+    assert row["chrom"] == "chr17"
+    assert row["start"] == 500_000
+    assert row["end"] == 501_400  # 505_900 flank was trimmed, not absorbed
+    assert row["n_mutations"] == 8
+    assert row["span_bp"] == 1_400
+    assert row["mean_inter_mutation_distance"] == pytest.approx(200.0)
+    assert row["dominant_substitution"] == "C>T"
+    assert row["c_to_t_g_fraction"] == pytest.approx(7 / 8)
+    assert bool(row["apobec_like"]) is True
+    assert row["genes"] == "TP53"
+    assert get_provenance(clusters)["analysis"] == "detect_kataegis"
+
+    # Sparse sample returns empty canonical schema with provenance
+    empty = detect_kataegis(maf, sample="S2")
+    assert empty.empty
+    assert list(empty.columns) == list(clusters.columns)
+    assert get_provenance(empty)["parameters"]["sample"] == "S2"
+
+
+def test_detect_kataegis_validates_thresholds_and_sample():
+    from pymaftools.plot.wes import detect_kataegis
+
+    maf = MAF(_kataegis_maf_frame())
+    with pytest.raises(ValueError, match="min_mutations"):
+        detect_kataegis(maf, min_mutations=1)
+    with pytest.raises(ValueError, match="max_mean_distance"):
+        detect_kataegis(maf, max_mean_distance=-5)
+    with pytest.raises(ValueError, match="not found in MAF"):
+        detect_kataegis(maf, sample="UNKNOWN_SAMPLE")
+
+
+def test_rainfall_highlights_kataegis_and_matches_detect_kataegis():
+    from pymaftools.plot.wes import detect_kataegis
+
+    maf = MAF(_kataegis_maf_frame())
+    fig, clusters = plot_rainfall(maf, sample="S1", return_clusters=True)
+
+    pd.testing.assert_frame_equal(clusters, detect_kataegis(maf, sample="S1"))
+    pd.testing.assert_frame_equal(fig.kataegis_clusters, clusters)
+    ax = fig.axes[0]
+    assert "1 kataegis cluster detected" in ax.get_title()
+    assert any("K1: chr17" in t.get_text() and "APOBEC-like" in t.get_text() for t in ax.texts)
+    # Collections must remain strictly the mutation scatter series (no extra scatter collections)
+    n_scatter_points = sum(len(c.get_offsets()) for c in ax.collections)
+    assert n_scatter_points == 12  # 4 chr1 diffs + 8 chr17 diffs
+    plt.close(fig)
+
+    # Sample without kataegis reports an honest negative status in title
+    fig_none = plot_rainfall(maf, sample="S2")
+    assert fig_none.kataegis_clusters.empty
+    assert "No kataegis clusters detected" in fig_none.axes[0].get_title()
+    plt.close(fig_none)
+
+
 def test_maf_plot_summary_accessor_removed():
     """The old raw classification dashboard is no longer a public accessor."""
     assert not hasattr(_maf().plot, "summary")

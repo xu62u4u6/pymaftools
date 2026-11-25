@@ -589,7 +589,9 @@ class BarTrack(Track):
             else:
                 ax.set_title(self.label, fontsize=self.ylabel_size)
 
-        # Frameless house style: keep only a light value-axis spine.
+        # Frameless house style: keep only a light value-axis spine and a
+        # transparent background so adjacent track ticks are never occluded.
+        ax.patch.set_visible(False)
         for name, spine in ax.spines.items():
             spine.set_visible(name == value_spine)
         ax.spines[value_spine].set_color("#444444")

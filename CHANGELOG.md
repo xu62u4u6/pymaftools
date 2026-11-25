@@ -72,10 +72,13 @@ producer-aware MAF input, and errors that say how to fix the call.
 * **Plot validity defaults:**
   * `plot_rainfall()` now defaults to `color_by="substitution"` (canonical
     SBS-6 SNV colors, requiring `Variant_Type`, `Reference_Allele`, and
-    `Tumor_Seq_Allele2`, and restricting to SNVs); pass
-    `color_by="classification"` for the previous variant-classification mode.
+    `Tumor_Seq_Allele2`, and restricting to SNVs; pass
+    `color_by="variant_classification"` for consequence-based coloring), and
+    automatically detects & highlights localized hypermutation (kataegis) via
+    `detect_kataegis()` / `MAF.detect_kataegis()`.
   * `OncoPlot` simple-layout left tracks now render `left[0]` outermost to
-    match grouped layouts.
+    match grouped layouts, and label-gutter backgrounds are transparent so top
+    `BarTrack` `0` y-tick labels are never occluded.
   * `ExpressionTable.plot.volcano(label_col=...)` now raises `ValueError` when
     the requested `label_col` is absent instead of silently skipping labels.
   * `SignatureTable.read_signature()` adds an explicit `orientation` parameter
