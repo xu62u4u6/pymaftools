@@ -63,6 +63,7 @@ _LAZY_EXPORTS = {
     "ModelPlot": ".plot.ModelPlot",
     "figure_summary": ".plot.summary",
     "compare_cohorts": ".plot.wes",
+    "detect_kataegis": ".plot.wes",
     "infer_vaf": ".plot.wes",
     "mutation_burden_by_class": ".plot.wes",
     "plot_cohort_comparison_forest": ".plot.wes",

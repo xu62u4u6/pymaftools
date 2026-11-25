@@ -29,6 +29,7 @@ from .MethodsPlot import MethodsPlot
 from .ModelPlot import ModelPlot
 from .wes import (
     compare_cohorts,
+    detect_kataegis,
     infer_vaf,
     mutation_burden_by_class,
     plot_cohort_comparison_forest,
@@ -60,6 +61,7 @@ __all__ = [
     "MethodsPlot",
     "ModelPlot",
     "compare_cohorts",
+    "detect_kataegis",
     "infer_vaf",
     "mutation_burden_by_class",
     "plot_cohort_comparison_forest",

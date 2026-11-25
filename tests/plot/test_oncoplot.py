@@ -790,3 +790,48 @@ def test_legend_overflow_warns():
     with pytest.warns(UserWarning, match="does not fit"):
         manager.plot_legends()
     plt.close(fig)
+
+
+def test_top_bartrack_zero_tick_is_never_occluded_by_opaque_label_gutter(
+    mutation_table,
+):
+    """Label gutters must use transparent patches so the top BarTrack '0' tick
+    is never sliced by a white axes box drawn afterward."""
+    table = mutation_table.copy()
+    n_samples = table.shape[1]
+    table.sample_metadata["mutations_count"] = np.linspace(10, 80, n_samples)
+    table.sample_metadata["subtype"] = ["LUAD"] * (n_samples // 2) + ["LUSC"] * (
+        n_samples - n_samples // 2
+    )
+
+    for grouped in (False, True):
+        op = OncoPlot(table, figsize=(10, 4.2)).main()
+        if grouped:
+            op = op.group_samples("subtype")
+        op = op.add_bar("mutations_count", side="top").render(show_sample_labels=True)
+        op.fig.canvas.draw()
+        renderer = op.fig.canvas.get_renderer()
+
+        bar_axes = [
+            (idx, ax)
+            for idx, ax in enumerate(op.fig.axes)
+            if ax.get_title() == "mutations_count"
+        ]
+        assert bar_axes
+        for bar_idx, bar_ax in bar_axes:
+            assert not bar_ax.patch.get_visible()
+            zero_ticks = [
+                t
+                for t in bar_ax.get_yticklabels()
+                if t.get_visible() and t.get_text() in {"0", "0.0"}
+            ]
+            assert zero_ticks
+            tb = zero_ticks[0].get_window_extent(renderer)
+            for other_idx, other_ax in enumerate(op.fig.axes):
+                if other_idx <= bar_idx or not other_ax.patch.get_visible():
+                    continue
+                obb = other_ax.get_window_extent(renderer)
+                overlap_x = min(tb.x1, obb.x1) - max(tb.x0, obb.x0)
+                overlap_y = min(tb.y1, obb.y1) - max(tb.y0, obb.y0)
+                assert not (overlap_x > 0 and overlap_y > 0)
+        plt.close(op.fig)

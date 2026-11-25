@@ -1800,6 +1800,43 @@ class MAF(pd.DataFrame):
 
         return summary_stats(self)
 
+    def detect_kataegis(
+        self,
+        *,
+        sample: str | None = None,
+        min_mutations: int = 6,
+        max_mean_distance: float = 1000.0,
+        snv_only: bool = True,
+    ) -> pd.DataFrame:
+        """Detect localized hypermutation (kataegis) clusters in this MAF.
+
+        Parameters
+        ----------
+        sample : str, optional
+            Restrict detection to a single sample; ``None`` evaluates every
+            sample in the MAF.
+        min_mutations : int, default 6
+            Minimum consecutive variants required to call a cluster.
+        max_mean_distance : float, default 1000.0
+            Maximum mean inter-mutation distance in base pairs.
+        snv_only : bool, default True
+            Restrict to SNPs (``Variant_Type == "SNP"``).
+
+        Returns
+        -------
+        pd.DataFrame
+            Kataegis cluster table with provenance attached in ``attrs``.
+        """
+        from ..plot.wes import detect_kataegis
+
+        return detect_kataegis(
+            self,
+            sample=sample,
+            min_mutations=min_mutations,
+            max_mean_distance=max_mean_distance,
+            snv_only=snv_only,
+        )
+
     def compare_cohorts(
         self,
         other: MAF,

@@ -137,6 +137,245 @@ def _chrom_sort_key(chrom) -> tuple[int, str]:
     return (special.get(label.upper(), 99), label)
 
 
+KATAEGIS_COLUMNS = [
+    "cluster_id",
+    "sample",
+    "chrom",
+    "start",
+    "end",
+    "span_bp",
+    "n_mutations",
+    "mean_inter_mutation_distance",
+    "median_inter_mutation_distance",
+    "dominant_substitution",
+    "c_to_t_g_fraction",
+    "apobec_like",
+    "genes",
+]
+
+
+def _find_kataegis_intervals(
+    positions: np.ndarray,
+    *,
+    min_mutations: int,
+    max_mean_distance: float,
+) -> list[tuple[int, int]]:
+    """Return ``(start_idx, end_idx)`` inclusive index ranges of kataegis clusters."""
+    n = len(positions)
+    if n < min_mutations:
+        return []
+    window_span_limit = max_mean_distance * (min_mutations - 1)
+    qualifying: list[tuple[int, int]] = []
+    for start_idx in range(0, n - min_mutations + 1):
+        end_idx = start_idx + min_mutations - 1
+        if float(positions[end_idx] - positions[start_idx]) <= window_span_limit:
+            if qualifying and start_idx <= qualifying[-1][1]:
+                qualifying[-1] = (qualifying[-1][0], max(qualifying[-1][1], end_idx))
+            else:
+                qualifying.append((start_idx, end_idx))
+
+    clusters: list[tuple[int, int]] = []
+    for start_idx, end_idx in qualifying:
+        # Trim outlying flanking mutations pulled into an edge window by a dense core.
+        while (
+            end_idx - start_idx + 1 > min_mutations
+            and float(positions[start_idx + 1] - positions[start_idx])
+            > max_mean_distance
+        ):
+            start_idx += 1
+        while (
+            end_idx - start_idx + 1 > min_mutations
+            and float(positions[end_idx] - positions[end_idx - 1]) > max_mean_distance
+        ):
+            end_idx -= 1
+        count = end_idx - start_idx + 1
+        if count < min_mutations:
+            continue
+        mean_dist = float(positions[end_idx] - positions[start_idx]) / (count - 1)
+        if mean_dist <= max_mean_distance:
+            clusters.append((start_idx, end_idx))
+    return clusters
+
+
+def detect_kataegis(
+    maf: pd.DataFrame,
+    *,
+    sample: str | None = None,
+    min_mutations: int = 6,
+    max_mean_distance: float = 1000.0,
+    snv_only: bool = True,
+) -> pd.DataFrame:
+    """Detect localized hypermutation (kataegis) clusters in a MAF event table.
+
+    A kataegis focus is defined as a contiguous run of at least
+    ``min_mutations`` variants on the same chromosome with mean inter-mutation
+    distance ``<= max_mean_distance`` bp (standard cancer-genomics default:
+    ``>= 6`` mutations, mean distance ``<= 1,000`` bp). Flanking steps larger
+    than ``max_mean_distance`` are trimmed so distant unrelated variants are
+    not absorbed into a dense core.
+
+    Parameters
+    ----------
+    maf : pandas.DataFrame
+        MAF event table.
+    sample : str, optional
+        Restrict detection to a single sample. When ``None``, evaluates every
+        sample in ``maf``.
+    min_mutations : int, default 6
+        Minimum consecutive variants required to call a kataegis cluster
+        (must be ``>= 2``).
+    max_mean_distance : float, default 1000.0
+        Maximum mean inter-mutation distance in base pairs (must be ``> 0``).
+    snv_only : bool, default True
+        Restrict to SNPs (``Variant_Type == "SNP"``) matching canonical
+        kataegis detection. Set ``False`` to include all variant types.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Detected kataegis clusters (empty DataFrame with canonical columns when
+        none are found), with provenance recorded in ``attrs`` (readable via
+        :func:`pymaftools.provenance.get_provenance`).
+    """
+    if (
+        isinstance(min_mutations, bool)
+        or not isinstance(min_mutations, (int, np.integer))
+        or int(min_mutations) < 2
+    ):
+        raise ValueError(
+            f"min_mutations must be an integer >= 2; got {min_mutations!r}."
+        )
+    min_mutations = int(min_mutations)
+    if (
+        isinstance(max_mean_distance, bool)
+        or not isinstance(max_mean_distance, (int, float, np.integer, np.floating))
+        or not np.isfinite(max_mean_distance)
+        or float(max_mean_distance) <= 0
+    ):
+        raise ValueError(
+            "max_mean_distance must be a positive finite number; "
+            f"got {max_mean_distance!r}."
+        )
+    max_mean_distance = float(max_mean_distance)
+
+    sample_col = _get_sample_col(maf)
+    required = [sample_col, "Chromosome", "Start_Position"]
+    if snv_only:
+        required.append("Variant_Type")
+    _require_columns(maf, required)
+
+    data = maf.copy()
+    all_samples = data[sample_col].dropna().astype(str).unique().tolist()
+    if sample is not None:
+        sample = str(sample)
+        if sample not in set(all_samples):
+            raise ValueError(
+                f"Sample {sample!r} not found in MAF. Available samples: "
+                f"{all_samples[:10]}."
+            )
+        data = data.loc[data[sample_col].astype(str).eq(sample)].copy()
+        evaluated_samples = [sample]
+    else:
+        evaluated_samples = all_samples
+
+    if snv_only:
+        data = data.loc[data["Variant_Type"].eq("SNP")].copy()
+
+    data["Start_Position"] = pd.to_numeric(data["Start_Position"], errors="coerce")
+    data = data.dropna(subset=[sample_col, "Chromosome", "Start_Position"])
+
+    has_alleles = {"Reference_Allele", "Tumor_Seq_Allele2"}.issubset(data.columns)
+    if has_alleles and not data.empty:
+        data["_sub"] = data.apply(
+            lambda row: _canonical_substitution(
+                row["Reference_Allele"], row["Tumor_Seq_Allele2"]
+            ),
+            axis=1,
+        )
+    has_gene = "Hugo_Symbol" in data.columns
+
+    rows: list[dict] = []
+    if not data.empty:
+        data["_sample_str"] = data[sample_col].astype(str)
+        data["_chrom_order"] = data["Chromosome"].map(lambda c: _chrom_sort_key(c)[0])
+        data["_chrom_label"] = data["Chromosome"].map(lambda c: _chrom_sort_key(c)[1])
+        data = data.sort_values(
+            ["_sample_str", "_chrom_order", "_chrom_label", "Start_Position"],
+            kind="mergesort",
+        )
+        cluster_idx = 0
+        for (sample_id, chrom), grp in data.groupby(
+            ["_sample_str", "Chromosome"], sort=False
+        ):
+            positions = grp["Start_Position"].to_numpy(dtype=np.int64)
+            intervals = _find_kataegis_intervals(
+                positions,
+                min_mutations=min_mutations,
+                max_mean_distance=max_mean_distance,
+            )
+            for s_i, e_i in intervals:
+                cluster_idx += 1
+                sub_grp = grp.iloc[s_i : e_i + 1]
+                pos_slice = positions[s_i : e_i + 1]
+                diffs = np.diff(pos_slice).astype(float)
+                span_bp = int(pos_slice[-1] - pos_slice[0])
+                n_mut = int(len(pos_slice))
+                mean_dist = float(span_bp) / (n_mut - 1)
+                median_dist = float(np.median(diffs))
+
+                dominant_sub = None
+                c_to_t_g_fraction = np.nan
+                apobec_like = False
+                if has_alleles:
+                    subs = sub_grp["_sub"].dropna()
+                    if not subs.empty:
+                        counts = subs.value_counts()
+                        dominant_sub = str(counts.index[0])
+                        c_to_t_g_fraction = float(subs.isin(["C>T", "C>G"]).mean())
+                        apobec_like = bool(c_to_t_g_fraction >= 0.75)
+
+                genes_str = ""
+                if has_gene:
+                    genes = [
+                        str(g)
+                        for g in pd.unique(sub_grp["Hugo_Symbol"].dropna())
+                        if str(g).strip()
+                    ]
+                    genes_str = ",".join(genes)
+
+                rows.append(
+                    {
+                        "cluster_id": f"K{cluster_idx}",
+                        "sample": str(sample_id),
+                        "chrom": str(chrom),
+                        "start": int(pos_slice[0]),
+                        "end": int(pos_slice[-1]),
+                        "span_bp": span_bp,
+                        "n_mutations": n_mut,
+                        "mean_inter_mutation_distance": mean_dist,
+                        "median_inter_mutation_distance": median_dist,
+                        "dominant_substitution": dominant_sub,
+                        "c_to_t_g_fraction": c_to_t_g_fraction,
+                        "apobec_like": apobec_like,
+                        "genes": genes_str,
+                    }
+                )
+
+    result = pd.DataFrame(rows, columns=KATAEGIS_COLUMNS)
+    provenance = Provenance(
+        analysis="detect_kataegis",
+        parameters={
+            "sample": sample,
+            "min_mutations": min_mutations,
+            "max_mean_distance": max_mean_distance,
+            "snv_only": snv_only,
+        },
+        inputs=table_inputs(maf),
+        sample_universe=sample_universe(evaluated_samples, source="maf"),
+    )
+    return attach_provenance(result, provenance)
+
+
 def plot_rainfall(
     maf: pd.DataFrame,
     sample: str | None = None,
@@ -144,8 +383,18 @@ def plot_rainfall(
     point_size: float = 10,
     color_by: str = "substitution",
     chrom_lengths: dict | None = None,
+    *,
+    detect_kataegis: bool = True,
+    min_mutations: int = 6,
+    max_mean_distance: float = 1000.0,
+    return_clusters: bool = False,
 ):
     """Draw inter-mutation distance across genomic coordinates.
+
+    Designed to surface localized hypermutation (**kataegis**) clusters —
+    sudden downward plumes of consecutive mutations with short inter-mutation
+    distances (typically ``<= 1 kb``) and characteristic SBS-6 substitution
+    enrichment (e.g. APOBEC-driven ``C>T`` / ``C>G``).
 
     Parameters
     ----------
@@ -165,9 +414,20 @@ default "substitution"
         Reference chromosome lengths keyed by chromosome label (``1`` or
         ``chr1``). When provided, every plotted chromosome must be present and
         at least as long as its largest observed position.
+    detect_kataegis : bool, default True
+        Run :func:`detect_kataegis` on the plotted sample, draw the distance
+        threshold guide line, highlight any detected kataegis clusters with
+        shaded bands and labels, and report detection status in the plot title.
+    min_mutations : int, default 6
+        Passed to :func:`detect_kataegis` when ``detect_kataegis=True``.
+    max_mean_distance : float, default 1000.0
+        Passed to :func:`detect_kataegis` when ``detect_kataegis=True``.
+    return_clusters : bool, default False
+        When ``True``, return ``(fig, clusters_df)`` instead of only ``fig``.
+        The detected table is also attached to ``fig.kataegis_clusters``.
     """
-    from .ColorManager import ColorManager
     from . import style
+    from .ColorManager import ColorManager
 
     valid_color_modes = {"substitution", "variant_classification"}
     if color_by not in valid_color_modes:
@@ -182,11 +442,15 @@ default "substitution"
         required += ["Variant_Classification"]
     _require_columns(maf, required)
     data = maf.copy()
-    if sample is not None:
-        data = data.loc[data[sample_col].eq(sample)].copy()
+    resolved_sample = sample
+    if resolved_sample is not None:
+        resolved_sample = str(resolved_sample)
+        data = data.loc[data[sample_col].astype(str).eq(resolved_sample)].copy()
     elif data[sample_col].nunique() > 1:
-        sample = str(data[sample_col].iloc[0])
-        data = data.loc[data[sample_col].eq(sample)].copy()
+        resolved_sample = str(data[sample_col].iloc[0])
+        data = data.loc[data[sample_col].astype(str).eq(resolved_sample)].copy()
+    elif not data.empty:
+        resolved_sample = str(data[sample_col].iloc[0])
     if data.empty:
         raise ValueError("No variants available for rainfall plot.")
 
@@ -230,6 +494,7 @@ default "substitution"
                 f"chrom_lengths is missing plotted chromosome(s): {missing}."
             )
     offsets = {}
+    chrom_spans: list[tuple[str, float, float]] = []
     offset = 0
     for chrom in chroms:
         offsets[chrom] = offset
@@ -249,7 +514,11 @@ default "substitution"
                     f"chrom_lengths[{key!r}]={span} is shorter than the largest "
                     f"observed position {int(max_pos)}."
                 )
+        chrom_spans.append((str(chrom), float(offset), float(offset + span)))
         offset += span
+    total_span = max(float(offset), 1.0)
+    n_events_before_diff = int(len(data))
+
     data["genomic_pos"] = data.apply(
         lambda row: offsets[row["Chromosome"]] + row["Start_Position"],
         axis=1,
@@ -268,7 +537,25 @@ default "substitution"
             "Rainfall plot requires at least two variants on one chromosome."
         )
 
+    clusters = pd.DataFrame(columns=KATAEGIS_COLUMNS)
+    if detect_kataegis:
+        kataegis_finder = globals()["detect_kataegis"]
+        clusters = kataegis_finder(
+            maf,
+            sample=resolved_sample,
+            min_mutations=min_mutations,
+            max_mean_distance=max_mean_distance,
+            snv_only=(color_by == "substitution"),
+        )
+
     fig, ax, legend_ax = style.fig_with_legend(figsize, legend_width=0.16)
+
+    # Subtle alternating chromosome background bands for genomic orientation.
+    if len(chrom_spans) > 1:
+        for idx, (_chrom_name, c_start, c_end) in enumerate(chrom_spans):
+            if idx % 2 == 1:
+                ax.axvspan(c_start, c_end, color="#f3f4f6", alpha=0.85, zorder=0)
+
     present = {}
     class_order = (
         BASE_CHANGE_ORDER
@@ -288,13 +575,117 @@ default "substitution"
             color=color,
             alpha=0.8,
             edgecolors="none",
+            zorder=3,
         )
-    ax.set_title(f"Rainfall Plot{f' - {sample}' if sample else ''}")
-    ax.set_xlabel("Genomic position")
+
+    if len(chrom_spans) > 1:
+        centers = [(c_start + c_end) / 2.0 for _, c_start, c_end in chrom_spans]
+        labels = [
+            c_name.removeprefix("chr").removeprefix("CHR")
+            for c_name, _, _ in chrom_spans
+        ]
+        ax.set_xticks(centers)
+        ax.set_xticklabels(labels, fontsize=8 if len(labels) <= 24 else 7)
+        ax.set_xlabel("Chromosome")
+    else:
+        ax.set_xlabel("Genomic position")
+
+    title_base = f"Rainfall Plot{f' - {resolved_sample}' if resolved_sample else ''}"
+    if detect_kataegis:
+        thresh_y = float(np.log10(max(max_mean_distance, 1.0)))
+        ax.axhline(
+            thresh_y,
+            color="#6b7280",
+            linestyle="--",
+            linewidth=0.9,
+            alpha=0.75,
+            zorder=1,
+        )
+        ymin, ymax = ax.get_ylim()
+        y_top = max(ymax, thresh_y + 0.6)
+        if not clusters.empty:
+            ax.set_ylim(min(ymin, 0.0), y_top + 0.8)
+            min_band_w = total_span * 0.008
+            chrom_offset_lookup = {str(k): float(v) for k, v in offsets.items()}
+            summaries: list[str] = []
+            for idx, row in clusters.iterrows():
+                c_offset = chrom_offset_lookup.get(str(row["chrom"]), 0.0)
+                x0 = c_offset + float(row["start"])
+                x1 = c_offset + float(row["end"])
+                if x1 - x0 < min_band_w:
+                    mid = (x0 + x1) / 2.0
+                    x0 = max(0.0, mid - min_band_w / 2.0)
+                    x1 = min(total_span, mid + min_band_w / 2.0)
+                ax.axvspan(x0, x1, color="#dc2626", alpha=0.16, zorder=1)
+                mid_x = (x0 + x1) / 2.0
+                tag_parts = [
+                    f"{row['cluster_id']}: {row['chrom']} (n={row['n_mutations']}"
+                ]
+                if pd.notna(row["dominant_substitution"]):
+                    tag_parts.append(f", {row['dominant_substitution']}")
+                if bool(row["apobec_like"]):
+                    tag_parts.append(", APOBEC-like")
+                tag_parts.append(")")
+                tag = "".join(tag_parts)
+                summaries.append(
+                    f"{row['cluster_id']} {row['chrom']} n={row['n_mutations']}"
+                )
+                ax.annotate(
+                    tag,
+                    xy=(
+                        mid_x,
+                        max(
+                            thresh_y,
+                            float(
+                                np.log10(max(row["mean_inter_mutation_distance"], 1.0))
+                            ),
+                        ),
+                    ),
+                    xytext=(mid_x, y_top + 0.15 + (idx % 2) * 0.35),
+                    ha="center",
+                    va="bottom",
+                    fontsize=8,
+                    fontweight="bold",
+                    color="#991b1b",
+                    arrowprops={
+                        "arrowstyle": "->",
+                        "color": "#dc2626",
+                        "lw": 0.9,
+                        "shrinkA": 2,
+                        "shrinkB": 2,
+                    },
+                    zorder=4,
+                )
+            n_k = len(clusters)
+            plural = "cluster" if n_k == 1 else "clusters"
+            ax.set_title(
+                f"{title_base}  |  {n_k} kataegis {plural} detected "
+                f"({'; '.join(summaries[:3])}{'...' if n_k > 3 else ''})",
+                fontsize=10.5,
+            )
+        else:
+            dist_txt = (
+                f"{int(max_mean_distance):,} bp"
+                if float(max_mean_distance).is_integer()
+                else f"{max_mean_distance:g} bp"
+            )
+            ax.set_title(
+                f"{title_base}\n"
+                f"No kataegis clusters detected "
+                f"(min_mutations={min_mutations}, max_mean_distance<={dist_txt}; "
+                f"{n_events_before_diff} variants)",
+                fontsize=10,
+            )
+    else:
+        ax.set_title(title_base)
+
     ax.set_ylabel("log10 inter-mutation distance")
     style.style_axes(ax)
     style.draw_legend_cards(legend_ax, {legend_title: present})
     fig.tight_layout()
+    fig.kataegis_clusters = clusters
+    if return_clusters:
+        return fig, clusters
     return fig
 
 
