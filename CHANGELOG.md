@@ -161,6 +161,13 @@ removal release.
 
 ### 🐛 Correctness and usability
 
+* **Gene-size lookups stay offline.** With the bundled genome-wide
+  `ensembl_gene_sizes.tsv`, `get_exon_size()` (and so `add_exon_size()` /
+  `add_mutation_density()`) no longer queries Ensembl BioMart for symbols the
+  cache does not list (clone, read-through or retired names such as
+  `AC004593.2`); they are `NaN` with a warning. Previously one unknown symbol
+  sent the whole call to BioMart, so a real GDC MAF failed when BioMart was
+  unreachable. Pass `force_download=True` to query Ensembl directly.
 * **ROC-AUC follows the model's class order.** `evaluate_model()` (and so
   `cross_validate_importance` / `run_model_evaluation`) scored
   `predict_proba` columns as if they were in sorted label order. With a
