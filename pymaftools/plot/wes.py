@@ -684,6 +684,35 @@ default "substitution"
     style.draw_legend_cards(legend_ax, {legend_title: present})
     fig.tight_layout()
     fig.kataegis_clusters = clusters
+    fig.pymaftools_summary = {
+        "plot_type": "rainfall",
+        "sample": resolved_sample,
+        "color_by": color_by,
+        "n_events": n_events_before_diff,
+        "n_plotted_distances": int(len(data)),
+        "n_chromosomes": int(len(chrom_spans)),
+        "detect_kataegis": bool(detect_kataegis),
+        "n_kataegis_clusters": int(len(clusters)),
+        "kataegis_clusters": [
+            {
+                "cluster_id": str(row["cluster_id"]),
+                "chrom": str(row["chrom"]),
+                "start": int(row["start"]),
+                "end": int(row["end"]),
+                "n_mutations": int(row["n_mutations"]),
+                "mean_inter_mutation_distance": float(
+                    row["mean_inter_mutation_distance"]
+                ),
+                "dominant_substitution": (
+                    str(row["dominant_substitution"])
+                    if pd.notna(row["dominant_substitution"])
+                    else None
+                ),
+                "apobec_like": bool(row["apobec_like"]),
+            }
+            for _, row in clusters.iterrows()
+        ],
+    }
     if return_clusters:
         return fig, clusters
     return fig
@@ -1131,7 +1160,8 @@ def compare_cohorts(
         or min_mutated < 1
     ):
         raise ValueError(
-            f"min_mutated must be a positive integer >= 1, got {min_mutated!r}."
+            f"min_mutated must be a positive integer >= 1, got {min_mutated!r}. "
+            "Pass min_mutated=1 to include every gene mutated in at least one cohort."
         )
     min_mutated = int(min_mutated)
 

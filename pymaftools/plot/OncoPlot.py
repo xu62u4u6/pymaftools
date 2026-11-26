@@ -923,11 +923,28 @@ class OncoPlot(BasePlot):
             drawn = numeric.notna() & numeric.ne(0)
         else:
             drawn = pd.DataFrame(table.to_binary_table()).astype(bool)
-        n_cells = int(drawn.size)
+        obs_mask = getattr(table, "observation_mask", None)
+        if obs_mask is not None:
+            observed = (
+                obs_mask.to_frame()
+                .reindex(index=drawn.index, columns=drawn.columns)
+                .fillna(False)
+                .astype(bool)
+            )
+            drawn = drawn & observed
+            n_observed = int(observed.to_numpy().sum())
+            n_unobserved = int((~observed).to_numpy().sum())
+            obs_per_feature = observed.sum(axis=1)
+            feature_fraction = (
+                drawn.sum(axis=1).div(obs_per_feature.replace(0, np.nan)).fillna(0.0)
+            )
+        else:
+            n_observed = int(drawn.size)
+            n_unobserved = 0
+            feature_fraction = (
+                drawn.mean(axis=1) if n_samples else pd.Series(0.0, index=drawn.index)
+            )
         n_drawn = int(drawn.to_numpy().sum())
-        feature_fraction = (
-            drawn.mean(axis=1) if n_samples else pd.Series(0.0, index=drawn.index)
-        )
         top = feature_fraction.sort_values(ascending=False, kind="stable").head(
             self._SUMMARY_TOP_FEATURES
         )
@@ -936,7 +953,7 @@ class OncoPlot(BasePlot):
             "n_features": int(n_features),
             "n_samples": int(n_samples),
             "n_nonempty_cells": n_drawn,
-            "fill_fraction": (n_drawn / n_cells) if n_cells else 0.0,
+            "fill_fraction": (n_drawn / n_observed) if n_observed else 0.0,
             "features": [str(f) for f in table.index[: self._SUMMARY_TOP_FEATURES]],
             "top_features": [
                 {"feature": str(name), "fraction_samples_nonempty": float(value)}
@@ -950,11 +967,23 @@ class OncoPlot(BasePlot):
                 }
                 for t in self.tracks
             ],
-            "feature_groups": list(self._feature_groups)
+            "feature_group_by": str(self._feature_groups["by"])
             if self._feature_groups
             else None,
-            "sample_groups": list(self._sample_groups) if self._sample_groups else None,
+            "feature_groups": [
+                str(label) for label, _ in self._axis_sections("feature")
+            ]
+            if self._feature_groups
+            else None,
+            "sample_group_by": str(self._sample_groups["by"])
+            if self._sample_groups
+            else None,
+            "sample_groups": [str(label) for label, _ in self._axis_sections("sample")]
+            if self._sample_groups
+            else None,
         }
+        if obs_mask is not None:
+            record["n_unobserved_cells"] = n_unobserved
         record.update(getattr(self, "_render_info", {}))
         warnings_list = []
         if n_features == 0 or n_samples == 0:

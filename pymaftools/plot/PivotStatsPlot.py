@@ -13,6 +13,7 @@ from __future__ import annotations
 
 # Standard library imports
 from itertools import combinations
+import warnings
 
 # Third-party imports
 import matplotlib.pyplot as plt
@@ -634,9 +635,11 @@ class PivotStatsPlot(BasePlot):
 
         # Show warning if user specified is_numeric=True but data is not numeric
         if is_numeric and not is_actually_numeric:
-            print(
-                f"Warning: Column '{color_col}' contains non-numeric data but is_numeric=True. "
-                f"Treating as categorical data instead."
+            warnings.warn(
+                f"Column '{color_col}' contains non-numeric data but is_numeric=True. "
+                "Treating as categorical data instead.",
+                UserWarning,
+                stacklevel=2,
             )
 
         if is_actually_numeric:
