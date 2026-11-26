@@ -145,7 +145,7 @@ removal release.
   `sample_metadata` column. Burden is `sample_metadata["mutations_count"]` when
   present, so it survives feature subsetting. On 846 TCGA lung samples the top
   15 genes go from 102/105 significant co-occurrences (Fisher) to 10/105
-  (burden quartiles) and 6/105 (plus LUAD/LUSC). Default calls are unchanged;
+  (burden quartiles) and 3/105 (plus LUAD/LUSC). Default calls are unchanged;
   results gain `test_method` and `n_strata` columns.
 
 ### 📥 MAF input compatibility
