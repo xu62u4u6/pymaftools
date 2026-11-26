@@ -807,7 +807,96 @@ _INTERACTION_COLUMNS = [
     "tested_family_size",
     "interaction",
     "is_significant",
+    "test_method",
+    "n_strata",
 ]
+
+
+def _interaction_strata(table, present, observed, burden_strata, strata_col):
+    """Return ``(stratum label per sample, burden source)``; labels are ``None`` unstratified.
+
+    ``burden_strata`` splits samples into quantile bins of mutation burden. The
+    burden is ``sample_metadata["mutations_count"]`` when present (set by
+    ``MAF.to_gene_table()`` from all events, so it survives feature subsetting);
+    otherwise it is the number of mutated (observed) features per sample in the
+    table. ``strata_col`` adds a ``sample_metadata`` column (e.g. cancer subtype)
+    as a further stratifier.
+    """
+    if burden_strata is None and strata_col is None:
+        return None, None
+    burden_source = None
+    labels = pd.Series("all", index=present.columns, dtype=object)
+    if burden_strata is not None:
+        if (
+            isinstance(burden_strata, bool)
+            or not isinstance(burden_strata, (int, np.integer))
+            or burden_strata < 2
+        ):
+            raise ValueError(
+                f"burden_strata must be an integer >= 2 or None, got {burden_strata!r}. "
+                "Pass e.g. burden_strata=4 to stratify by mutation-burden quartiles."
+            )
+        metadata = table.sample_metadata
+        if (
+            "mutations_count" in metadata.columns
+            and metadata["mutations_count"].notna().all()
+        ):
+            burden = metadata["mutations_count"].reindex(present.columns).astype(float)
+            burden_source = "sample_metadata.mutations_count"
+        else:
+            burden = (present & observed).sum(axis=0)
+            burden_source = "mutated_features_in_table"
+        bins = pd.qcut(burden.rank(method="first"), int(burden_strata), labels=False)
+        labels = labels + "|burden_q" + bins.astype(int).astype(str)
+    if strata_col is not None:
+        metadata = table.sample_metadata
+        if strata_col not in metadata.columns:
+            raise ValueError(
+                f"strata_col {strata_col!r} is not a sample_metadata column. "
+                f"Available columns: {sorted(map(str, metadata.columns))}."
+            )
+        values = metadata[strata_col].reindex(present.columns)
+        if values.isna().any():
+            missing = values.index[values.isna()].tolist()[:5]
+            raise ValueError(
+                f"strata_col {strata_col!r} is missing for {int(values.isna().sum())} "
+                f"sample(s) (e.g. {missing}); fill or drop them before stratifying."
+            )
+        labels = labels + "|" + values.astype(str)
+    return labels, burden_source
+
+
+def _stratified_pair_test(gene1_present, gene2_present, jointly_observed, strata):
+    """Mantel-Haenszel pooled odds ratio and CMH p-value over informative strata.
+
+    A stratum is informative when its 2 x 2 table has every row and column
+    margin non-zero; other strata carry no information about association.
+    Swapping the two genes transposes every table, which leaves both the pooled
+    odds ratio and the CMH statistic unchanged.
+    """
+    from statsmodels.stats.contingency_tables import StratifiedTable
+
+    tables = []
+    for label in pd.unique(strata):
+        in_stratum = jointly_observed & strata.eq(label).to_numpy()
+        g1 = gene1_present & in_stratum
+        g2 = gene2_present & in_stratum
+        g1_absent = ~gene1_present & in_stratum
+        g2_absent = ~gene2_present & in_stratum
+        counts = np.array(
+            [
+                [int((g1 & g2).sum()), int((g1_absent & g2).sum())],
+                [int((g1 & g2_absent).sum()), int((g1_absent & g2_absent).sum())],
+            ],
+            dtype=float,
+        )
+        if (counts.sum(axis=0) > 0).all() and (counts.sum(axis=1) > 0).all():
+            tables.append(counts)
+    if not tables:
+        return np.nan, np.nan, 0
+    stratified = StratifiedTable(tables)
+    p_value = float(stratified.test_null_odds(correction=False).pvalue)
+    return float(stratified.oddsratio_pooled), p_value, len(tables)
 
 
 def somatic_interactions(
@@ -815,6 +904,8 @@ def somatic_interactions(
     top: int = 25,
     alpha: float = 0.05,
     *,
+    burden_strata: int | None = None,
+    strata_col: str | None = None,
     _warning_stacklevel: int = 2,
 ) -> pd.DataFrame:
     """Pairwise Fisher tests for co-occurrence / mutual exclusivity.
@@ -831,6 +922,17 @@ def somatic_interactions(
     mutation absence. A pair with no jointly observed sample is reported with
     ``tested=False`` and missing statistics, and is excluded from the BH family.
     ``tested_family_size`` records the number of pairs in that family.
+
+    By default each pair uses Fisher's exact test. Passing ``burden_strata``
+    (number of mutation-burden quantile bins) and/or ``strata_col`` (a
+    ``sample_metadata`` column such as subtype) switches to a stratified
+    Mantel-Haenszel test: the pooled odds ratio and the Cochran-Mantel-Haenszel
+    p-value are computed over strata whose 2 x 2 table is informative. This
+    removes co-occurrence that arises only because hypermutated samples carry
+    more mutations in every gene, or exclusivity that arises only because two
+    genes are specific to different subtypes. Count columns stay pooled over
+    all jointly observed samples; ``test_method`` and ``n_strata`` record the
+    test used.
     """
     if isinstance(top, bool) or not isinstance(top, (int, np.integer)) or top < 1:
         raise ValueError(
@@ -853,8 +955,12 @@ def somatic_interactions(
     observed = _interaction_observation_frame(binary)
     present = pd.DataFrame(binary).astype(bool) & observed
     genes = present.sum(axis=1).sort_values(ascending=False).head(top).index
+    strata, burden_source = _interaction_strata(
+        table, present, observed, burden_strata, strata_col
+    )
     present = present.loc[genes]
     observed = observed.loc[genes]
+    test_method = "fisher" if strata is None else "mantel_haenszel"
     rows = []
     # ``combinations`` enumerates each biological (unordered) pair exactly once.
     for gene1, gene2 in combinations(genes, 2):
@@ -869,16 +975,25 @@ def somatic_interactions(
         neither_mutated = int((gene1_absent & gene2_absent).sum())
         jointly_observed_count = int(jointly_observed.sum())
         tested = jointly_observed_count > 0
-        if tested:
+        n_strata = 1
+        if tested and strata is not None:
+            odds_ratio, p_value, n_strata = _stratified_pair_test(
+                present.loc[gene1].to_numpy(),
+                present.loc[gene2].to_numpy(),
+                jointly_observed.to_numpy(),
+                strata,
+            )
+            tested = n_strata > 0
+        elif tested:
             odds_ratio, p_value = fisher_exact(
                 [
                     [both_mutated, gene2_only],
                     [gene1_only, neither_mutated],
                 ]
             )
-        else:
-            # No sample informs this pair; do not fabricate evidence.
-            odds_ratio, p_value = np.nan, np.nan
+        if not tested:
+            # No sample (or no informative stratum) informs this pair.
+            odds_ratio, p_value, n_strata = np.nan, np.nan, 0
         rows.append(
             {
                 "gene1": gene1,
@@ -891,12 +1006,22 @@ def somatic_interactions(
                 "neither_mutated": neither_mutated,
                 "jointly_observed": jointly_observed_count,
                 "tested": tested,
+                "test_method": test_method,
+                "n_strata": n_strata,
             }
         )
     result = pd.DataFrame(rows)
-    provenance = provenance_for_table(
-        "somatic_interactions", table, {"top": top, "alpha": alpha}
-    )
+    parameters = {"top": top, "alpha": alpha}
+    if strata is not None:
+        parameters.update(
+            {
+                "burden_strata": burden_strata,
+                "strata_col": strata_col,
+                "burden_source": burden_source,
+                "test_method": test_method,
+            }
+        )
+    provenance = provenance_for_table("somatic_interactions", table, parameters)
     if result.empty:
         return attach_provenance(pd.DataFrame(columns=_INTERACTION_COLUMNS), provenance)
     tested_pairs = result["tested"].to_numpy(dtype=bool)
@@ -914,14 +1039,21 @@ def somatic_interactions(
     )
     result["is_significant"] = tested_pairs & (result["adjusted_p_value"] < alpha)
     _warn_interaction_pitfalls(
-        result, n_samples=binary.shape[1], stacklevel=_warning_stacklevel + 1
+        result,
+        n_samples=binary.shape[1],
+        burden_adjusted=burden_strata is not None,
+        stacklevel=_warning_stacklevel + 1,
     )
     result = result.sort_values("adjusted_p_value", na_position="last")
     return attach_provenance(result, provenance)
 
 
 def _warn_interaction_pitfalls(
-    result: pd.DataFrame, n_samples: int, *, stacklevel: int = 3
+    result: pd.DataFrame,
+    n_samples: int,
+    *,
+    burden_adjusted: bool = False,
+    stacklevel: int = 3,
 ) -> None:
     """Warn (never alter results) when the interaction table is likely misleading.
 
@@ -941,7 +1073,7 @@ def _warn_interaction_pitfalls(
     # Untested pairs (no jointly observed sample) are outside the tested family.
     tested = result[result["tested"]] if "tested" in result else result
     n_pairs = len(tested)
-    if n_pairs >= 10:
+    if n_pairs >= 10 and not burden_adjusted:
         cooccur = tested["is_significant"] & tested["interaction"].eq("Co-occurrence")
         share = float(cooccur.mean())
         if share > 0.5:
@@ -951,7 +1083,8 @@ def _warn_interaction_pitfalls(
                 "differences in mutation burden (hypermutated samples, long genes "
                 "such as TTN/MUC16) rather than gene-gene interaction; consider "
                 "stratifying by TMB or excluding hypermutators before "
-                "interpreting individual pairs.",
+                "interpreting individual pairs, e.g. "
+                "table.somatic_interactions(top=..., burden_strata=4).",
                 UserWarning,
                 stacklevel=stacklevel,
             )
@@ -963,6 +1096,8 @@ def plot_somatic_interactions(
     alpha: float = 0.05,
     figsize=(8, 7),
     *,
+    burden_strata: int | None = None,
+    strata_col: str | None = None,
     _warning_stacklevel: int = 2,
 ):
     """Draw a signed -log10(FDR) interaction heatmap.
@@ -988,7 +1123,12 @@ def plot_somatic_interactions(
     from . import style
 
     stats = somatic_interactions(
-        table, top=top, alpha=alpha, _warning_stacklevel=_warning_stacklevel + 1
+        table,
+        top=top,
+        alpha=alpha,
+        burden_strata=burden_strata,
+        strata_col=strata_col,
+        _warning_stacklevel=_warning_stacklevel + 1,
     )
     binary = table.to_binary_table().astype(bool)
     genes = (

@@ -131,7 +131,13 @@ class PivotStatsPlot(BasePlot):
         )
 
     def somatic_interactions(
-        self, top: int = 25, alpha: float = 0.05, figsize: tuple = (8, 7)
+        self,
+        top: int = 25,
+        alpha: float = 0.05,
+        figsize: tuple = (8, 7),
+        *,
+        burden_strata: int | None = None,
+        strata_col: str | None = None,
     ):
         """Draw the co-occurrence / mutual-exclusivity heatmap.
 
@@ -148,6 +154,10 @@ class PivotStatsPlot(BasePlot):
             BH-FDR threshold for the ``*`` marks.
         figsize : tuple, default (8, 7)
             Figure size in inches.
+        burden_strata, strata_col : optional
+            Passed to
+            :meth:`~pymaftools.core.PivotTable.PivotTable.somatic_interactions`
+            for a burden- and/or subtype-stratified Mantel-Haenszel test.
 
         Returns
         -------
@@ -162,6 +172,8 @@ class PivotStatsPlot(BasePlot):
             top=top,
             alpha=alpha,
             figsize=figsize,
+            burden_strata=burden_strata,
+            strata_col=strata_col,
             _warning_stacklevel=3,
         )
         self.fig = fig

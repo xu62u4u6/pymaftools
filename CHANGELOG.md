@@ -138,6 +138,15 @@ removal release.
 * Added adversarial regression coverage for sample universes, observation masks,
   TMB event filtering, patient independence, and enrichment denominators.
 * Added a documentation-only clean-wheel user journey for the public quick start.
+* **Burden- and subtype-stratified somatic interactions.**
+  `table.somatic_interactions(top=..., burden_strata=4, strata_col="subtype")`
+  (and `table.plot.somatic_interactions(...)`) replaces Fisher's exact test
+  with a Mantel-Haenszel test over mutation-burden quantiles and/or a
+  `sample_metadata` column. Burden is `sample_metadata["mutations_count"]` when
+  present, so it survives feature subsetting. On 846 TCGA lung samples the top
+  15 genes go from 102/105 significant co-occurrences (Fisher) to 10/105
+  (burden quartiles) and 6/105 (plus LUAD/LUSC). Default calls are unchanged;
+  results gain `test_method` and `n_strata` columns.
 
 ### 📥 MAF input compatibility
 
