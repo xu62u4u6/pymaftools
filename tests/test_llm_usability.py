@@ -239,7 +239,7 @@ def test_compare_cohorts_rejects_conflicting_aliases_and_bad_min_mutated():
         maf.compare_cohorts(maf, cohort1_name="A", name1="X")
     with pytest.raises(ValueError, match="cohort2_name"):
         maf.compare_cohorts(maf, cohort2_name="B", name2="Y")
-    with pytest.raises(ValueError, match="min_mutated"):
+    with pytest.raises(ValueError, match="min_mutated=1"):
         maf.compare_cohorts(maf, min_mutated=0)
 
     empty = maf.compare_cohorts(

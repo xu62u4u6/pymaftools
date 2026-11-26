@@ -131,10 +131,21 @@ INPUTS_ATTR = "pymaftools_inputs"
 
 
 def table_inputs(obj) -> list[dict[str, Any]]:
-    """Input-file fingerprints a table inherited from its source MAF (best effort)."""
+    """Input-file fingerprints a table or MAF inherited from disk (best effort)."""
     attrs = getattr(obj, "attrs", None)
     if isinstance(attrs, Mapping):
-        return [dict(item) for item in attrs.get(INPUTS_ATTR, [])]
+        recorded = attrs.get(INPUTS_ATTR)
+        if recorded:
+            return [dict(item) for item in recorded]
+    report = getattr(obj, "ingest_report", None)
+    if report is not None and getattr(report, "sha256", None) is not None:
+        return [
+            {
+                "path": report.path,
+                "bytes": report.bytes,
+                "sha256": report.sha256,
+            }
+        ]
     return []
 
 

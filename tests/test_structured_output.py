@@ -221,6 +221,102 @@ def test_save_errors_are_raised(table, tmp_path):
     oncoplot.close()
 
 
+def test_oncoplot_summary_reports_group_labels_not_config_keys(table):
+    sub = table.head(6).copy()
+    sub.sample_metadata["grp"] = ["LUAD"] * 3 + ["LUSC"] * (sub.shape[1] - 3)
+    sub.feature_metadata["panel"] = ["P1"] * 3 + ["P2"] * (sub.shape[0] - 3)
+    oncoplot = (
+        sub.plot.oncoplot(figsize=(8, 5))
+        .main()
+        .group_samples(by="grp")
+        .group_features(by="panel")
+        .render()
+    )
+    record = oncoplot.summary()
+    oncoplot.close()
+    assert record["sample_group_by"] == "grp"
+    assert record["sample_groups"] == ["LUAD", "LUSC"]
+    assert record["feature_group_by"] == "panel"
+    assert record["feature_groups"] == ["P1", "P2"]
+
+
+def test_oncoplot_summary_respects_observation_mask():
+    from pymaftools import ObservationMask, PivotTable
+
+    df = pd.DataFrame(
+        {
+            "S1": ["Missense_Mutation", False],
+            "S2": [False, False],
+            "S3": [False, False],
+            "S4": [False, False],
+        },
+        index=["G1", "G2"],
+    )
+    mask = pd.DataFrame(
+        {
+            "S1": [True, True],
+            "S2": [True, True],
+            "S3": [False, True],
+            "S4": [False, True],
+        },
+        index=["G1", "G2"],
+    )
+    masked = PivotTable(df).with_scientific_context(
+        observation_mask=ObservationMask(mask)
+    )
+    oncoplot = masked.plot.oncoplot(figsize=(6, 4)).main().render()
+    record = oncoplot.summary()
+    oncoplot.close()
+    assert record["n_unobserved_cells"] == 2
+    assert record["fill_fraction"] == pytest.approx(1 / 6)
+    by_feature = {
+        item["feature"]: item["fraction_samples_nonempty"]
+        for item in record["top_features"]
+    }
+    assert by_feature["G1"] == pytest.approx(0.5)
+    assert by_feature["G2"] == pytest.approx(0.0)
+
+
+def test_maf_read_propagates_input_fingerprint_to_maf_analyses():
+    maf = pymaftools.MAF.read_maf(example_maf_path())
+    assert maf.attrs["pymaftools_inputs"][0]["sha256"] == maf.ingest_report.sha256
+
+    kataegis = maf.detect_kataegis()
+    kat_prov = get_provenance(kataegis)
+    assert kat_prov["inputs"][0]["sha256"] == maf.ingest_report.sha256
+
+    comp = maf.compare_cohorts(maf, cohort1_name="A", cohort2_name="B")
+    comp_prov = get_provenance(comp)
+    assert len(comp_prov["inputs"]) == 2
+    assert comp_prov["inputs"][0]["sha256"] == maf.ingest_report.sha256
+
+
+def test_rainfall_figure_summary_includes_kataegis_metadata():
+    maf = pymaftools.MAF(
+        pd.DataFrame(
+            {
+                "Tumor_Sample_Barcode": ["S1"] * 7,
+                "Hugo_Symbol": ["TP53"] * 7,
+                "Chromosome": ["chr1"] * 7,
+                "Start_Position": [1000, 1200, 1400, 1600, 1800, 2000, 500000],
+                "Variant_Type": ["SNP"] * 7,
+                "Reference_Allele": ["C"] * 7,
+                "Tumor_Seq_Allele2": ["T"] * 7,
+                "Variant_Classification": ["Missense_Mutation"] * 7,
+            }
+        )
+    )
+    fig = maf.plot.rainfall()
+    record = figure_summary(fig)
+    plt.close(fig)
+    assert record["plot_type"] == "rainfall"
+    assert record["color_by"] == "substitution"
+    assert record["detect_kataegis"] is True
+    assert record["n_kataegis_clusters"] == 1
+    assert record["kataegis_clusters"][0]["n_mutations"] == 6
+    assert record["warnings"] == []
+
+
 # --- CLI -------------------------------------------------------------------
 
 

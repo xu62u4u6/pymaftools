@@ -398,6 +398,7 @@ class MAF(pd.DataFrame):
         maf.index = _composite_index(maf, cls.index_col)
         maf = cls(maf)
         maf._ingest_report = report
+        maf._carry_input_fingerprint(maf)
         return maf
 
     @property

@@ -84,6 +84,9 @@ producer-aware MAF input, and errors that say how to fix the call.
     matrix cleanly.
   * `ExpressionTable.plot.volcano(label_col=...)` now raises `ValueError` when
     the requested `label_col` is absent instead of silently skipping labels.
+  * `compare_cohorts()` / `MAF.compare_cohorts()` now requires
+    `min_mutated >= 1` (raising `ValueError` on `0` or negative values; pass
+    `min_mutated=1` to include every gene mutated in at least one cohort).
   * `SignatureTable.read_signature()` adds an explicit `orientation` parameter
     (defaulting to `"samples_by_signatures"` for SigProfiler compatibility;
     pass `orientation="signatures_by_samples"` for pre-transposed tables).
