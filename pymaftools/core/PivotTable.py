@@ -2111,7 +2111,14 @@ class PivotTable(pd.DataFrame):
             confidence_level=confidence_level,
         )
 
-    def somatic_interactions(self, top: int = 25, alpha: float = 0.05) -> pd.DataFrame:
+    def somatic_interactions(
+        self,
+        top: int = 25,
+        alpha: float = 0.05,
+        *,
+        burden_strata: Optional[int] = None,
+        strata_col: Optional[str] = None,
+    ) -> pd.DataFrame:
         """Pairwise Fisher tests for gene co-occurrence and mutual exclusivity.
 
         Tests every unique unordered pair among the ``top`` most frequently
@@ -2125,17 +2132,37 @@ class PivotTable(pd.DataFrame):
             Number of most frequently mutated features to include.
         alpha : float, default 0.05
             BH-FDR significance threshold for ``is_significant``.
+        burden_strata : int or None, default None
+            Stratify by this many quantile bins of per-sample mutation burden
+            (mutated features per sample across the whole table) and use a
+            Mantel-Haenszel test instead of Fisher's exact test. Removes
+            co-occurrence driven only by hypermutated samples.
+        strata_col : str or None, default None
+            ``sample_metadata`` column (e.g. subtype) to stratify by, alone or
+            combined with ``burden_strata``.
 
         Returns
         -------
         pd.DataFrame
             One row per unordered feature pair with ``gene1``, ``gene2``,
             ``odds_ratio``, ``p_value``, 2x2 counts, ``adjusted_p_value``,
-            ``interaction``, and ``is_significant``.
+            ``interaction``, ``is_significant``, ``test_method`` and
+            ``n_strata``.
+
+        Examples
+        --------
+        >>> stats = table.somatic_interactions(top=20, burden_strata=4)  # doctest: +SKIP
         """
         from ..plot.wes import somatic_interactions
 
-        return somatic_interactions(self, top=top, alpha=alpha, _warning_stacklevel=3)
+        return somatic_interactions(
+            self,
+            top=top,
+            alpha=alpha,
+            burden_strata=burden_strata,
+            strata_col=strata_col,
+            _warning_stacklevel=3,
+        )
 
     def compute_similarity(
         self,
