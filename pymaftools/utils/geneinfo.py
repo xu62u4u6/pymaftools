@@ -515,12 +515,13 @@ def get_exon_size(
 
     Notes
     -----
-    Uses the bundled ``ensembl_gene_sizes.tsv`` cache when present; any
-    requested symbols absent from it—or all requested symbols when a legacy
-    cache lacks any non-null values for ``metric``—are queried from Ensembl
-    (a small filtered query, not the genome-wide dump). Non-coding genes
-    already present in a populated cache with ``cds_length=NaN`` are treated as
-    known non-coding genes and do not trigger network requests.
+    Uses the bundled genome-wide ``ensembl_gene_sizes.tsv`` cache when
+    present and never contacts Ensembl for it: symbols absent from the cache
+    (clone names, read-through or retired symbols) and non-coding genes with
+    ``cds_length=NaN`` are returned as ``NaN`` with a warning. Only a legacy
+    cache that lacks any non-null values for ``metric`` is refreshed from
+    Ensembl (a small filtered query). Pass ``force_download=True`` to query
+    Ensembl directly.
     """
     import warnings
 
@@ -541,7 +542,10 @@ def get_exon_size(
             # treat all requested genes as misses for this metric.
             cached_symbols = set()
         missing = [g for g in genes if g not in cached_symbols]
-        if missing:
+        # A populated (genome-wide) cache is authoritative: symbols absent from
+        # it (clone names, read-through or retired symbols) stay NaN instead of
+        # triggering a network query, so analyses run offline and reproducibly.
+        if missing and not metric_populated:
             fetched = _fetch_gene_sizes(missing)
             sizes = pd.concat([sizes, fetched], ignore_index=True)
     else:
@@ -557,7 +561,8 @@ def get_exon_size(
         suffix = " ..." if len(unresolved) > 5 else ""
         warnings.warn(
             f"get_exon_size(metric={metric!r}) could not resolve {len(unresolved)} "
-            f"gene(s) (examples: {examples}{suffix}); returning NaN for them.",
+            f"gene(s) (examples: {examples}{suffix}); returning NaN for them. "
+            "Pass force_download=True to query Ensembl for current symbols.",
             UserWarning,
             stacklevel=2,
         )

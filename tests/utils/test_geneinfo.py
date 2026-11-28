@@ -272,3 +272,18 @@ def test_pivot_table_add_mutation_density_and_flags_annotation(monkeypatch):
         "TTN": True,
         "MUC16": True,
     }
+
+
+def test_bundled_gene_sizes_unknown_symbol_stays_offline(monkeypatch):
+    """Symbols absent from the genome-wide cache are NaN, not a network query."""
+    import pytest
+
+    def fail_if_online(genes):
+        raise AssertionError(f"Expected no network fetch, got fetch for {genes}")
+
+    monkeypatch.setattr(geneinfo, "_fetch_gene_sizes", fail_if_online)
+
+    with pytest.warns(UserWarning, match="force_download=True"):
+        sizes = geneinfo.get_exon_size(["TP53", "AC004593.2"], metric="cds_length")
+    assert sizes["TP53"] == 1236
+    assert pd.isna(sizes["AC004593.2"])
